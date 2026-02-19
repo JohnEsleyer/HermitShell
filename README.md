@@ -121,7 +121,11 @@ On first run, the dashboard will show an **Initialization Screen**:
 
 1. **Admin Username**: Your admin login
 2. **Admin Password**: Your admin password
+
+After logging in, go to **Settings** and configure:
+
 3. **Operator Telegram ID**: Your Telegram User ID (get from @userinfobot)
+   - This is **required** for agent verification and HITL approvals
 
 The Operator ID is required for:
 - Agent verification handshake codes
@@ -134,21 +138,32 @@ Open http://localhost:3000/dashboard/ in your browser
 
 ### 6. Create Your First Agent
 
-1. Go to Dashboard → Agents
-2. Click "+ New Agent"
-3. Fill in Name, Role, and Telegram Token
-4. **Verification Handshake**:
-   - Click "Send Code" to receive a 6-digit code on Telegram
-   - Enter the code to verify the bot works
-   - Only verified agents can be created
-5. Choose Docker Image and HITL settings
+The dashboard uses a **3-Step Verification Wizard**:
+
+**Step 1: Configuration**
+- Enter agent **Name** (e.g., "Sherlock")
+- Enter **Role** description (e.g., "Security Researcher")
+- Paste your **Telegram Token** (from @BotFather)
+- Select **Docker Image** (hermit/base, hermit/python, or hermit/netsec)
+- Toggle **HITL** if you want approval for dangerous commands
+
+**Step 2: Verification Handshake**
+- Make sure you've sent `/start` to your new bot on Telegram
+- Click **"Send Code"** - a 6-digit code will be sent to the Operator's Telegram
+- Wait for the code to arrive
+
+**Step 3: Enter Code**
+- Enter the 6-digit verification code
+- Click **"Create Agent"** to complete setup
+
+> **Why verification?** This ensures your bot token is valid and you've properly started the bot. It prevents silent failures where agents are created but can't send messages.
 
 ### 7. Set Up Telegram Webhook
 
 Dashboard → Settings:
 1. Set your **Public URL** (must be publicly accessible)
-2. Select your agent from the dropdown
-3. Click "Set Webhook"
+2. Click **"Save All Settings"**
+3. Use the webhook URL: `https://your-public-url/webhook/<YOUR_BOT_TOKEN>`
 
 ## Core Concepts
 
@@ -180,11 +195,11 @@ Each agent+user pair gets a dedicated workspace:
 
 The Operator is the primary human controller:
 
-- **First Boot**: Required during initial setup
+- **Configuration**: Set Operator Telegram ID in Settings → Operator section
 - **Verification Codes**: Sent to Operator's Telegram for agent creation
 - **HITL Approvals**: All dangerous command approvals go to Operator
 - **Delegation Control**: Agent collaboration requires Operator approval
-- **Allowlist Priority**: Operator automatically added to allowlist with `is_operator=1`
+- **Allowlist Priority**: Operator can be marked with `is_operator=1` flag
 
 ### Async Telegram Processing
 
