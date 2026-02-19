@@ -89,7 +89,16 @@ MODEL=anthropic/claude-3-haiku
 cd shell && npm start
 ```
 
-### 4. Access the Dashboard
+### 4. Initial Setup (First Run)
+
+On first run, the dashboard will show an **Initialization Screen**. Create your admin account:
+
+- **Operator ID**: Your admin username
+- **Access Key**: Your admin password
+
+After creation, you'll be redirected to the **Login Screen** to authenticate.
+
+### 4.1 Access the Dashboard
 
 Open http://localhost:3000/dashboard/ in your browser
 
@@ -129,9 +138,12 @@ curl -X POST "https://api.telegram.org/bot<AGENT_TOKEN>/setWebhook" \
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server port | 3000 |
+| `SESSION_SECRET` | Session cookie secret | `hermit-secret-change-in-production` |
 | `OPENROUTER_API_KEY` | OpenRouter API key | Required |
 | `OPENAI_API_KEY` | OpenAI API key (optional) | - |
 | `MODEL` | Default model | anthropic/claude-3-haiku |
+
+> **Security Note**: For production deployments, always set a unique `SESSION_SECRET` environment variable.
 
 ### Database Schema
 
@@ -140,6 +152,7 @@ curl -X POST "https://api.telegram.org/bot<AGENT_TOKEN>/setWebhook" \
 - **allowlist**: user_id, username, first_name
 - **settings**: key, value
 - **meetings**: id, initiator_agent_id, participant_agent_id, topic, transcript
+- **admins**: id, username, password_hash, salt, created_at
 
 ## Agent Tool Loop
 
@@ -159,6 +172,7 @@ Agent: example.com is responding with HTTP 200 OK.
 
 ## Security
 
+- **Admin Authentication**: Dashboard is protected with session-based auth
 - **Cubicle Isolation**: Each agent runs in its own Docker container
 - **Resource Limits**: 512MB RAM, 1 CPU, 100 process limit
 - **Auto-Remove**: Containers deleted after task completion
