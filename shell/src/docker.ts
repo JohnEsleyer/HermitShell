@@ -227,7 +227,9 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
 
 export async function listContainers(): Promise<Docker.ContainerInfo[]> {
     const containers = await docker.listContainers({ all: true });
-    return containers;
+    return containers.filter(c => 
+        c.Image && (c.Image.startsWith('hermit/') || c.Image.startsWith('hermit-crab'))
+    );
 }
 
 export async function checkDocker(): Promise<boolean> {
