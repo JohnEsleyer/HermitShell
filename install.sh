@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🐚 HermitClaw OS - Installing Your Private Agent Workforce"
+echo "🐚 HermitClaw - Installing Your Private Agent Workforce"
 
 check_command() {
     if ! command -v $1 &> /dev/null; then

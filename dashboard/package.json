@@ -1,7 +1,7 @@
 {
   "name": "hermitclaw-dashboard",
   "version": "1.0.0",
-  "description": "Web Dashboard for HermitClaw OS",
+  "description": "Web Dashboard for HermitClaw",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
