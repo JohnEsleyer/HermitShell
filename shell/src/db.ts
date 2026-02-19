@@ -71,6 +71,16 @@ function initTables(database: Database): void {
             value TEXT
         )
     `);
+
+    database.run(`
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password_hash TEXT,
+            salt TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
     
     database.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('default_provider', 'openrouter')`);
     database.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('default_model', 'anthropic/claude-3-haiku')`);
@@ -286,4 +296,40 @@ export async function getAllBudgets(): Promise<(Budget & { agent_name: string })
 
 export async function initDb(): Promise<void> {
     await getDatabase();
+}
+
+export async function getAdminCount(): Promise<number> {
+    const database = await getDatabase();
+    const result = database.exec("SELECT COUNT(*) FROM admins");
+    if (result.length > 0 && result[0].values.length > 0) {
+        return result[0].values[0][0] as number;
+    }
+    return 0;
+}
+
+export async function createAdmin(username: string, passwordHash: string, salt: string): Promise<void> {
+    const database = await getDatabase();
+    database.run(
+        'INSERT INTO admins (username, password_hash, salt) VALUES (?, ?, ?)', 
+        [username, passwordHash, salt]
+    );
+    saveDatabase();
+}
+
+export async function getAdmin(username: string): Promise<{id: number, password_hash: string, salt: string} | undefined> {
+    const database = await getDatabase();
+    const stmt = database.prepare("SELECT id, password_hash, salt FROM admins WHERE username = ?");
+    stmt.bind([username]);
+    
+    if (stmt.step()) {
+        const result = stmt.get();
+        stmt.free();
+        return {
+            id: result[0] as number,
+            password_hash: result[1] as string,
+            salt: result[2] as string
+        };
+    }
+    stmt.free();
+    return undefined;
 }
