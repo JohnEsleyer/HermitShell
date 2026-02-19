@@ -1,10 +1,10 @@
-# HermitClaw OS
+# HermitClaw
 
 "Intelligence in a Disposable Shell" - A secure, multi-agent AI orchestration platform where each agent lives in its own Docker "cubicle."
 
 ## Overview
 
-HermitClaw OS is an evolution from a single Telegram bot to a **Secure Agentic Operating System**. Each AI agent runs in an ephemeral Docker container ("Cubicle") with its own Telegram bot identity, role, and budget.
+HermitClaw is an evolution from a single Telegram bot to a **Secure Agentic Operating System**. Each AI agent runs in an ephemeral Docker container ("Cubicle") with its own Telegram bot identity, role, and budget.
 
 ### Key Features
 
@@ -19,7 +19,7 @@ HermitClaw OS is an evolution from a single Telegram bot to a **Secure Agentic O
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     HermitClaw OS                          │
+│                     HermitClaw                             │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Web Dashboard (Port 3000)              │   │
 │  │  - Agent Management  - Budget Tracking  - Settings  │   │
