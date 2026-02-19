@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS agents (
     system_prompt TEXT,
     docker_image TEXT DEFAULT 'hermit/base',
     is_active INTEGER DEFAULT 1,
+    require_approval INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -91,44 +92,50 @@ if ! docker ps &>/dev/null; then
     DOCKER="sudo docker"
 fi
 
+echo "  → Building hermit-crab (AI Agent)..."
+$DOCKER build -t hermit-crab:latest crab/
+
 echo "  → Building hermit/base..."
 $DOCKER build -t hermit/base:latest -f - . << 'EOF'
+FROM hermit-crab:latest AS crab-source
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl jq sed gawk bash coreutils iputils-ping dnsutils \
+    curl jq sed gawk bash coreutils iputils-ping dnsutils ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=crab-source /usr/local/bin/crab /usr/local/bin/crab
 WORKDIR /workspace
-CMD ["/bin/bash"]
+CMD ["crab"]
 EOF
 
 echo "  → Building hermit/python..."
 $DOCKER build -t hermit/python:latest -f - . << 'EOF'
+FROM hermit-crab:latest AS crab-source
 FROM python:3.11-slim
-RUN apt-get update && apt-get install -y --no-install-recommends curl jq \
+RUN apt-get update && apt-get install -y --no-install-recommends curl jq ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir requests pandas numpy
+COPY --from=crab-source /usr/local/bin/crab /usr/local/bin/crab
 WORKDIR /workspace
-CMD ["python"]
+CMD ["crab"]
 EOF
 
 echo "  → Building hermit/netsec..."
 $DOCKER build -t hermit/netsec:latest -f - . << 'EOF'
+FROM hermit-crab:latest AS crab-source
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl jq nmap iputils-ping dnsutils net-tools openssl \
+    curl jq nmap iputils-ping dnsutils net-tools openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+COPY --from=crab-source /usr/local/bin/crab /usr/local/bin/crab
 WORKDIR /workspace
-CMD ["/bin/bash"]
+CMD ["crab"]
 EOF
-
-echo "  → Building hermit-crab (AI Agent)..."
-$DOCKER build -t hermit-crab:latest crab/
 
 echo "📦 Installing Node.js dependencies..."
 cd shell
 npm install --legacy-peer-deps 2>/dev/null || npm install
 
-npm install @fastify/cookie@^10.0.0 @fastify/static@^8.0.0 --legacy-peer-deps 2>/dev/null || true
+npm install @fastify/cookie@8.3.0 @fastify/static@6.12.0 --legacy-peer-deps 2>/dev/null || true
 
 npm run build
 cd ..

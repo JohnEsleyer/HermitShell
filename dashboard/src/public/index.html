@@ -177,6 +177,10 @@
                     <i data-lucide="grid" class="w-5 h-5"></i>
                     <span class="font-semibold">Agents</span>
                 </a>
+                <a href="#" onclick="showSection('cubicles')" class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
+                    <i data-lucide="box" class="w-5 h-5"></i>
+                    <span>Cubicles</span>
+                </a>
                 <a href="#" onclick="showSection('audit')" class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
                     <i data-lucide="file-text" class="w-5 h-5"></i>
                     <span>Audit Logs</span>
@@ -265,6 +269,40 @@
                     </h3>
 
                     <div id="agent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    </div>
+                </div>
+
+                <!-- Cubicles Section -->
+                <div id="section-cubicles" class="hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                            <i data-lucide="box" class="w-5 h-5 text-orange-500"></i>
+                            Running Cubicles
+                        </h3>
+                        <button onclick="loadCubicles()" class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium transition-all text-sm flex items-center gap-2 border border-slate-700">
+                            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+                            Refresh
+                        </button>
+                    </div>
+
+                    <div class="glass-card rounded-2xl overflow-hidden">
+                        <table class="w-full text-sm">
+                            <thead class="bg-slate-800/50 text-slate-400">
+                                <tr>
+                                    <th class="px-4 py-3 text-left font-mono">CONTAINER ID</th>
+                                    <th class="px-4 py-3 text-left font-mono">IMAGE</th>
+                                    <th class="px-4 py-3 text-left font-mono">STATUS</th>
+                                    <th class="px-4 py-3 text-left font-mono">CREATED</th>
+                                    <th class="px-4 py-3 text-left font-mono">ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cubicles-tbody" class="divide-y divide-slate-800">
+                            </tbody>
+                        </table>
+                        <div id="cubicles-empty" class="p-8 text-center text-slate-500 hidden">
+                            <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-3 text-slate-600"></i>
+                            <p>No running cubicles. Spawn an agent to create a cubicle.</p>
+                        </div>
                     </div>
                 </div>
 
@@ -395,6 +433,29 @@
                         Settings
                     </h3>
 
+                    <!-- Operator Settings -->
+                    <div class="glass-card p-6 rounded-2xl mb-6">
+                        <div class="flex items-center gap-3 mb-6">
+                            <div class="p-2 bg-orange-500/10 rounded-lg text-orange-500"><i data-lucide="shield" class="w-5 h-5"></i></div>
+                            <h4 class="text-lg font-bold text-white">Operator (Primary Admin)</h4>
+                        </div>
+                        <div class="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3 mb-4">
+                            <p class="text-xs text-orange-300">The Operator receives all verification codes, HITL approval requests, and delegation requests. Set this to your Telegram User ID.</p>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <label class="text-xs font-mono text-slate-400">OPERATOR TELEGRAM ID</label>
+                                    <button onclick="alert('Send /start to @userinfobot on Telegram to get your User ID')" class="text-slate-400 hover:text-orange-500 transition-colors" title="How to find my ID?">
+                                        <i data-lucide="help-circle" class="w-4 h-4"></i>
+                                    </button>
+                                </div>
+                                <input type="text" id="setting-operator_telegram_id" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 focus:outline-none transition-colors" placeholder="e.g., 123456789">
+                                <p class="text-xs text-slate-500 mt-1">Required for agent verification and HITL approvals</p>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- General Settings -->
                     <div class="glass-card p-6 rounded-2xl mb-6">
                         <div class="flex items-center gap-3 mb-6">
@@ -510,16 +571,41 @@
         </main>
     </div>
 
-    <!-- Create Agent Modal -->
+    <!-- Create Agent Modal (3-Step Verification Wizard) -->
     <div id="create-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-700 w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden relative">
             <div class="p-6 border-b border-white/10 flex justify-between items-center bg-slate-800/50">
-                <h3 class="text-lg font-bold text-white">Initialize New Agent</h3>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Initialize New Agent</h3>
+                    <p id="wizard-step-label" class="text-xs text-orange-400 font-mono mt-1">STEP 1 OF 3: CONFIGURATION</p>
+                </div>
                 <button onclick="closeModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
-            <div class="p-6 space-y-4">
+            
+            <!-- Step Progress -->
+            <div class="px-6 pt-4">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center">
+                        <div id="step1-indicator" class="w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm">1</div>
+                        <div id="step1-line" class="w-16 h-1 bg-slate-700 mx-2"></div>
+                    </div>
+                    <div class="flex items-center">
+                        <div id="step2-indicator" class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 font-bold text-sm">2</div>
+                        <div id="step2-line" class="w-16 h-1 bg-slate-700 mx-2"></div>
+                    </div>
+                    <div class="flex items-center">
+                        <div id="step3-indicator" class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 font-bold text-sm">3</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 1: Configuration -->
+            <div id="wizard-step1" class="p-6 space-y-4">
+                <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
+                    <p class="text-xs text-blue-300"><strong>Step 1:</strong> Enter your agent's details. You'll verify the Telegram token in the next step.</p>
+                </div>
                 <div>
-                    <label class="block text-xs font-mono text-slate-400 mb-1">DESIGNATION (NAME)</label>
+                    <label class="block text-xs font-mono text-slate-400 mb-1">DESIGNATION (NAME) *</label>
                     <input type="text" id="new-name" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 focus:outline-none transition-colors" placeholder="e.g., Sherlock">
                 </div>
                 <div>
@@ -527,8 +613,9 @@
                     <input type="text" id="new-role" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 focus:outline-none transition-colors" placeholder="e.g., Security Researcher">
                 </div>
                 <div>
-                    <label class="block text-xs font-mono text-slate-400 mb-1">TELEGRAM TOKEN</label>
+                    <label class="block text-xs font-mono text-slate-400 mb-1">TELEGRAM TOKEN *</label>
                     <input type="password" id="new-token" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 focus:outline-none transition-colors" placeholder="From @BotFather">
+                    <p class="text-xs text-slate-500 mt-1">Get a token by creating a bot with <a href="https://t.me/BotFather" target="_blank" class="text-orange-400 hover:underline">@BotFather</a></p>
                 </div>
                 <div>
                     <label class="block text-xs font-mono text-slate-400 mb-1">DOCKER IMAGE</label>
@@ -543,9 +630,108 @@
                     <label for="new-require-approval" class="text-sm text-slate-300">Require approval for dangerous commands (HITL)</label>
                 </div>
             </div>
-            <div class="p-6 pt-0 flex justify-end">
-                <button onclick="createAgent()" class="bg-orange-600 hover:bg-orange-500 text-white px-6 py-2 rounded-lg font-bold transition-all">
-                    Deploy to Cubicle
+
+            <!-- Step 2: Handshake -->
+            <div id="wizard-step2" class="p-6 space-y-4 hidden">
+                <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 mb-4">
+                    <p class="text-xs text-yellow-300"><strong>Step 2:</strong> Verify your bot token works. We'll send a verification code to your Telegram.</p>
+                </div>
+                
+                <div class="bg-slate-800 rounded-lg p-4">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="p-2 bg-orange-500/10 rounded-lg text-orange-500"><i data-lucide="shield-check" class="w-5 h-5"></i></div>
+                        <div>
+                            <p class="text-white font-semibold">Verification Required</p>
+                            <p class="text-xs text-slate-400">Before creating an agent, verify the bot token</p>
+                        </div>
+                    </div>
+                    
+                    <div class="text-sm text-slate-300 space-y-2 mb-4">
+                        <p><strong>Important:</strong></p>
+                        <ol class="list-decimal list-inside text-slate-400 space-y-1">
+                            <li>Make sure you've sent <code class="bg-slate-700 px-1 rounded">/start</code> to your new bot on Telegram</li>
+                            <li>Click "Send Code" to receive a 6-digit verification code</li>
+                            <li>The code will be sent to the Operator's Telegram</li>
+                        </ol>
+                    </div>
+                    
+                    <div id="send-code-status" class="hidden mb-4">
+                        <div id="send-code-loading" class="flex items-center gap-2 text-blue-400">
+                            <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Sending verification code...</span>
+                        </div>
+                        <div id="send-code-success" class="hidden text-green-400 flex items-center gap-2">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            <span>Code sent! Check your Telegram.</span>
+                        </div>
+                        <div id="send-code-error" class="hidden text-red-400 flex items-center gap-2">
+                            <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                            <span id="send-code-error-msg">Failed to send code.</span>
+                        </div>
+                    </div>
+                    
+                    <button id="send-code-btn" onclick="sendVerificationCode()" class="w-full bg-orange-600 hover:bg-orange-500 text-white py-3 rounded-lg font-bold transition-all flex items-center justify-center gap-2">
+                        <i data-lucide="send" class="w-4 h-4"></i>
+                        <span>Send Verification Code</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Verification -->
+            <div id="wizard-step3" class="p-6 space-y-4 hidden">
+                <div class="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mb-4">
+                    <p class="text-xs text-green-300"><strong>Step 3:</strong> Enter the 6-digit code sent to your Telegram to complete verification.</p>
+                </div>
+                
+                <div class="bg-slate-800 rounded-lg p-4">
+                    <label class="block text-xs font-mono text-slate-400 mb-3">VERIFICATION CODE</label>
+                    <div class="flex gap-2 justify-center mb-4">
+                        <input type="text" maxlength="1" class="verification-digit w-12 h-14 text-center text-2xl font-bold bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none transition-colors" oninput="handleDigitInput(this, 0)">
+                        <input type="text" maxlength="1" class="verification-digit w-12 h-14 text-center text-2xl font-bold bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none transition-colors" oninput="handleDigitInput(this, 1)">
+                        <input type="text" maxlength="1" class="verification-digit w-12 h-14 text-center text-2xl font-bold bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none transition-colors" oninput="handleDigitInput(this, 2)">
+                        <input type="text" maxlength="1" class="verification-digit w-12 h-14 text-center text-2xl font-bold bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none transition-colors" oninput="handleDigitInput(this, 3)">
+                        <input type="text" maxlength="1" class="verification-digit w-12 h-14 text-center text-2xl font-bold bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none transition-colors" oninput="handleDigitInput(this, 4)">
+                        <input type="text" maxlength="1" class="verification-digit w-12 h-14 text-center text-2xl font-bold bg-slate-700 border border-slate-600 rounded-lg text-white focus:border-orange-500 focus:outline-none transition-colors" oninput="handleDigitInput(this, 5)">
+                    </div>
+                    
+                    <div id="verify-status" class="hidden mb-4 text-center">
+                        <div id="verify-loading" class="flex items-center justify-center gap-2 text-blue-400">
+                            <svg class="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>Verifying...</span>
+                        </div>
+                        <div id="verify-success" class="hidden text-green-400 flex items-center justify-center gap-2">
+                            <i data-lucide="check-circle" class="w-4 h-4"></i>
+                            <span>Verified! Creating agent...</span>
+                        </div>
+                        <div id="verify-error" class="hidden text-red-400 flex items-center justify-center gap-2">
+                            <i data-lucide="alert-circle" class="w-4 h-4"></i>
+                            <span id="verify-error-msg">Invalid code.</span>
+                        </div>
+                    </div>
+                    
+                    <p class="text-xs text-slate-500 text-center">Didn't receive the code? <button onclick="goToStep(2)" class="text-orange-400 hover:underline">Resend</button></p>
+                </div>
+            </div>
+
+            <div class="p-6 pt-0 flex justify-between">
+                <button id="wizard-back-btn" onclick="wizardBack()" class="hidden px-4 py-2 text-slate-400 hover:text-white flex items-center gap-2">
+                    <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                    <span>Back</span>
+                </button>
+                <div class="flex-1"></div>
+                <button id="wizard-next-btn" onclick="wizardNext()" class="bg-orange-600 hover:bg-orange-500 text-white px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
+                    <span>Continue</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+                <button id="wizard-create-btn" onclick="createAgentWithVerification()" class="hidden bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2">
+                    <i data-lucide="check" class="w-4 h-4"></i>
+                    <span>Create Agent</span>
                 </button>
             </div>
         </div>
@@ -797,6 +983,8 @@ cloudflared tunnel url hermitclaw
         let term = null;
         let fitAddon = null;
         let ws = null;
+        let wizardStep = 1;
+        let pendingVerificationToken = null;
 
         function openWebhookGuide() {
             document.getElementById('webhook-guide-modal').classList.remove('hidden');
@@ -868,10 +1056,12 @@ cloudflared tunnel url hermitclaw
             document.getElementById('section-settings').classList.add('hidden');
             document.getElementById('section-metrics').classList.add('hidden');
             document.getElementById('section-allowlist').classList.add('hidden');
+            document.getElementById('section-cubicles').classList.add('hidden');
             document.getElementById('section-' + section).classList.remove('hidden');
 
             const titles = {
                 'agents': 'Mission Control',
+                'cubicles': 'Running Cubicles',
                 'audit': 'Audit Logs',
                 'settings': 'Settings',
                 'metrics': 'System Metrics',
@@ -883,6 +1073,7 @@ cloudflared tunnel url hermitclaw
             if (section === 'metrics') loadMetrics();
             if (section === 'allowlist') loadAllowlist();
             if (section === 'settings') loadSettings();
+            if (section === 'cubicles') loadCubicles();
         }
 
         const PROVIDER_MODELS = {
@@ -979,6 +1170,9 @@ cloudflared tunnel url hermitclaw
                 if (res.status === 401) return logout();
                 const settings = await res.json();
 
+                // Operator settings
+                document.getElementById('setting-operator_telegram_id').value = settings.operator_telegram_id || '';
+
                 // General settings
                 document.getElementById('setting-public_url').value = settings.public_url || '';
                 document.getElementById('setting-hitl_enabled').checked = settings.hitl_enabled === 'true';
@@ -1017,6 +1211,7 @@ cloudflared tunnel url hermitclaw
 
         async function saveSettings() {
             const settings = {
+                operator_telegram_id: document.getElementById('setting-operator_telegram_id').value,
                 public_url: document.getElementById('setting-public_url').value,
                 hitl_enabled: document.getElementById('setting-hitl_enabled').checked ? 'true' : 'false',
                 default_daily_limit: document.getElementById('setting-default_daily_limit').value,
@@ -1097,6 +1292,62 @@ cloudflared tunnel url hermitclaw
                 document.getElementById('stat-agents').innerText = data.totalAgents;
                 document.getElementById('stat-spend').innerText = '$' + data.totalSpendToday.toFixed(4);
             } catch (e) {}
+        }
+
+        async function loadCubicles() {
+            try {
+                const res = await fetch('/api/containers');
+                if(res.status === 401) return logout();
+                const containers = await res.json();
+                const tbody = document.getElementById('cubicles-tbody');
+                const empty = document.getElementById('cubicles-empty');
+
+                const hermitContainers = containers.filter(c => 
+                    c.Image && (c.Image.startsWith('hermit/') || c.Image.startsWith('hermit-crab'))
+                );
+
+                if (hermitContainers.length === 0) {
+                    tbody.innerHTML = '';
+                    empty.classList.remove('hidden');
+                    lucide.createIcons();
+                    return;
+                }
+
+                empty.classList.add('hidden');
+                tbody.innerHTML = hermitContainers.map(c => {
+                    const statusColor = c.State === 'running' ? 'text-green-400' : c.State === 'exited' ? 'text-red-400' : 'text-yellow-400';
+                    const statusIcon = c.State === 'running' ? '●' : '○';
+                    return `
+                        <tr class="hover:bg-white/5">
+                            <td class="px-4 py-3 font-mono text-slate-400">${c.Id.substring(0, 12)}</td>
+                            <td class="px-4 py-3">${c.Image}</td>
+                            <td class="px-4 py-3 ${statusColor} font-mono">${statusIcon} ${c.State.toUpperCase()}</td>
+                            <td class="px-4 py-3 text-slate-400">${c.Status}</td>
+                            <td class="px-4 py-3 flex gap-2">
+                                <button onclick="viewContainer('${c.Id}')" class="text-orange-500 hover:text-white text-xs">Terminal</button>
+                                <button onclick="stopContainer('${c.Id}')" class="text-red-400 hover:text-white text-xs">Stop</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                lucide.createIcons();
+            } catch (e) {
+                console.error('Failed to load cubicles:', e);
+            }
+        }
+
+        async function stopContainer(containerId) {
+            if (!confirm('Stop this container?')) return;
+            try {
+                const res = await fetch(`/api/containers/${containerId}/stop`, { method: 'POST' });
+                if (res.ok) {
+                    loadCubicles();
+                } else {
+                    alert('Failed to stop container');
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
         }
 
         async function loadMetrics() {
@@ -1251,7 +1502,7 @@ cloudflared tunnel url hermitclaw
                                 </div>
                             </div>
 
-                            <div class="grid grid-cols-3 gap-2">
+                            <div class="grid grid-cols-4 gap-2">
                                 <button onclick="testAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-lg text-xs font-medium transition-colors border border-green-600/30">
                                     <i data-lucide="play" class="w-3 h-3"></i> Test
                                 </button>
@@ -1260,6 +1511,9 @@ cloudflared tunnel url hermitclaw
                                 </button>
                                 <button onclick="editAgent(${agent.id})" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg text-xs font-medium transition-colors border border-slate-700">
                                     <i data-lucide="settings" class="w-3 h-3"></i> Config
+                                </button>
+                                <button onclick="deleteAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 py-2 rounded-lg text-xs font-medium transition-colors border border-red-600/30">
+                                    <i data-lucide="trash-2" class="w-3 h-3"></i> Delete
                                 </button>
                             </div>
                         </div>
@@ -1302,25 +1556,6 @@ cloudflared tunnel url hermitclaw
             }
         }
 
-        async function createAgent() {
-            const name = document.getElementById('new-name').value;
-            const role = document.getElementById('new-role').value;
-            const token = document.getElementById('new-token').value;
-            const image = document.getElementById('new-image').value;
-            const requireApproval = document.getElementById('new-require-approval').checked ? 1 : 0;
-
-            if(!name || !token) return alert('Name and Token required');
-
-            await fetch('/api/agents', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ name, role, telegram_token: token, docker_image: image, require_approval: requireApproval })
-            });
-
-            closeModal();
-            loadAgents();
-        }
-
         async function editAgent(id) {
             const agents = await fetch('/api/agents').then(r => r.json());
             const agent = agents.find(a => a.id === id);
@@ -1332,7 +1567,30 @@ cloudflared tunnel url hermitclaw
             document.getElementById('new-image').value = agent.docker_image;
             document.getElementById('new-require-approval').checked = agent.require_approval === 1;
 
-            document.getElementById('create-modal').classList.remove('hidden');
+            if (confirm('Edit agent "' + agent.name + '"? Note: To change the token, you will need to re-verify.')) {
+                wizardStep = 1;
+                pendingVerificationToken = null;
+                updateWizardUI();
+                document.getElementById('create-modal').classList.remove('hidden');
+                lucide.createIcons();
+            }
+        }
+
+        async function deleteAgent(id, name) {
+            if (!confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
+            
+            try {
+                const res = await fetch(`/api/agents/${id}`, { method: 'DELETE' });
+                if (res.ok) {
+                    loadAgents();
+                    loadStats();
+                } else {
+                    const data = await res.json();
+                    alert('Failed to delete agent: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to delete agent: ' + e.message);
+            }
         }
 
         async function testAgent(id, name) {
@@ -1362,11 +1620,214 @@ cloudflared tunnel url hermitclaw
             document.getElementById('new-role').value = '';
             document.getElementById('new-token').value = '';
             document.getElementById('new-require-approval').checked = false;
+            wizardStep = 1;
+            pendingVerificationToken = null;
+            updateWizardUI();
             document.getElementById('create-modal').classList.remove('hidden');
+            lucide.createIcons();
         }
 
         function closeModal() {
             document.getElementById('create-modal').classList.add('hidden');
+            wizardStep = 1;
+            pendingVerificationToken = null;
+        }
+
+        function updateWizardUI() {
+            document.getElementById('wizard-step1').classList.add('hidden');
+            document.getElementById('wizard-step2').classList.add('hidden');
+            document.getElementById('wizard-step3').classList.add('hidden');
+            document.getElementById('wizard-back-btn').classList.add('hidden');
+            document.getElementById('wizard-next-btn').classList.add('hidden');
+            document.getElementById('wizard-create-btn').classList.add('hidden');
+
+            document.getElementById('step1-indicator').className = 'w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 font-bold text-sm';
+            document.getElementById('step2-indicator').className = 'w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 font-bold text-sm';
+            document.getElementById('step3-indicator').className = 'w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 font-bold text-sm';
+            document.getElementById('step1-line').className = 'w-16 h-1 bg-slate-700 mx-2';
+            document.getElementById('step2-line').className = 'w-16 h-1 bg-slate-700 mx-2';
+
+            if (wizardStep === 1) {
+                document.getElementById('wizard-step1').classList.remove('hidden');
+                document.getElementById('wizard-step-label').innerText = 'STEP 1 OF 3: CONFIGURATION';
+                document.getElementById('wizard-next-btn').classList.remove('hidden');
+                document.getElementById('step1-indicator').className = 'w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm';
+            } else if (wizardStep === 2) {
+                document.getElementById('wizard-step2').classList.remove('hidden');
+                document.getElementById('wizard-step-label').innerText = 'STEP 2 OF 3: VERIFICATION HANDSHAKE';
+                document.getElementById('wizard-back-btn').classList.remove('hidden');
+                document.getElementById('wizard-next-btn').classList.remove('hidden');
+                document.getElementById('step1-indicator').className = 'w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-sm';
+                document.getElementById('step1-line').className = 'w-16 h-1 bg-green-500 mx-2';
+                document.getElementById('step2-indicator').className = 'w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm';
+                document.getElementById('send-code-status').classList.add('hidden');
+                document.getElementById('send-code-success').classList.add('hidden');
+                document.getElementById('send-code-error').classList.add('hidden');
+                document.getElementById('send-code-loading').classList.add('hidden');
+                document.getElementById('send-code-btn').disabled = false;
+                document.getElementById('send-code-btn').classList.remove('opacity-50');
+            } else if (wizardStep === 3) {
+                document.getElementById('wizard-step3').classList.remove('hidden');
+                document.getElementById('wizard-step-label').innerText = 'STEP 3 OF 3: ENTER CODE';
+                document.getElementById('wizard-back-btn').classList.remove('hidden');
+                document.getElementById('wizard-create-btn').classList.remove('hidden');
+                document.getElementById('step1-indicator').className = 'w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-sm';
+                document.getElementById('step1-line').className = 'w-16 h-1 bg-green-500 mx-2';
+                document.getElementById('step2-indicator').className = 'w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white font-bold text-sm';
+                document.getElementById('step2-line').className = 'w-16 h-1 bg-green-500 mx-2';
+                document.getElementById('step3-indicator').className = 'w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm';
+                document.getElementById('verify-status').classList.add('hidden');
+                clearVerificationDigits();
+                document.querySelector('.verification-digit').focus();
+            }
+            lucide.createIcons();
+        }
+
+        function goToStep(step) {
+            wizardStep = step;
+            updateWizardUI();
+        }
+
+        function wizardNext() {
+            if (wizardStep === 1) {
+                const name = document.getElementById('new-name').value.trim();
+                const token = document.getElementById('new-token').value.trim();
+                if (!name) return alert('Agent name is required');
+                if (!token) return alert('Telegram token is required');
+                wizardStep = 2;
+                updateWizardUI();
+            } else if (wizardStep === 2) {
+                wizardStep = 3;
+                updateWizardUI();
+            }
+        }
+
+        function wizardBack() {
+            if (wizardStep > 1) {
+                wizardStep--;
+                updateWizardUI();
+            }
+        }
+
+        function handleDigitInput(input, index) {
+            const value = input.value.replace(/[^0-9]/g, '');
+            input.value = value;
+            
+            if (value && index < 5) {
+                const digits = document.querySelectorAll('.verification-digit');
+                digits[index + 1].focus();
+            }
+            
+            const digits = document.querySelectorAll('.verification-digit');
+            const code = Array.from(digits).map(d => d.value).join('');
+            if (code.length === 6) {
+                createAgentWithVerification();
+            }
+        }
+
+        function clearVerificationDigits() {
+            const digits = document.querySelectorAll('.verification-digit');
+            digits.forEach(d => d.value = '');
+        }
+
+        async function sendVerificationCode() {
+            const token = document.getElementById('new-token').value.trim();
+            if (!token) return alert('Please enter a Telegram token first');
+
+            document.getElementById('send-code-status').classList.remove('hidden');
+            document.getElementById('send-code-loading').classList.remove('hidden');
+            document.getElementById('send-code-success').classList.add('hidden');
+            document.getElementById('send-code-error').classList.add('hidden');
+            document.getElementById('send-code-btn').disabled = true;
+            document.getElementById('send-code-btn').classList.add('opacity-50');
+
+            try {
+                const res = await fetch('/api/agents/request-verification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                
+                const data = await res.json();
+                
+                document.getElementById('send-code-loading').classList.add('hidden');
+                
+                if (res.ok && data.success) {
+                    pendingVerificationToken = token;
+                    document.getElementById('send-code-success').classList.remove('hidden');
+                    document.getElementById('send-code-btn').disabled = false;
+                    document.getElementById('send-code-btn').classList.remove('opacity-50');
+                } else {
+                    document.getElementById('send-code-error').classList.remove('hidden');
+                    document.getElementById('send-code-error-msg').innerText = data.error || 'Failed to send code';
+                    document.getElementById('send-code-btn').disabled = false;
+                    document.getElementById('send-code-btn').classList.remove('opacity-50');
+                }
+            } catch (e) {
+                document.getElementById('send-code-loading').classList.add('hidden');
+                document.getElementById('send-code-error').classList.remove('hidden');
+                document.getElementById('send-code-error-msg').innerText = 'Network error: ' + e.message;
+                document.getElementById('send-code-btn').disabled = false;
+                document.getElementById('send-code-btn').classList.remove('opacity-50');
+            }
+        }
+
+        async function createAgentWithVerification() {
+            const digits = document.querySelectorAll('.verification-digit');
+            const code = Array.from(digits).map(d => d.value).join('');
+            
+            if (code.length !== 6) {
+                return alert('Please enter all 6 digits');
+            }
+
+            const name = document.getElementById('new-name').value.trim();
+            const role = document.getElementById('new-role').value.trim();
+            const token = pendingVerificationToken || document.getElementById('new-token').value.trim();
+            const image = document.getElementById('new-image').value;
+            const requireApproval = document.getElementById('new-require-approval').checked ? 1 : 0;
+
+            document.getElementById('verify-status').classList.remove('hidden');
+            document.getElementById('verify-loading').classList.remove('hidden');
+            document.getElementById('verify-success').classList.add('hidden');
+            document.getElementById('verify-error').classList.add('hidden');
+
+            try {
+                const res = await fetch('/api/agents/confirm-verification', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token,
+                        code,
+                        agentData: {
+                            name,
+                            role,
+                            docker_image: image,
+                            require_approval: requireApproval
+                        }
+                    })
+                });
+                
+                const data = await res.json();
+                
+                document.getElementById('verify-loading').classList.add('hidden');
+                
+                if (res.ok && data.success) {
+                    document.getElementById('verify-success').classList.remove('hidden');
+                    setTimeout(() => {
+                        closeModal();
+                        loadAgents();
+                    }, 1000);
+                } else {
+                    document.getElementById('verify-error').classList.remove('hidden');
+                    document.getElementById('verify-error-msg').innerText = data.error || 'Invalid verification code';
+                    clearVerificationDigits();
+                    document.querySelector('.verification-digit').focus();
+                }
+            } catch (e) {
+                document.getElementById('verify-loading').classList.add('hidden');
+                document.getElementById('verify-error').classList.remove('hidden');
+                document.getElementById('verify-error-msg').innerText = 'Network error: ' + e.message;
+            }
         }
 
         async function openTerminal(id, name) {
