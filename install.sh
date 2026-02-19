@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS agents (
     system_prompt TEXT,
     docker_image TEXT DEFAULT 'hermit/base',
     is_active INTEGER DEFAULT 1,
+    require_approval INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -134,7 +135,7 @@ echo "📦 Installing Node.js dependencies..."
 cd shell
 npm install --legacy-peer-deps 2>/dev/null || npm install
 
-npm install @fastify/cookie@^10.0.0 @fastify/static@^8.0.0 --legacy-peer-deps 2>/dev/null || true
+npm install @fastify/cookie@8.3.0 @fastify/static@6.12.0 --legacy-peer-deps 2>/dev/null || true
 
 npm run build
 cd ..
