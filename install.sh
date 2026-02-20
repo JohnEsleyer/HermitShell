@@ -31,6 +31,37 @@ echo "📁 Setting up directories..."
 mkdir -p data/db data/history config/images
 mkdir -p shell/uploads
 
+echo "☁️ Installing Cloudflare Tunnel CLI..."
+if command -v cloudflared &> /dev/null; then
+    echo "  ✓ cloudflared already installed"
+else
+    ARCH=$(uname -m)
+    case $ARCH in
+        x86_64|amd64)
+            CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64"
+            ;;
+        aarch64|arm64)
+            CLOUDFLARED_URL="https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64"
+            ;;
+        *)
+            echo "  ⚠ Unsupported architecture: $ARCH, skipping cloudflared"
+            CLOUDFLARED_URL=""
+            ;;
+    esac
+    
+    if [ -n "$CLOUDFLARED_URL" ]; then
+        echo "  → Downloading cloudflared for $ARCH..."
+        curl -L --output /tmp/cloudflared "$CLOUDFLARED_URL" 2>/dev/null
+        chmod +x /tmp/cloudflared
+        if [ -w /usr/local/bin ]; then
+            mv /tmp/cloudflared /usr/local/bin/cloudflared
+        else
+            sudo mv /tmp/cloudflared /usr/local/bin/cloudflared
+        fi
+        echo "  ✓ cloudflared installed"
+    fi
+fi
+
 echo "📝 Creating environment file..."
 if [ ! -f shell/.env ]; then
     cp shell/.env.example shell/.env

@@ -11,6 +11,9 @@ HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Doc
 - **Multi-Agent Support**: Create multiple AI agents with different personalities, roles, and Docker images
 - **Continuous Containers**: Containers run `sleep infinity` and execute commands via `docker exec` - instant response times
 - **Persistent Workspaces**: Each agent+user pair gets a persistent workspace that survives container restarts
+- **Auto Cloudflare Tunnel**: Automatic public URL generation on startup - no manual ngrok required
+- **Web App Previews**: Agents can create web apps accessible via tunnel URL
+- **Automatic File Delivery**: Files created by agents are auto-sent via Telegram
 - **Agent Verification Handshake**: Verify Telegram tokens before creating agents via 6-digit code
 - **Auto-Webhook Registration**: Webhooks automatically registered when agents are created
 - **Sync Bots Button**: Re-register all webhooks with one click (useful when public URL changes)
@@ -23,6 +26,7 @@ HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Doc
 - **Audit Logs**: Complete searchable history of all agent commands
 - **Web Terminal**: Attach to running agent containers via xterm.js
 - **Web Dashboard**: Manage agents, users, and settings via a built-in GUI
+- **File Browser**: Browse and download agent workspace files from dashboard
 - **Manual Container Controls**: Start/Stop/Delete containers from the dashboard
 - **Container Labels**: Track cubicles with `hermitclaw.*` Docker labels
 
@@ -35,14 +39,21 @@ HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Doc
 │  │              Web Dashboard (Port 3000)              │   │
 │  │  - Agent Management  - Budget Tracking  - Settings   │   │
 │  │  - Audit Logs       - Web Terminal    - Test Agent   │   │
-│  │  - Cubicles View    - Sync Bots       - Start/Stop   │   │
+│  │  - Cubicles View    - Sync Bots       - File Browser │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                           │                                 │
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Node.js Shell (Orchestrator)             │   │
 │  │  - libSQL DB  - Docker Management  - Webhooks        │   │
 │  │  - HITL Controller  - Audit Logger  - API Key Check  │   │
-│  │  - Auto-Webhook Registration                        │   │
+│  │  - Auto-Webhook Registration  - Cloudflare Tunnel    │   │
+│  │  - File Delivery   - Web Preview Proxy               │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                           │                                 │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │           Cloudflare Quick Tunnel (cloudflared)      │   │
+│  │  - Auto-generated public URL (trycloudflare.com)     │   │
+│  │  - Webhook delivery  - Web preview access            │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                             │
@@ -54,6 +65,7 @@ HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Doc
 │  hermit/base  │   │ hermit/python │   │ hermit/netsec │
 │  [HITL: ON]   │   │  [HITL: OFF]  │   │  [HITL: ON]   │
 │  [Workspace]  │   │  [Workspace]  │   │  [Workspace]  │
+│  [Port 8080]  │   │  [Port 8080]  │   │  [Port 8080]  │
 │  [Running]    │   │  [Running]    │   │  [Stopped]    │
 │  (continuous) │   │  (continuous) │   │  (can start)  │
 └───────────────┘   └───────────────┘   └───────────────┘
@@ -71,17 +83,18 @@ hermitclaw/
 ├── docker-compose.yml    # Docker Compose setup (optional)
 ├── shell/                # Node.js orchestrator
 │   ├── src/
-│   │   ├── server.ts     # Fastify server + webhook handler
+│   │   ├── server.ts     # Fastify server + webhook handler + preview proxy
 │   │   ├── db.ts         # libSQL database + vector memory + meetings
 │   │   ├── docker.ts     # Docker orchestration + continuous containers
-│   │   ├── telegram.ts   # Telegram handler + HITL + webhook registration
+│   │   ├── telegram.ts   # Telegram handler + HITL + file delivery
+│   │   ├── tunnel.ts     # Cloudflare tunnel management
 │   │   └── auth.ts       # User validation + operator management
 │   ├── dashboard/        # Web GUI (served at /dashboard)
 │   └── package.json
 ├── crab/                 # Rust AI agent
 │   ├── src/
 │   │   ├── main.rs       # Entry point + workspace management
-│   │   ├── llm.rs        # OpenAI/OpenRouter client
+│   │   ├── llm.rs        # OpenAI/OpenRouter client + system prompts
 │   │   └── tools.rs      # Command execution + HITL + delegation
 │   └── Dockerfile
 ├── data/
@@ -116,6 +129,12 @@ WEBHOOK_SECRET=your_random_secret_here  # For webhook security
 cd shell && npm start
 ```
 
+The server will:
+1. Start listening on port 3000
+2. Automatically start Cloudflare tunnel
+3. Generate a public URL (e.g., `https://random.trycloudflare.com`)
+4. Sync all agent webhooks with the new URL
+
 ### 4. Initial Setup (First Run)
 
 On first run, the dashboard will show an **Initialization Screen**:
@@ -126,11 +145,11 @@ On first run, the dashboard will show an **Initialization Screen**:
 
 After logging in, go to **Settings** and configure:
 
-4. **Public URL**: Your public-facing URL (e.g., from ngrok or Cloudflare tunnel)
+4. **Public URL**: Auto-generated by Cloudflare tunnel (or set manually for custom domains)
 5. **API Keys**: Enter your LLM provider API keys (OpenRouter, OpenAI, etc.)
 6. Click **"Save All Settings"**
 
-> **Note:** Setting your Operator ID automatically adds you to the Allowlist.
+> **Note:** Setting your Operator ID automatically adds you to the Allowlist. The Cloudflare tunnel starts automatically on server launch.
 
 ### 5. Access the Dashboard
 
@@ -186,6 +205,62 @@ Each agent+user pair gets a dedicated workspace:
 - **Container Path**: `/app/workspace`
 - **Persistence**: Survives container restarts, stops, and deletions
 - **Shared Files**: Download once, reference across multiple conversations
+
+### Automatic Cloudflare Tunnel
+
+On startup, HermitClaw automatically creates a public tunnel:
+
+- **Zero Configuration**: No need for ngrok or manual port forwarding
+- **Auto-generated URL**: Random `trycloudflare.com` URL (e.g., `https://random-name-1234.trycloudflare.com`)
+- **Auto-sync**: Webhooks are automatically registered with the tunnel URL
+- **Free**: Cloudflare Quick Tunnels require no account
+
+The tunnel URL is saved to the database and used for all webhook registrations.
+
+### Web App Previews
+
+Agents can create web applications that are accessible via the tunnel:
+
+```
+Agent creates web app:
+  python3 -m http.server 8080
+  streamlit run app.py --server.port 8080
+  flask run --port 8080
+
+User accesses via:
+  https://<tunnel>.trycloudflare.com/preview/<agent_id>/8080/
+```
+
+**How it works:**
+1. Agent starts a web server on port 8080 (or any port)
+2. Shell proxies requests to the container's internal IP
+3. User can preview the app in their browser
+
+### Automatic File Delivery
+
+When agents create files, they're automatically delivered to users:
+
+**Agent syntax:**
+```
+FILE: /app/workspace/report.pdf
+FILE: /app/workspace/data.csv
+```
+
+**What happens:**
+1. Shell detects the `FILE:` marker in agent output
+2. File is read from the workspace
+3. File is sent via Telegram (up to 50MB)
+4. User receives the file instantly on their phone
+
+**Supported file types:** PDF, CSV, images, text files, any binary file under 50MB.
+
+### Dashboard File Browser
+
+Browse and download agent workspace files from the dashboard:
+
+- **Access**: Dashboard → Agents → Files button
+- **Download**: Click any file to download
+- **Directory tree**: Navigate nested directories
 
 ### Operator Security
 
@@ -267,6 +342,34 @@ The Operator receives:
 | `/containers` | List all running containers |
 | `/agents` | List all registered agents |
 
+## Agent Output Syntax
+
+Agents use special syntax for enhanced features:
+
+### File Delivery
+```
+FILE: /app/workspace/report.pdf
+FILE: /app/workspace/analysis.csv
+```
+Files are automatically sent to the user via Telegram.
+
+### Web App Preview
+Agents should run web servers on port 8080:
+```bash
+python3 -m http.server 8080
+streamlit run app.py --server.port 8080
+flask run --port 8080
+```
+Access at: `https://<tunnel>/preview/<agent_id>/8080/`
+
+### Delegation
+```
+ACTION: DELEGATE
+TARGET_ROLE: Python Expert
+TASK: Analyze the data file
+```
+Requires operator approval before spawning sub-agent.
+
 ## Container Labels
 
 All cubicles are tagged with Docker labels for tracking:
@@ -315,6 +418,9 @@ hermitclaw.created_at: "2026-02-20T10:00:00Z"
 | `/api/containers/:id/remove` | POST | Delete a container |
 | `/api/webhooks/sync` | POST | Re-register all agent webhooks |
 | `/api/settings/batch` | POST | Save settings (trims values, auto-allowlist) |
+| `/api/files/:agentId/:userId` | GET | List workspace files |
+| `/api/files/:agentId/:userId/download/*` | GET | Download a file |
+| `/preview/:agentId/:port/*` | GET | Proxy to agent's web app |
 | `/webhook/:token` | POST | Telegram webhook (returns 202) |
 
 ### Database Schema
@@ -340,6 +446,8 @@ hermitclaw.created_at: "2026-02-20T10:00:00Z"
 - **Network Isolation**: Agents can access internet but not host system
 - **Budget Guards**: Per-agent spending limits prevent runaway costs
 - **Audit Trail**: Complete logging of all executed commands
+- **Preview Proxy Isolation**: Web previews only access container internal IP
+- **File Path Validation**: File downloads restricted to workspace directory
 
 ## Troubleshooting
 
@@ -363,9 +471,10 @@ rm -rf data/db/hermit.db
 Send `/start` to @userinfobot on Telegram
 
 ### Bot not responding to messages
-1. Check that your **Public URL** is set in Settings
-2. Click **"Sync Bots"** button in the dashboard header
-3. Verify the webhook was registered (check server logs)
+1. Check server logs for tunnel URL (should show `✅ Tunnel active: https://...`)
+2. If no tunnel, verify cloudflared is installed: `cloudflared --version`
+3. Click **"Sync Bots"** button in the dashboard header
+4. Verify the webhook was registered (check server logs for `[Tunnel] Synced X webhooks`)
 
 ### 401 Unauthorized error
 1. Go to **Settings → API Keys**

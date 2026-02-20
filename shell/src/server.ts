@@ -7,8 +7,10 @@ import {
 } from './db';
 import { checkDocker, listContainers, getContainerExec, docker, spawnAgent } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
+import { startTunnel, syncWebhooks, getTunnelUrl } from './tunnel';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as http from 'http';
 import cookie from '@fastify/cookie';
 
 const PORT = process.env.PORT || 3000;
@@ -534,6 +536,181 @@ export async function startServer() {
         }
     });
 
+    const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
+    
+    fastify.get('/api/files/:agentId/:userId', async (request: any, reply: any) => {
+        const { agentId, userId } = request.params;
+        const workspacePath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`);
+        
+        if (!fs.existsSync(workspacePath)) {
+            return reply.code(404).send({ error: 'Workspace not found' });
+        }
+        
+        const listFiles = (dir: string, baseDir: string): any[] => {
+            const items: any[] = [];
+            try {
+                const files = fs.readdirSync(dir);
+                for (const file of files) {
+                    const fullPath = path.join(dir, file);
+                    const relPath = path.relative(baseDir, fullPath);
+                    try {
+                        const stat = fs.statSync(fullPath);
+                        if (stat.isDirectory()) {
+                            items.push({
+                                name: file,
+                                type: 'directory',
+                                path: relPath,
+                                children: listFiles(fullPath, baseDir)
+                            });
+                        } else {
+                            items.push({
+                                name: file,
+                                type: 'file',
+                                path: relPath,
+                                size: stat.size,
+                                modified: stat.mtime
+                            });
+                        }
+                    } catch {}
+                }
+            } catch {}
+            return items.sort((a, b) => {
+                if (a.type !== b.type) return a.type === 'directory' ? -1 : 1;
+                return a.name.localeCompare(b.name);
+            });
+        };
+        
+        return { files: listFiles(workspacePath, workspacePath) };
+    });
+
+    fastify.get('/api/files/:agentId/:userId/download/*', async (request: any, reply: any) => {
+        const { agentId, userId } = request.params;
+        const filePath = request.params['*'];
+        const workspacePath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`);
+        const fullPath = path.join(workspacePath, filePath);
+        
+        if (!fullPath.startsWith(workspacePath)) {
+            return reply.code(403).send({ error: 'Access denied' });
+        }
+        
+        if (!fs.existsSync(fullPath)) {
+            return reply.code(404).send({ error: 'File not found' });
+        }
+        
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+            return reply.code(400).send({ error: 'Cannot download directory' });
+        }
+        
+        return reply.sendFile(filePath, workspacePath);
+    });
+
+    fastify.get('/preview/:agentId/:port/*', async (request: any, reply: any) => {
+        const { agentId, port } = request.params;
+        const targetPath = request.params['*'] || '';
+        const targetPort = parseInt(port, 10);
+        
+        if (isNaN(targetPort) || targetPort < 1 || targetPort > 65535) {
+            return reply.code(400).send({ error: 'Invalid port' });
+        }
+        
+        const containers = await listContainers();
+        const target = containers.find((c: any) => c.Labels?.['hermitclaw.agent_id'] === String(agentId));
+        
+        if (!target || target.State !== 'running') {
+            return reply.code(404).send({ error: 'Agent container not running' });
+        }
+        
+        try {
+            const containerInfo = await docker.getContainer(target.Id).inspect();
+            const ip = containerInfo.NetworkSettings?.IPAddress;
+            
+            if (!ip) {
+                return reply.code(500).send({ error: 'Container has no IP address' });
+            }
+            
+            const targetUrl = `http://${ip}:${targetPort}/${targetPath}`;
+            
+            return new Promise((resolve, reject) => {
+                const proxyReq = http.request(targetUrl, {
+                    method: request.method,
+                    headers: {
+                        ...request.headers,
+                        host: `${ip}:${targetPort}`
+                    }
+                }, (proxyRes) => {
+                    reply.code(proxyRes.statusCode || 200);
+                    reply.headers(proxyRes.headers as any);
+                    proxyRes.pipe(reply.raw);
+                    proxyRes.on('end', () => resolve(reply));
+                });
+                
+                proxyReq.on('error', (err) => {
+                    reply.code(502).send({ error: `Proxy error: ${err.message}` });
+                    resolve(reply);
+                });
+                
+                proxyReq.end();
+            });
+        } catch (err: any) {
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
+    fastify.all('/preview/:agentId/:port', async (request: any, reply: any) => {
+        const { agentId, port } = request.params;
+        const targetPort = parseInt(port, 10);
+        
+        if (isNaN(targetPort) || targetPort < 1 || targetPort > 65535) {
+            return reply.code(400).send({ error: 'Invalid port' });
+        }
+        
+        const containers = await listContainers();
+        const target = containers.find((c: any) => c.Labels?.['hermitclaw.agent_id'] === String(agentId));
+        
+        if (!target || target.State !== 'running') {
+            return reply.code(404).send({ error: 'Agent container not running' });
+        }
+        
+        try {
+            const containerInfo = await docker.getContainer(target.Id).inspect();
+            const ip = containerInfo.NetworkSettings?.IPAddress;
+            
+            if (!ip) {
+                return reply.code(500).send({ error: 'Container has no IP address' });
+            }
+            
+            const targetUrl = `http://${ip}:${targetPort}/`;
+            
+            return new Promise((resolve) => {
+                const proxyReq = http.request(targetUrl, {
+                    method: request.method,
+                    headers: {
+                        ...request.headers,
+                        host: `${ip}:${targetPort}`
+                    }
+                }, (proxyRes) => {
+                    reply.code(proxyRes.statusCode || 200);
+                    reply.headers(proxyRes.headers as any);
+                    proxyRes.pipe(reply.raw);
+                    proxyRes.on('end', () => resolve(reply));
+                });
+                
+                proxyReq.on('error', (err: any) => {
+                    reply.code(502).send({ error: `Proxy error: ${err.message}` });
+                    resolve(reply);
+                });
+                
+                if (request.body) {
+                    proxyReq.write(typeof request.body === 'string' ? request.body : JSON.stringify(request.body));
+                }
+                proxyReq.end();
+            });
+        } catch (err: any) {
+            return reply.code(500).send({ error: err.message });
+        }
+    });
+
     fastify.register(require('@fastify/static'), {
         root: path.join(__dirname, '../dashboard/dist'),
         prefix: '/dashboard/',
@@ -563,6 +740,21 @@ export async function startServer() {
     await fastify.listen({ port: Number(PORT), host: '0.0.0.0' });
     console.log(`🦀 Shell listening on port ${PORT}`);
     console.log(`📊 Dashboard available at http://localhost:${PORT}/dashboard/`);
+    
+    const existingUrl = await getSetting('public_url');
+    if (!existingUrl || existingUrl === '') {
+        console.log('🚇 Starting Cloudflare Tunnel...');
+        const tunnelUrl = await startTunnel(Number(PORT));
+        if (tunnelUrl) {
+            console.log(`✅ Tunnel active: ${tunnelUrl}`);
+            console.log('🔄 Syncing webhooks...');
+            await syncWebhooks(Number(PORT));
+        } else {
+            console.log('⚠️ Tunnel failed to start. Set public_url manually in Settings.');
+        }
+    } else {
+        console.log(`🌐 Using configured public URL: ${existingUrl}`);
+    }
 }
 
 if (require.main === module) {
