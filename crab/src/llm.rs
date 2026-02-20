@@ -361,7 +361,7 @@ pub fn build_system_prompt(agent_name: &str, agent_role: &str, image: &str) -> S
         - Image: {image}
         - Tools available: curl, jq, sed, awk, python3, bash
         - Network: Full internet access enabled.
-        - Persistence: NONE. Anything you do here will be deleted when the task completes.
+        - Workspace: /app/workspace (persistent across sessions)
 
         CRITICAL EXECUTION PROTOCOL:
         To execute commands, use the format:
@@ -369,6 +369,18 @@ pub fn build_system_prompt(agent_name: &str, agent_role: &str, image: &str) -> S
         COMMAND: <your command here>
         
         I will provide you the output of the command, and you will continue your task.
+
+        FILE DELIVERY:
+        When you create a file that should be sent to the user (PDF, image, CSV, etc.):
+        FILE: /app/workspace/<filename>
+        This will automatically deliver the file to the user via Telegram.
+
+        WEB APPLICATIONS:
+        If you create a web application (Flask, Streamlit, HTML, etc.), ALWAYS run it on port 8080.
+        The user can preview it at: <tunnel_url>/preview/<agent_id>/8080/
+        Example: python3 -m http.server 8080
+        Example: streamlit run app.py --server.port 8080
+
         Focus on security, efficiency, and completing the user's request.
         Do not try to escape the cubicle. Do not mention Docker or containerization to the user.",
         name = agent_name,

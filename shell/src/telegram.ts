@@ -22,6 +22,8 @@ interface TelegramUpdate {
 
 const TELEGRAM_MAX_LENGTH = 4000;
 
+const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
+
 const pendingDelegations = new Map<string, { agentId: number; role: string; task: string; timestamp: number }>();
 
 export async function sendChatAction(token: string, chatId: number, action: 'typing' | 'upload_document' = 'typing'): Promise<void> {
@@ -434,6 +436,8 @@ export async function processAgentMessage(
             result.output = `❌ *API Key Error (401 Unauthorized)*\n\nYour API key is either missing or invalid for this provider.\n\n*How to fix:*\n1. Open Dashboard -> Settings\n2. Enter a valid API key\n3. Click "Save All Settings"\n4. Send \`/reset\` here to delete this broken cubicle and apply your new keys!`;
         }
 
+        result.output = await detectAndSendFiles(token, chatId, result.output, agent.id, userId);
+
         if (result.output.includes('[MEETING]') && result.output.includes('TARGET_ROLE:')) {
             const roleMatch = result.output.match(/TARGET_ROLE:\s*(.+)/);
             const taskMatch = result.output.match(/TASK:\s*(.+)/);
@@ -703,6 +707,76 @@ export async function editMessageText(token: string, chatId: number, messageId: 
     } catch (err) {
         console.error('Failed to edit message:', err);
     }
+}
+
+async function sendFileViaTelegram(token: string, chatId: number, filePath: string, caption?: string): Promise<boolean> {
+    if (!fs.existsSync(filePath)) {
+        console.error(`[File] File not found: ${filePath}`);
+        return false;
+    }
+    
+    const stat = fs.statSync(filePath);
+    if (stat.size > 50 * 1024 * 1024) {
+        console.error(`[File] File too large: ${filePath} (${stat.size} bytes)`);
+        return false;
+    }
+    
+    const url = `https://api.telegram.org/bot${token}/sendDocument`;
+    const buffer = fs.readFileSync(filePath);
+    const filename = path.basename(filePath);
+    
+    const formData = new FormData();
+    formData.append('chat_id', String(chatId));
+    formData.append('document', new Blob([buffer]), filename);
+    if (caption) formData.append('caption', caption);
+    
+    try {
+        await sendChatAction(token, chatId, 'upload_document');
+        const response = await fetch(url, { method: 'POST', body: formData });
+        const data = await response.json() as any;
+        if (!data.ok) {
+            console.error(`[File] Failed to send: ${data.description}`);
+            return false;
+        }
+        console.log(`[File] Sent: ${filename}`);
+        return true;
+    } catch (err) {
+        console.error(`[File] Error sending: ${err}`);
+        return false;
+    }
+}
+
+async function detectAndSendFiles(token: string, chatId: number, output: string, agentId: number, userId: number): Promise<string> {
+    const filePattern = /FILE:\s*(\/app\/workspace\/[^\s\n]+)/g;
+    const matches = [...output.matchAll(filePattern)];
+    
+    if (matches.length === 0) return output;
+    
+    const workspaceId = `${agentId}_${userId}`;
+    const hostWorkspace = path.join(WORKSPACE_DIR, workspaceId);
+    
+    for (const match of matches) {
+        const containerPath = match[1];
+        const hostPath = containerPath.replace('/app/workspace', hostWorkspace);
+        
+        if (fs.existsSync(hostPath)) {
+            const stat = fs.statSync(hostPath);
+            if (stat.isFile()) {
+                await sendFileViaTelegram(token, chatId, hostPath, `📎 ${path.basename(hostPath)}`);
+            } else if (stat.isDirectory()) {
+                const files = fs.readdirSync(hostPath).slice(0, 10);
+                for (const file of files) {
+                    const subPath = path.join(hostPath, file);
+                    const subStat = fs.statSync(subPath);
+                    if (subStat.isFile() && subStat.size < 50 * 1024 * 1024) {
+                        await sendFileViaTelegram(token, chatId, subPath);
+                    }
+                }
+            }
+        }
+    }
+    
+    return output.replace(filePattern, '✅ $1 (sent)');
 }
 
 export async function registerWebhook(token: string, baseUrl: string, secret: string): Promise<boolean> {
