@@ -5,7 +5,7 @@ import {
     getTotalSpend, getAllBudgets, updateAgent, deleteAgent, updateBudget, createAgent,
     getAuditLogs, getAgentById, getAgentByToken, getSetting, setOperator, getOperator
 } from './db';
-import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, hibernateIdleContainers, cleanupOldContainers } from './docker';
+import { checkDocker, listContainers, getContainerExec, docker, spawnAgent } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -481,15 +481,6 @@ export async function startServer() {
         }
     });
 
-    fastify.post('/api/reaper/run', async (request: any, reply: any) => {
-        const { idleMinutes, maxAgeHours } = request.body || {};
-        
-        const hibernated = await hibernateIdleContainers(idleMinutes || 30);
-        const removed = await cleanupOldContainers(maxAgeHours || 48);
-        
-        return { hibernated, removed, success: true };
-    });
-
     fastify.get('/api/terminal/:containerId', { websocket: true }, async (connection: any, req: any) => {
         const containerId = req.params.containerId;
         
@@ -559,18 +550,6 @@ export async function startServer() {
     fastify.get('/', async (_request: any, reply: any) => {
         return reply.redirect('/dashboard/');
     });
-
-    setInterval(async () => {
-        try {
-            const hibernated = await hibernateIdleContainers(30);
-            const removed = await cleanupOldContainers(48);
-            if (hibernated > 0 || removed > 0) {
-                console.log(`[Reaper] Hibernated ${hibernated} containers, removed ${removed} old containers`);
-            }
-        } catch (err) {
-            console.error('[Reaper] Error:', err);
-        }
-    }, 15 * 60 * 1000);
 
     setInterval(() => {
         const now = Date.now();
