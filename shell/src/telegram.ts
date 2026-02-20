@@ -1,5 +1,5 @@
 import { getAgentByToken, isAllowed, getBudget, updateSpend, canSpend, updateAuditLog, getAgentById, getSetting, getOperator, getActiveMeetings, createMeeting, updateMeetingTranscript, closeMeeting, getAllAgents } from './db';
-import { spawnAgent, docker, getCubicleStatus, stopCubicle, removeCubicle, listContainers, hibernateIdleContainers, cleanupOldContainers } from './docker';
+import { spawnAgent, docker, getCubicleStatus, stopCubicle, removeCubicle, listContainers } from './docker';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -178,7 +178,7 @@ Just send me a message to start working!`;
         return `🦀 *HermitClaw Commands*
 
 *Agent Commands:*
-/status - Cubicle status (running/hibernating)
+/status - Cubicle status (running/stopped)
 /debug - Full debug info (container, workspace, etc.)
 /logs - Recent container logs
 /workspace - Files in persistent workspace
@@ -186,10 +186,10 @@ Just send me a message to start working!`;
 /reset - Kill and reset cubicle
 
 *How it works:*
-1. Send any message → I spawn a container
-2. Container processes your request
-3. After 30min idle → container hibernates
-4. Files in /workspace persist across sessions
+1. Send any message → I wake up or spawn a container
+2. Container runs continuously and processes your requests
+3. Files in /workspace persist across sessions
+4. Use Dashboard to manually Start/Stop/Delete containers
 
 *Your Agent:* ${agent.name}
 *Role:* ${agent.role || 'General'}
