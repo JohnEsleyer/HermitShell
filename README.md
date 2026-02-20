@@ -1,10 +1,10 @@
 # HermitClaw
 
-"Intelligence in a Hibernating Shell" - A secure, multi-agent AI orchestration platform where each agent lives in its own Docker "cubicle" with persistent workspaces.
+"Intelligence in a Persistent Shell" - A secure, multi-agent AI orchestration platform where each agent lives in its own Docker "cubicle" with persistent workspaces.
 
 ## Overview
 
-HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Docker container ("Cubicle") with its own Telegram bot identity, role, and budget. Containers run continuously and hibernate when idle, preserving state in persistent workspaces.
+HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Docker container ("Cubicle") with its own Telegram bot identity, role, and budget. Containers run continuously until manually stopped, preserving state in persistent workspaces.
 
 ### Key Features
 
@@ -25,7 +25,6 @@ HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Doc
 - **Web Dashboard**: Manage agents, users, and settings via a built-in GUI
 - **Manual Container Controls**: Start/Stop/Delete containers from the dashboard
 - **Container Labels**: Track cubicles with `hermitclaw.*` Docker labels
-- **Automatic Reaper**: Hibernate idle containers (30min), remove old ones (48hrs)
 
 ## Architecture
 
@@ -43,7 +42,7 @@ HermitClaw is a **Secure Agentic Operating System**. Each AI agent runs in a Doc
 │  │              Node.js Shell (Orchestrator)             │   │
 │  │  - libSQL DB  - Docker Management  - Webhooks        │   │
 │  │  - HITL Controller  - Audit Logger  - API Key Check  │   │
-│  │  - Auto-Webhook Registration  - Container Reaper     │   │
+│  │  - Auto-Webhook Registration                        │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                             │
@@ -72,7 +71,7 @@ hermitclaw/
 ├── docker-compose.yml    # Docker Compose setup (optional)
 ├── shell/                # Node.js orchestrator
 │   ├── src/
-│   │   ├── server.ts     # Fastify server + webhook handler + reaper
+│   │   ├── server.ts     # Fastify server + webhook handler
 │   │   ├── db.ts         # libSQL database + vector memory + meetings
 │   │   ├── docker.ts     # Docker orchestration + continuous containers
 │   │   ├── telegram.ts   # Telegram handler + HITL + webhook registration
@@ -176,7 +175,7 @@ Containers run continuously using `sleep infinity`:
 | State | Condition | Action |
 |-------|-----------|--------|
 | **Running** | Container active | Commands execute instantly |
-| **Stopped** | Manually stopped or hibernated | Click "Start" to wake up |
+| **Stopped** | Manually stopped | Click "Start" to wake up |
 | **Deleted** | Manually removed | Will spawn fresh on next message |
 
 ### Persistent Workspaces
