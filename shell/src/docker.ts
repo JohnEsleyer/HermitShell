@@ -271,30 +271,6 @@ export function getAvailableImages() {
     return ['hermit/base:latest', 'hermit/python:latest', 'hermit/netsec:latest'];
 }
 
-export async function hibernateIdleContainers(idleMins = 30) {
-    let count = 0;
-    const containers = await docker.listContainers({ all: false });
-    for (const c of containers) {
-        const lastActive = c.Labels?.[LABELS.LAST_ACTIVE];
-        if (lastActive && (Date.now() - new Date(lastActive).getTime()) / 60000 > idleMins) {
-            await stopCubicle(c.Id); count++;
-        }
-    }
-    return count;
-}
-
-export async function cleanupOldContainers(ageHours = 48) {
-    let count = 0;
-    const containers = await docker.listContainers({ all: true });
-    for (const c of containers) {
-        const created = c.Labels?.[LABELS.CREATED_AT];
-        if (created && (Date.now() - new Date(created).getTime()) / 3600000 > ageHours) {
-            await removeCubicle(c.Id); count++;
-        }
-    }
-    return count;
-}
-
 export async function getContainerExec(containerId: string): Promise<Docker.Exec> {
     const container = docker.getContainer(containerId);
     const exec = await container.exec({
