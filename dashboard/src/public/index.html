@@ -301,8 +301,7 @@
                         Deployed Agents
                     </h3>
 
-                    <div id="agent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    </div>
+                    <div id="agent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 
 
                     <div class="glass-card p-5 rounded-2xl mt-8">
@@ -747,7 +746,7 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div>
                         <label class="block text-xs font-mono text-slate-400 mb-1">LLM PROVIDER</label>
-                        <select id="new-llm-provider" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white">
+                        <select id="new-llm-provider" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white" onchange="updateAgentModelOptions()">
                             <option value="default">System Default</option>
                             <option value="openrouter">OpenRouter</option>
                             <option value="openai">OpenAI</option>
@@ -761,7 +760,10 @@
                     </div>
                     <div>
                         <label class="block text-xs font-mono text-slate-400 mb-1">LLM MODEL</label>
-                        <input type="text" id="new-llm-model" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white" placeholder="default / gpt-4o / claude-3-5-sonnet...">
+                        <select id="new-llm-model" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white">
+                            <option value="">Use System Default</option>
+                        </select>
+                        <input type="text" id="new-llm-model-custom" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white hidden" placeholder="Enter custom model name">
                     </div>
                 </div>
                 <div>
@@ -1194,6 +1196,7 @@ cloudflared tunnel url hermitshell
         let ws = null;
         let cachedAgents = [];
         let wizardStep = 1;
+        let editingAgentId = null;
         let pendingVerificationToken = null;
         let activeChatAgentId = null;
         window.usingDefaultCreds = false;
@@ -1372,9 +1375,14 @@ cloudflared tunnel url hermitshell
                 { value: '__custom__', label: 'Custom Model...' }
             ],
             google: [
+                { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Thinking)' },
+                { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Thinking)' },
+                { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro (Thinking)' },
+                { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Thinking)' },
+                { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+                { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash Lite' },
                 { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
                 { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash' },
-                { value: 'gemini-1.0-pro', label: 'Gemini 1.0 Pro' },
                 { value: '__custom__', label: 'Custom Model...' }
             ],
             groq: [
@@ -1428,6 +1436,43 @@ cloudflared tunnel url hermitshell
             };
             
             customInput.classList.add('hidden');
+        }
+
+        function updateAgentModelOptions() {
+            const provider = document.getElementById('new-llm-provider').value;
+            const modelSelect = document.getElementById('new-llm-model');
+            const customInput = document.getElementById('new-llm-model-custom');
+            
+            if (provider === 'default') {
+                modelSelect.innerHTML = '<option value="">Use System Default</option>';
+                modelSelect.classList.remove('hidden');
+                customInput.classList.add('hidden');
+                return;
+            }
+            
+            modelSelect.innerHTML = '';
+            const models = PROVIDER_MODELS[provider] || [];
+            
+            models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model.value;
+                option.textContent = model.label;
+                modelSelect.appendChild(option);
+            });
+
+            modelSelect.onchange = () => {
+                if (modelSelect.value === '__custom__') {
+                    modelSelect.classList.add('hidden');
+                    customInput.classList.remove('hidden');
+                    customInput.focus();
+                } else {
+                    modelSelect.classList.remove('hidden');
+                    customInput.classList.add('hidden');
+                }
+            };
+            
+            customInput.classList.add('hidden');
+            modelSelect.classList.remove('hidden');
         }
 
         async function loadSettings() {
@@ -1929,13 +1974,81 @@ cloudflared tunnel url hermitshell
         }
 
         async function loadAgents() {
+            const grid = document.getElementById('agent-grid');
+            
+            if (!cachedAgents || cachedAgents.length === 0) {
+                grid.innerHTML = `
+                <div class="skeleton-card w-full">
+                    <div class="glass-card rounded-2xl p-5 space-y-4 animate-pulse">
+                        <div class="flex items-start gap-3">
+                            <div class="w-12 h-12 bg-slate-700 rounded-full"></div>
+                            <div class="flex-1 space-y-2">
+                                <div class="h-5 bg-slate-700 rounded w-1/2"></div>
+                                <div class="h-3 bg-slate-700 rounded w-3/4"></div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="h-10 bg-slate-700 rounded-lg"></div>
+                            <div class="h-10 bg-slate-700 rounded-lg"></div>
+                        </div>
+                        <div class="h-4 bg-slate-700 rounded w-3/4"></div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="skeleton-card w-full">
+                    <div class="glass-card rounded-2xl p-5 space-y-4 animate-pulse">
+                        <div class="flex items-start gap-3">
+                            <div class="w-12 h-12 bg-slate-700 rounded-full"></div>
+                            <div class="flex-1 space-y-2">
+                                <div class="h-5 bg-slate-700 rounded w-1/2"></div>
+                                <div class="h-3 bg-slate-700 rounded w-3/4"></div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="h-10 bg-slate-700 rounded-lg"></div>
+                            <div class="h-10 bg-slate-700 rounded-lg"></div>
+                        </div>
+                        <div class="h-4 bg-slate-700 rounded w-3/4"></div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="skeleton-card w-full">
+                    <div class="glass-card rounded-2xl p-5 space-y-4 animate-pulse">
+                        <div class="flex items-start gap-3">
+                            <div class="w-12 h-12 bg-slate-700 rounded-full"></div>
+                            <div class="flex-1 space-y-2">
+                                <div class="h-5 bg-slate-700 rounded w-1/2"></div>
+                                <div class="h-3 bg-slate-700 rounded w-3/4"></div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="h-10 bg-slate-700 rounded-lg"></div>
+                            <div class="h-10 bg-slate-700 rounded-lg"></div>
+                        </div>
+                        <div class="h-4 bg-slate-700 rounded w-3/4"></div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                            <div class="h-8 bg-slate-700 rounded-lg"></div>
+                        </div>
+                    </div>
+                </div>`;
+            }
+            
             try {
                 const res = await fetch('/api/agents');
                 if(res.status === 401) return logout();
                 const agents = await res.json();
-                cachedAgents = agents;
-                const grid = document.getElementById('agent-grid');
-                grid.innerHTML = '';
+                
+                let newHTML = '';
 
                 agents.forEach(agent => {
                     const percent = (agent.budget.current_spend_usd / agent.budget.daily_limit_usd) * 100;
@@ -1972,14 +2085,19 @@ cloudflared tunnel url hermitshell
                                 <button onclick="openTerminal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="terminal" class="w-3 h-3"></i><span>Terminal</span></button>
                                 <button onclick="viewRuntimeLogs(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 py-2 rounded-lg border border-blue-600/30"> <i data-lucide="file-text" class="w-3 h-3"></i><span>Logs</span></button>
                                 <button onclick="openAgentChat(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 py-2 rounded-lg border border-cyan-600/30"> <i data-lucide="message-circle" class="w-3 h-3"></i><span>Chat</span></button>
-                                <button onclick="editAgent(${agent.id})" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span></button>
+                                <button onclick="editAgent(${agent.id}, this)" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span></button>
                                 <button onclick="deleteAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 py-2 rounded-lg border border-red-600/30"> <i data-lucide="trash-2" class="w-3 h-3"></i><span>Delete</span></button>
                             </div>
                         </div>
                     `;
-                    grid.innerHTML += card;
+                    newHTML += card;
                 });
-                lucide.createIcons();
+
+                if (grid.innerHTML !== newHTML) {
+                    grid.innerHTML = newHTML;
+                    lucide.createIcons();
+                }
+                cachedAgents = agents;
                 if (!document.getElementById('section-sites').classList.contains('hidden')) loadSites();
                 if (!document.getElementById('section-files').classList.contains('hidden')) loadFilesSection();
             } catch(e) {}
@@ -2116,10 +2234,25 @@ cloudflared tunnel url hermitshell
             }
         }
 
-        async function editAgent(id) {
-            const agents = await fetch('/api/agents').then(r => r.json());
-            const agent = agents.find(a => a.id === id);
-            if (!agent) return;
+        async function editAgent(id, btn) {
+            if (btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<svg class="animate-spin w-3 h-3" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span>Loading...</span>';
+            }
+            
+            let agent = cachedAgents.find(a => a.id === id);
+            if (!agent) {
+                const agents = await fetch('/api/agents').then(r => r.json());
+                agent = agents.find(a => a.id === id);
+            }
+            if (!agent) {
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span>';
+                    lucide.createIcons();
+                }
+                return;
+            }
 
             document.getElementById('new-name').value = agent.name;
             document.getElementById('new-role').value = agent.role;
@@ -2131,13 +2264,25 @@ cloudflared tunnel url hermitshell
             if (agent.profile_picture_url) { preview.src = agent.profile_picture_url; preview.classList.remove('hidden'); } else { preview.classList.add('hidden'); }
             document.getElementById('new-profile-bio').value = agent.profile_bio || '';
             document.getElementById('new-llm-provider').value = agent.llm_provider || 'default';
-            document.getElementById('new-llm-model').value = agent.llm_model && agent.llm_model !== 'default' ? agent.llm_model : '';
+            updateAgentModelOptions();
+            document.getElementById('new-llm-model').value = agent.llm_model || '';
+            document.getElementById('new-llm-model-custom').value = agent.llm_model && !PROVIDER_MODELS[agent.llm_provider]?.find(m => m.value === agent.llm_model) ? agent.llm_model : '';
+            if (agent.llm_model && !PROVIDER_MODELS[agent.llm_provider]?.find(m => m.value === agent.llm_model)) {
+                document.getElementById('new-llm-model').classList.add('hidden');
+                document.getElementById('new-llm-model-custom').classList.remove('hidden');
+            }
 
-            if (confirm('Edit agent "' + agent.name + '"? Note: To change the token, you will need to re-verify.')) {
+            if (confirm('Edit agent "' + agent.name + '"?')) {
+                editingAgentId = id;
                 wizardStep = 1;
-                pendingVerificationToken = null;
                 updateWizardUI();
                 document.getElementById('create-modal').classList.remove('hidden');
+                lucide.createIcons();
+            }
+            
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = '<i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span>';
                 lucide.createIcons();
             }
         }
@@ -2242,9 +2387,16 @@ cloudflared tunnel url hermitshell
             document.getElementById('new-profile-picture-preview').classList.add('hidden');
             document.getElementById('new-profile-bio').value = '';
             document.getElementById('new-llm-provider').value = 'default';
+            updateAgentModelOptions();
             document.getElementById('new-llm-model').value = '';
+            document.getElementById('new-llm-model-custom').value = '';
+            document.getElementById('new-llm-model-custom').classList.add('hidden');
+            document.getElementById('new-llm-model').classList.remove('hidden');
             wizardStep = 1;
             pendingVerificationToken = null;
+            editingAgentId = null;
+            document.getElementById('new-token').parentElement.classList.remove('hidden');
+            document.getElementById('wizard-create-btn').innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i> Create Agent';
             updateWizardUI();
             document.getElementById('create-modal').classList.remove('hidden');
             lucide.createIcons();
@@ -2254,6 +2406,9 @@ cloudflared tunnel url hermitshell
             document.getElementById('create-modal').classList.add('hidden');
             wizardStep = 1;
             pendingVerificationToken = null;
+            editingAgentId = null;
+            document.getElementById('new-token').parentElement.classList.remove('hidden');
+            document.getElementById('wizard-create-btn').innerHTML = '<i data-lucide="check-circle" class="w-4 h-4"></i> Create Agent';
         }
 
         function updateWizardUI() {
@@ -2269,6 +2424,18 @@ cloudflared tunnel url hermitshell
             document.getElementById('step3-indicator').className = 'w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 font-bold text-sm';
             document.getElementById('step1-line').className = 'w-16 h-1 bg-slate-700 mx-2';
             document.getElementById('step2-line').className = 'w-16 h-1 bg-slate-700 mx-2';
+
+            if (editingAgentId) {
+                document.getElementById('wizard-step1').classList.remove('hidden');
+                document.getElementById('wizard-step-label').innerText = 'EDIT AGENT';
+                document.getElementById('wizard-back-btn').classList.remove('hidden');
+                document.getElementById('wizard-next-btn').classList.add('hidden');
+                document.getElementById('wizard-create-btn').classList.remove('hidden');
+                document.getElementById('wizard-create-btn').innerHTML = '<i data-lucide="save" class="w-4 h-4"></i> Save Changes';
+                document.getElementById('step1-indicator').className = 'w-8 h-8 rounded-full bg-orange-500 flex items-center justify-center text-white font-bold text-sm';
+                document.getElementById('new-token').parentElement.classList.add('hidden');
+                return;
+            }
 
             if (wizardStep === 1) {
                 document.getElementById('wizard-step1').classList.remove('hidden');
@@ -2417,6 +2584,56 @@ cloudflared tunnel url hermitshell
         }
 
         async function createAgentWithVerification() {
+            const name = document.getElementById('new-name').value.trim();
+            const role = document.getElementById('new-role').value.trim();
+            const image = document.getElementById('new-image').value;
+            const requireApproval = document.getElementById('new-require-approval').checked ? 1 : 0;
+            const profilePicture = document.getElementById('new-profile-picture').value.trim();
+            const profileBio = document.getElementById('new-profile-bio').value.trim();
+            const llmProvider = document.getElementById('new-llm-provider').value;
+            let llmModel = document.getElementById('new-llm-model').value;
+            const customModel = document.getElementById('new-llm-model-custom').value.trim();
+            if (customModel) llmModel = customModel;
+            if (llmProvider === 'default' || !llmModel) llmModel = '';
+
+            if (editingAgentId) {
+                document.getElementById('verify-status').classList.remove('hidden');
+                document.getElementById('verify-loading').classList.remove('hidden');
+                try {
+                    const res = await fetch(`/api/agents/${editingAgentId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name,
+                            role,
+                            docker_image: image,
+                            require_approval: requireApproval,
+                            profile_picture_url: profilePicture,
+                            profile_bio: profileBio,
+                            llm_provider: llmProvider,
+                            llm_model: llmModel
+                        })
+                    });
+                    const data = await res.json();
+                    document.getElementById('verify-loading').classList.add('hidden');
+                    if (res.ok) {
+                        document.getElementById('verify-success').classList.remove('hidden');
+                        setTimeout(() => {
+                            closeModal();
+                            loadAgents();
+                        }, 1000);
+                    } else {
+                        document.getElementById('verify-error').classList.remove('hidden');
+                        document.getElementById('verify-error-msg').innerText = data.error || 'Failed to update agent';
+                    }
+                } catch (e) {
+                    document.getElementById('verify-loading').classList.add('hidden');
+                    document.getElementById('verify-error').classList.remove('hidden');
+                    document.getElementById('verify-error-msg').innerText = 'Network error: ' + e.message;
+                }
+                return;
+            }
+
             const digits = document.querySelectorAll('.verification-digit');
             const code = Array.from(digits).map(d => d.value).join('');
             
@@ -2424,15 +2641,7 @@ cloudflared tunnel url hermitshell
                 return alert('Please enter all 6 digits');
             }
 
-            const name = document.getElementById('new-name').value.trim();
-            const role = document.getElementById('new-role').value.trim();
             const token = pendingVerificationToken || document.getElementById('new-token').value.trim();
-            const image = document.getElementById('new-image').value;
-            const requireApproval = document.getElementById('new-require-approval').checked ? 1 : 0;
-            const profilePicture = document.getElementById('new-profile-picture').value.trim();
-            const profileBio = document.getElementById('new-profile-bio').value.trim();
-            const llmProvider = document.getElementById('new-llm-provider').value;
-            const llmModel = (document.getElementById('new-llm-model').value || 'default').trim() || 'default';
 
             document.getElementById('verify-status').classList.remove('hidden');
             document.getElementById('verify-loading').classList.remove('hidden');
@@ -2446,6 +2655,7 @@ cloudflared tunnel url hermitshell
                     body: JSON.stringify({
                         token,
                         code,
+                        editAgentId: editingAgentId,
                         agentData: {
                             name,
                             role,

@@ -1717,14 +1717,18 @@ cloudflared tunnel url hermitshell
         }
 
         async function loadAgents() {
+            const grid = document.getElementById('agent-grid');
+            
+            if (!cachedAgents || cachedAgents.length === 0) {
+                grid.innerHTML = '<div class="text-slate-500 animate-pulse">Loading agents...</div>';
+            }
+            
             try {
                 const res = await fetch('/api/agents');
                 if(res.status === 401) return logout();
                 const agents = await res.json();
-                cachedAgents = agents;
-                const grid = document.getElementById('agent-grid');
-                grid.innerHTML = '';
 
+                let newHTML = '';
                 agents.forEach(agent => {
                     const percent = (agent.budget.current_spend_usd / agent.budget.daily_limit_usd) * 100;
                     const color = percent > 90 ? 'bg-red-500' : 'bg-green-500';
@@ -1780,9 +1784,14 @@ cloudflared tunnel url hermitshell
                             </div>
                         </div>
                     `;
-                    grid.innerHTML += card;
+                    newHTML += card;
                 });
-                lucide.createIcons();
+                
+                if (grid.innerHTML !== newHTML) {
+                    grid.innerHTML = newHTML;
+                    lucide.createIcons();
+                }
+                cachedAgents = agents;
                 if (!document.getElementById('section-sites').classList.contains('hidden')) loadSites();
                 if (!document.getElementById('section-files').classList.contains('hidden')) loadFilesSection();
             } catch(e) {}
@@ -1917,8 +1926,11 @@ cloudflared tunnel url hermitshell
         }
 
         async function editAgent(id) {
-            const agents = await fetch('/api/agents').then(r => r.json());
-            const agent = agents.find(a => a.id === id);
+            let agent = cachedAgents.find(a => a.id === id);
+            if (!agent) {
+                const agents = await fetch('/api/agents').then(r => r.json());
+                agent = agents.find(a => a.id === id);
+            }
             if (!agent) return;
 
             document.getElementById('new-name').value = agent.name;

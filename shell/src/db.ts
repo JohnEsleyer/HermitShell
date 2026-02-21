@@ -329,6 +329,9 @@ export async function updateAgent(id: number, updates: Partial<Agent>): Promise<
 export async function deleteAgent(id: number): Promise<void> {
     const db = await getClient();
     await db.execute({ sql: 'DELETE FROM budgets WHERE agent_id = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM audit_logs WHERE agent_id = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM agent_memory WHERE agent_id = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM agent_runtime_logs WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM agents WHERE id = ?', args: [id] });
 }
 
