@@ -89,7 +89,12 @@ crabshell/
 │   │   ├── telegram.ts   # Telegram handler + HITL + file delivery
 │   │   ├── tunnel.ts     # Cloudflare tunnel management
 │   │   └── auth.ts       # User validation + operator management
-│   ├── dashboard/        # Web GUI (served at /dashboard)
+│   ├── dashboard/        # Built web GUI (auto-synced from dashboard/)
+│   └── package.json
+├── dashboard/            # Dashboard source (TypeScript/HTML)
+│   ├── src/
+│   │   └── public/       # Source files
+│   ├── dist/             # Built files (synced to shell/dashboard/)
 │   └── package.json
 ├── crab/                 # Rust AI agent
 │   ├── src/
@@ -123,8 +128,17 @@ OPENAI_API_KEY=your_openai_key_here  # Optional
 WEBHOOK_SECRET=your_random_secret_here  # For webhook security
 ```
 
-### 3. Start the System
+### 3. Build and Start the System
 
+```bash
+cd shell && npm run build
+```
+
+The build command will:
+1. Compile TypeScript to JavaScript
+2. Automatically sync dashboard files from `dashboard/src/public/` to `shell/dashboard/dist/`
+
+Then start the server:
 ```bash
 cd shell && npm start
 ```
@@ -134,6 +148,16 @@ The server will:
 2. Automatically start Cloudflare tunnel
 3. Generate a public URL (e.g., `https://random.trycloudflare.com`)
 4. Sync all agent webhooks with the new URL
+
+### Updating After Pulling from Main
+
+If you pulled new changes from GitHub, rebuild to sync the dashboard:
+
+```bash
+git pull origin main
+cd shell && npm run build
+cd shell && npm start
+```
 
 ### 4. Initial Setup (First Run)
 

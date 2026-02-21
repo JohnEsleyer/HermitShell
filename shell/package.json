@@ -5,6 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
+    "postbuild": "cp -r ../dashboard/src/public/* dashboard/dist/",
     "start": "node dist/server.js",
     "dev": "ts-node src/server.ts"
   },
