@@ -326,7 +326,7 @@ export async function startServer() {
     });
 
     fastify.post('/api/agents/confirm-verification', async (request: any, reply: any) => {
-        const { token, code, agentData } = request.body;
+        const { token, code, agentData, editAgentId } = request.body;
         
         const pending = pendingVerifications.get(token);
         
@@ -344,25 +344,41 @@ export async function startServer() {
         }
 
         try {
-            const id = await createAgent({
-                name: agentData.name,
-                role: agentData.role || '',
-                telegram_token: token,
-                system_prompt: agentData.system_prompt || '',
-                docker_image: agentData.docker_image || 'hermit/base:latest',
-                is_active: agentData.is_active !== undefined ? agentData.is_active : 1,
-                require_approval: agentData.require_approval || 0,
-                profile_picture_url: agentData.profile_picture_url || '',
-                profile_bio: agentData.profile_bio || '',
-                llm_provider: agentData.llm_provider || 'default',
-                llm_model: agentData.llm_model || 'default'
-            });
-            
-            const settings = await getAllSettings();
-            if (settings.public_url) {
-                await registerWebhook(token, settings.public_url, WEBHOOK_SECRET);
+            let id;
+            if (editAgentId) {
+                await updateAgent(Number(editAgentId), {
+                    name: agentData.name,
+                    role: agentData.role || '',
+                    docker_image: agentData.docker_image || 'hermit/base:latest',
+                    is_active: agentData.is_active !== undefined ? agentData.is_active : 1,
+                    require_approval: agentData.require_approval || 0,
+                    profile_picture_url: agentData.profile_picture_url || '',
+                    profile_bio: agentData.profile_bio || '',
+                    llm_provider: agentData.llm_provider || 'default',
+                    llm_model: agentData.llm_model || ''
+                });
+                id = editAgentId;
+            } else {
+                id = await createAgent({
+                    name: agentData.name,
+                    role: agentData.role || '',
+                    telegram_token: token,
+                    system_prompt: agentData.system_prompt || '',
+                    docker_image: agentData.docker_image || 'hermit/base:latest',
+                    is_active: agentData.is_active !== undefined ? agentData.is_active : 1,
+                    require_approval: agentData.require_approval || 0,
+                    profile_picture_url: agentData.profile_picture_url || '',
+                    profile_bio: agentData.profile_bio || '',
+                    llm_provider: agentData.llm_provider || 'default',
+                    llm_model: agentData.llm_model || 'default'
+                });
+                
+                const settings = await getAllSettings();
+                if (settings.public_url) {
+                    await registerWebhook(token, settings.public_url, WEBHOOK_SECRET);
+                }
             }
-
+            
             pendingVerifications.delete(token);
             return { success: true, id };
         } catch (e: any) {
@@ -530,7 +546,7 @@ export async function startServer() {
         const token = request.params.token;
         const update = request.body as any;
         
-        reply.code(202).send({ ok: true, status: 'accepted' });
+        reply.code(200).send({ ok: true, status: 'accepted' });
         
         setImmediate(async () => {
             try {
