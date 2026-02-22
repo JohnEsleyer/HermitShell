@@ -579,3 +579,34 @@ Or use the **Start** button in the Cubicles dashboard tab.
 ## License
 
 MIT
+
+## Testing
+
+HermitShell includes automated tests for API endpoints, Telegram webhooks, and Cloudflare tunnel connectivity.
+
+### Running Tests
+
+```bash
+cd shell
+npm test
+```
+
+### Test Coverage
+
+- **API Tests**: Health checks, settings, webhook sync, agents API
+- **Telegram Tests**: Webhook endpoints, secret validation, bot commands
+- **Tunnel Tests**: Cloudflare tunnel URL validation, accessibility checks, Telegram webhook reachability
+
+### Test Results
+
+```
+ Test Files  3 passed (3)
+      Tests  15 passed (15)
+```
+
+### Test Environment
+
+- Tests run against `http://localhost:3000` by default
+- Override with `TEST_BASE_URL` environment variable
+- Tests require the server to be running
+- Tunnel tests validate external accessibility (port 530 = tunnel down)

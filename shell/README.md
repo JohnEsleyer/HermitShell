@@ -7,10 +7,23 @@ A secure shell wrapper with Telegram bot integration for managing AI agents.
 ```bash
 cd shell
 npm install
+npm run build
 npm start
 ```
 
 Access the dashboard at `http://localhost:3000/dashboard/`
+
+## Testing
+
+```bash
+npm test
+```
+
+This runs the vitest test suite covering:
+- API endpoints and health checks
+- Telegram webhook functionality
+- Cloudflare tunnel connectivity
+- Agent management operations
 
 ## First Time Setup
 
