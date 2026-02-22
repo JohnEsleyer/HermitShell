@@ -805,6 +805,10 @@ export async function registerWebhook(token: string, baseUrl: string, secret: st
     const cleanSecret = secret.replace(/[^a-zA-Z0-9_-]/g, '') || 'hermitSecret123';
     
     try {
+        await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
+    } catch {}
+    
+    try {
         const webhookUrl = `${cleanBaseUrl}/webhook/${token}?secret=${encodeURIComponent(cleanSecret)}`;
         const tgUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}&secret_token=${cleanSecret}`;
         

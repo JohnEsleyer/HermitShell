@@ -340,4 +340,20 @@ export async function getContainerExec(containerId: string): Promise<Docker.Exec
     return exec;
 }
 
+export async function restartAgentContainer(agentId: number, userId: number = 0): Promise<boolean> {
+    const containerInfo = await findContainerByLabels(agentId, userId);
+    if (!containerInfo) return false;
+    
+    try {
+        const container = docker.getContainer(containerInfo.id);
+        await container.stop();
+        await container.start();
+        console.log(`[Cubicle] Restarted container for agent ${agentId}`);
+        return true;
+    } catch (e) {
+        console.error(`[Cubicle] Failed to restart container for agent ${agentId}:`, e);
+        return false;
+    }
+}
+
 export { docker };

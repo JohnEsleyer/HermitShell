@@ -6,7 +6,7 @@ import {
     getAuditLogs, getAgentById, getAgentByToken, getSetting, setOperator, getOperator,
     createAgentRuntimeLog, getAgentRuntimeLogs
 } from './db';
-import { checkDocker, listContainers, getContainerExec, docker, spawnAgent } from './docker';
+import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, restartAgentContainer } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
 import { startTunnel, syncWebhooks, getTunnelUrl } from './tunnel';
 import * as fs from 'fs';
@@ -282,12 +282,32 @@ export async function startServer() {
         
         for (const agent of agents) {
             if (agent.is_active && agent.telegram_token) {
+                console.log(`[Webhook] Syncing bot ${agent.name} (${agent.telegram_token.slice(0,8)}...)`);
                 const ok = await registerWebhook(agent.telegram_token, baseUrl, WEBHOOK_SECRET);
                 if (ok) successCount++;
             }
         }
         
         return { success: true, count: successCount, total: agents.length };
+    });
+
+    fastify.post('/api/webhooks/reset/:agentId', async (request: any, reply: any) => {
+        const agentId = Number(request.params.agentId);
+        const agent = await getAgentById(agentId);
+        
+        if (!agent || !agent.telegram_token) {
+            return reply.code(404).send({ error: 'Agent or token not found' });
+        }
+        
+        const settings = await getAllSettings();
+        if (!settings.public_url) {
+            return reply.code(400).send({ error: 'Public URL not configured' });
+        }
+        
+        console.log(`[Webhook] Resetting webhook for agent ${agent.name}`);
+        const ok = await registerWebhook(agent.telegram_token, settings.public_url, WEBHOOK_SECRET);
+        
+        return { success: ok };
     });
 
     fastify.get('/api/agents', async () => {
@@ -426,6 +446,10 @@ export async function startServer() {
             await updateBudget(id, daily_limit_usd);
         }
         
+        if (llm_provider !== undefined || llm_model !== undefined) {
+            await restartAgentContainer(id);
+        }
+        
         return { success: true };
     });
 
@@ -539,7 +563,10 @@ export async function startServer() {
         const requestSecret = request.query.secret;
         const headerSecret = request.headers['x-telegram-bot-api-secret-token'];
         
+        console.log(`[Webhook] Received request for token ${request.params.token.slice(0,8)}...`, { querySecret: requestSecret, headerSecret: headerSecret ? 'present' : 'missing' });
+        
         if (requestSecret !== cleanSecret && headerSecret !== cleanSecret) {
+            console.log(`[Webhook] Secret mismatch. Expected: ${cleanSecret}`);
             return reply.code(403).send({ error: 'Forbidden: Invalid webhook secret' });
         }
         
