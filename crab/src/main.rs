@@ -232,6 +232,14 @@ fn main() {
                 }
 
                 if let Some(cmd) = extract_command(&response) {
+                    // Make sure we stream the important markers to stdout for the orchestrator
+                    for line in response.lines() {
+                        let trimmed = line.trim();
+                        if trimmed.starts_with("COMMAND:") || trimmed.starts_with("FILE:") {
+                            println!("{}", trimmed);
+                        }
+                    }
+
                     messages.push(Message {
                         role: "assistant".to_string(),
                         content: response.clone(),

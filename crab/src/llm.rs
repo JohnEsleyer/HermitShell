@@ -406,13 +406,19 @@ pub fn extract_command(response: &str) -> Option<String> {
     let lines: Vec<&str> = response.lines().collect();
     for (i, line) in lines.iter().enumerate() {
         if line.trim().starts_with("COMMAND:") {
-            return Some(
-                lines[i..]
-                    .join("\n")
-                    .trim_start_matches("COMMAND:")
-                    .trim()
-                    .to_string(),
-            );
+            let mut cmd_lines = Vec::new();
+            cmd_lines.push(line.trim_start_matches("COMMAND:").trim());
+            
+            for next_line in lines.iter().skip(i + 1) {
+                let trimmed = next_line.trim();
+                // Stop extracting if we hit another primary marker
+                if trimmed.starts_with("FILE:") || trimmed.starts_with("ACTION:") {
+                    break;
+                }
+                cmd_lines.push(*next_line);
+            }
+            
+            return Some(cmd_lines.join("\n").trim().to_string());
         }
     }
     None
