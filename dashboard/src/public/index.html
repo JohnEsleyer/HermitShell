@@ -995,6 +995,12 @@
                             placeholder="e.g., Security Researcher">
                     </div>
                     <div>
+                        <label class="block text-xs font-mono text-slate-400 mb-1">PERSONALITY PROMPT</label>
+                        <textarea id="new-personality" rows="3"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 focus:outline-none transition-colors"
+                            placeholder="e.g., Speak like a pirate, or impersonate Sherlock Holmes. Be creative!"></textarea>
+                    </div>
+                    <div>
                         <label class="block text-xs font-mono text-slate-400 mb-1">TELEGRAM TOKEN *</label>
                         <input type="password" id="new-token"
                             class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 focus:outline-none transition-colors"
@@ -2652,6 +2658,7 @@
 
             document.getElementById('new-name').value = agent.name;
             document.getElementById('new-role').value = agent.role;
+            document.getElementById('new-personality').value = agent.personality || '';
             document.getElementById('new-token').value = agent.telegram_token;
             document.getElementById('new-image').value = agent.docker_image;
             document.getElementById('new-require-approval').checked = agent.require_approval === 1;
@@ -2777,6 +2784,7 @@
 
             document.getElementById('new-name').value = '';
             document.getElementById('new-role').value = '';
+            document.getElementById('new-personality').value = '';
             document.getElementById('new-token').value = '';
             document.getElementById('new-require-approval').checked = false;
             document.getElementById('new-profile-picture').value = '';
@@ -2988,6 +2996,7 @@
 
             const name = document.getElementById('new-name').value.trim();
             const role = document.getElementById('new-role').value.trim();
+            const personality = document.getElementById('new-personality').value.trim();
             const image = document.getElementById('new-image').value;
             const requireApproval = document.getElementById('new-require-approval').checked ? 1 : 0;
             const profilePicture = document.getElementById('new-profile-picture').value.trim();
@@ -3013,7 +3022,8 @@
                             profile_picture_url: profilePicture,
                             profile_bio: profileBio,
                             llm_provider: llmProvider,
-                            llm_model: llmModel
+                            llm_model: llmModel,
+                            personality: personality
                         })
                     });
                     const data = await res.json();
@@ -3072,7 +3082,8 @@
                             profile_picture_url: profilePicture,
                             profile_bio: profileBio,
                             llm_provider: llmProvider,
-                            llm_model: llmModel
+                            llm_model: llmModel,
+                            personality: personality
                         }
                     })
                 });

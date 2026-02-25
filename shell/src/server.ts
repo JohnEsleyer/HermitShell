@@ -415,7 +415,8 @@ export async function startServer() {
                     profile_picture_url: agentData.profile_picture_url || '',
                     profile_bio: agentData.profile_bio || '',
                     llm_provider: agentData.llm_provider || 'default',
-                    llm_model: agentData.llm_model || ''
+                    llm_model: agentData.llm_model || '',
+                    personality: agentData.personality || ''
                 });
                 id = editAgentId;
             } else {
@@ -430,7 +431,8 @@ export async function startServer() {
                     profile_picture_url: agentData.profile_picture_url || '',
                     profile_bio: agentData.profile_bio || '',
                     llm_provider: agentData.llm_provider || 'default',
-                    llm_model: agentData.llm_model || 'default'
+                    llm_model: agentData.llm_model || 'default',
+                    personality: agentData.personality || ''
                 });
 
                 const settings = await getAllSettings();
@@ -447,7 +449,7 @@ export async function startServer() {
     });
 
     fastify.post('/api/agents', async (request: any) => {
-        const { name, role, telegram_token, docker_image, system_prompt, is_active, require_approval, profile_picture_url, profile_bio, llm_provider, llm_model } = request.body;
+        const { name, role, telegram_token, docker_image, system_prompt, is_active, require_approval, profile_picture_url, profile_bio, llm_provider, llm_model, personality } = request.body;
         const id = await createAgent({
             name,
             role: role || '',
@@ -459,14 +461,15 @@ export async function startServer() {
             profile_picture_url: profile_picture_url || '',
             profile_bio: profile_bio || '',
             llm_provider: llm_provider || 'default',
-            llm_model: llm_model || 'default'
+            llm_model: llm_model || 'default',
+            personality: personality || ''
         });
         return { id, success: true };
     });
 
     fastify.put('/api/agents/:id', async (request: any) => {
         const id = Number(request.params.id);
-        const { name, role, telegram_token, docker_image, system_prompt, is_active, daily_limit_usd, require_approval, profile_picture_url, profile_bio, llm_provider, llm_model } = request.body;
+        const { name, role, telegram_token, docker_image, system_prompt, is_active, daily_limit_usd, require_approval, profile_picture_url, profile_bio, llm_provider, llm_model, personality } = request.body;
 
         await updateAgent(id, {
             name,
@@ -479,7 +482,8 @@ export async function startServer() {
             profile_picture_url,
             profile_bio,
             llm_provider,
-            llm_model
+            llm_model,
+            personality
         });
 
         if (daily_limit_usd !== undefined) {

@@ -33,6 +33,7 @@ export interface Agent {
     profile_bio?: string;
     llm_provider?: string;
     llm_model?: string;
+    personality?: string;
     created_at: string;
     budget?: {
         daily_limit_usd: number;
@@ -95,6 +96,7 @@ export async function initDb(): Promise<void> {
             profile_bio TEXT,
             llm_provider TEXT DEFAULT 'default',
             llm_model TEXT DEFAULT 'default',
+            personality TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
         
@@ -194,6 +196,11 @@ export async function initDb(): Promise<void> {
     }
 
     try {
+        await db.execute("ALTER TABLE agents ADD COLUMN personality TEXT");
+    } catch (e) {
+    }
+
+    try {
         await db.execute('ALTER TABLE allowlist ADD COLUMN is_operator INTEGER DEFAULT 0');
     } catch (e) {
     }
@@ -288,8 +295,8 @@ export async function createAgent(agent: Omit<Agent, 'id' | 'created_at'>): Prom
     const db = await getClient();
 
     const rs = await db.execute({
-        sql: `INSERT INTO agents (name, role, telegram_token, system_prompt, docker_image, is_active, require_approval, profile_picture_url, profile_bio, llm_provider, llm_model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [agent.name, agent.role, agent.telegram_token, agent.system_prompt, agent.docker_image, agent.is_active, agent.require_approval || 0, agent.profile_picture_url || '', agent.profile_bio || '', agent.llm_provider || 'default', agent.llm_model || 'default']
+        sql: `INSERT INTO agents (name, role, telegram_token, system_prompt, docker_image, is_active, require_approval, profile_picture_url, profile_bio, llm_provider, llm_model, personality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [agent.name, agent.role, agent.telegram_token, agent.system_prompt, agent.docker_image, agent.is_active, agent.require_approval || 0, agent.profile_picture_url || '', agent.profile_bio || '', agent.llm_provider || 'default', agent.llm_model || 'default', agent.personality || '']
     });
 
     const lastId = Number(rs.lastInsertRowid);
@@ -316,6 +323,7 @@ export async function updateAgent(id: number, updates: Partial<Agent>): Promise<
     if (updates.profile_bio !== undefined) { fields.push('profile_bio = ?'); values.push(updates.profile_bio); }
     if (updates.llm_provider !== undefined) { fields.push('llm_provider = ?'); values.push(updates.llm_provider); }
     if (updates.llm_model !== undefined) { fields.push('llm_model = ?'); values.push(updates.llm_model); }
+    if (updates.personality !== undefined) { fields.push('personality = ?'); values.push(updates.personality); }
 
     if (fields.length > 0) {
         values.push(id);
