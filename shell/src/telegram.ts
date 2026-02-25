@@ -397,6 +397,7 @@ export async function processAgentMessage(
             userId: userId,
             llmProvider: agent.llm_provider && agent.llm_provider !== 'default' ? agent.llm_provider : undefined,
             llmModel: agent.llm_model && agent.llm_model !== 'default' ? agent.llm_model : undefined,
+            personality: agent.personality,
             onProgress: async (status: string, details?: string) => {
                 if (statusMessageId) {
                     const settings = await import('./db').then(m => m.getAllSettings());
@@ -785,7 +786,24 @@ const processedFiles = new Set<string>();
 export function startFileWatcher() {
     if (fileWatcher) return;
 
-    console.log('[FileWatcher] Starting autonomous file portal monitor...');
+    console.log('[FileWatcher] Initializing autonomous file portal monitor...');
+
+    // Pre-populate processedFiles with existing files so we don't dump everything on restart
+    try {
+        const workspaceDirs = fs.readdirSync(WORKSPACE_DIR);
+        for (const dir of workspaceDirs) {
+            const outPath = path.join(WORKSPACE_DIR, dir, 'out');
+            if (fs.existsSync(outPath)) {
+                const files = fs.readdirSync(outPath);
+                for (const file of files) {
+                    processedFiles.add(path.join(outPath, file));
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[FileWatcher] Error pre-populating files:', e);
+    }
+
     fileWatcher = chokidar.watch(path.join(WORKSPACE_DIR, '**/out/**/*'), {
         persistent: true,
         ignoreInitial: true,

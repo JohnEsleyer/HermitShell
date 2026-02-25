@@ -27,6 +27,7 @@ interface AgentConfig {
     onProgress?: ProgressCallback;
     llmProvider?: string;
     llmModel?: string;
+    personality?: string;
 }
 
 interface SpawnResult {
@@ -116,6 +117,7 @@ async function createNewCubicle(config: AgentConfig): Promise<Docker.Container> 
         `DOCKER_IMAGE=${config.dockerImage}`,
         `LLM_PROVIDER=${provider}`,
         `LLM_MODEL=${model}`,
+        `PERSONALITY=${config.personality || ''}`,
     ];
 
     if (config.requireApproval) envVars.push('HITL_ENABLED=true');
@@ -198,6 +200,7 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
                 `USER_MSG=${config.userMessage}`,
                 `HISTORY=${historyB64}`,
                 `MAX_TOKENS=${config.maxTokens}`,
+                `PERSONALITY=${config.personality || ''}`,
                 `LLM_PROVIDER=${provider}`,
                 `LLM_MODEL=${model}`,
                 `ORCHESTRATOR_URL=http://172.17.0.1:3000`,

@@ -23,8 +23,12 @@ os.chdir(WORK_DIR)
 def build_system_prompt():
     name = os.environ.get("AGENT_NAME", "Agent")
     role = os.environ.get("AGENT_ROLE", "Assistant")
+    personality = os.environ.get("PERSONALITY", "")
+    
+    personality_block = f"\nYour Personality: {personality}\n" if personality else ""
+    
     return f"""You are {name}, an autonomous AI agent trapped in a secure Linux 'Cubicle' (Docker container).
-Your Role: {role}
+Your Role: {role}{personality_block}
 Your Environment:
 - OS: Debian/Linux (Docker)
 - Network: Air-gapped (You cannot access the internet directly).
@@ -40,11 +44,14 @@ ACTION: EXECUTE
 COMMAND: <your bash command here>
 
 2. FILE DELIVERY:
-To send a file to the user, simply move or copy it to /app/workspace/out/. The system will automatically detect and send it! No special syntax is needed. Example:
-ACTION: EXECUTE
-COMMAND: echo "Hello" > /app/workspace/out/hello.txt
+Use /app/workspace/out/ ONLY for actual files (images, PDFs, ZIPs, large data exports). 
+DO NOT use it for text messages or chat responses.
+When you put a file in /out/, the user will receive it as a direct attachment.
 
-Wait for the COMMAND_OUTPUT before proceeding.
+3. CONVERSATION:
+When you have finished your task or need to talk to the user, simply write your message normally. 
+If you are currently executing a command, do not include your chat message until the command is finished.
+Once you provide a final response without any ACTION: EXECUTE, the process will terminate and your message will be sent to the user.
 """
 
 def extract_command(response):
@@ -138,10 +145,13 @@ def main():
         iters += 1
         response = call_llm(messages)
         
-        # print COMMAND lines for visual streaming in UI
+        # print COMMAND lines for visual streaming/debugging in logs
         for line in response.split("\n"):
             if line.strip().startswith("COMMAND:"):
-                print(line.strip(), flush=True)
+                # We prefix with [INTERNAL] so we can filter if needed, 
+                # but currently everything goes to the log/chat.
+                # To keep chat clean, we could skip printing these if it's not the final response.
+                pass
                 
         messages.append({"role": "assistant", "content": response})
         
@@ -164,8 +174,13 @@ def main():
             except Exception as e:
                 messages.append({"role": "user", "content": f"ERROR executing command: {str(e)}"})
         else:
-            # Done, no more commands
-            print(response, flush=True)
+            # Done, no more commands. 
+            # Filter out the internal system blocks from the final response if they exist
+            clean_response = response.replace("ACTION: EXECUTE", "").strip()
+            # If the response contained a COMMAND snippet but no ACTION, clean it up
+            lines = clean_response.split("\n")
+            filtered_lines = [l for l in lines if not l.strip().startswith("COMMAND:")]
+            print("\n".join(filtered_lines).strip(), flush=True)
             break
 
 if __name__ == "__main__":
