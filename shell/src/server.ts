@@ -405,7 +405,7 @@ export async function startServer() {
         const agent = await getAgentById(agentId);
         if (!agent) return reply.code(404).send({ error: 'Agent not found' });
 
-        const { title, prompt, start_time, end_time, target_user_id } = request.body || {};
+        const { title, prompt, start_time, end_time, target_user_id, color, symbol } = request.body || {};
         if (!title || !prompt || !start_time || !target_user_id) {
             return reply.code(400).send({ error: 'title, prompt, start_time and target_user_id are required' });
         }
@@ -416,7 +416,9 @@ export async function startServer() {
             prompt: String(prompt),
             start_time: String(start_time),
             end_time: end_time ? String(end_time) : null,
-            target_user_id: Number(target_user_id)
+            target_user_id: Number(target_user_id),
+            color: color ? String(color).slice(0, 32) : null,
+            symbol: symbol ? String(symbol).slice(0, 16) : null
         });
         return { success: true, id };
     });
@@ -429,7 +431,7 @@ export async function startServer() {
         const event = await getCalendarEventById(eventId);
         if (!event || event.agent_id !== agentId) return reply.code(404).send({ error: 'Calendar event not found' });
 
-        const allowed = ['title', 'prompt', 'start_time', 'end_time', 'target_user_id', 'status'];
+        const allowed = ['title', 'prompt', 'start_time', 'end_time', 'target_user_id', 'status', 'color', 'symbol'];
         const updates: any = {};
         for (const key of allowed) {
             if (request.body?.[key] !== undefined) updates[key] = request.body[key];
