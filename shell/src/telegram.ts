@@ -718,9 +718,10 @@ export function startCalendarScheduler(): void {
                     continue;
                 }
 
-                await sendTelegramMessage(agent.telegram_token, event.target_user_id, `📅 Event started: *${event.title}*\n\n${event.prompt}`);
+                const eventMarker = event.symbol || '📅';
+                await sendTelegramMessage(agent.telegram_token, event.target_user_id, `${eventMarker} Event started: *${event.title}*\n\n${event.prompt}`);
                 const result = await processAgentMessage(agent.telegram_token, event.target_user_id, event.target_user_id, event.prompt);
-                await sendTelegramMessage(agent.telegram_token, event.target_user_id, `✅ Event finished: *${event.title}*\n\n${result.output.slice(0, 3000)}`);
+                await sendTelegramMessage(agent.telegram_token, event.target_user_id, `${eventMarker} Event finished: *${event.title}*\n\n${result.output.slice(0, 3000)}`);
 
                 await updateCalendarEvent(event.id, {
                     status: 'completed',
