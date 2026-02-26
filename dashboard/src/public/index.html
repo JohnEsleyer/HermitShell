@@ -346,7 +346,7 @@
                 </svg>
                 <div>
                     <h1 class="font-bold tracking-tight text-lg text-white">HermitShell</h1>
-                    <p class="text-[11px] text-slate-400 mono">CONTROL SURFACE</p>
+                    <p class="text-[11px] text-slate-400 mono">CONTROL PANEL</p>
                 </div>
             </div>
 
@@ -593,6 +593,10 @@
                                 <select id="calendar-agent" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white" onchange="loadCalendarEvents()"></select>
                                 <select id="calendar-user" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white"></select>
                                 <input id="calendar-title" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="Event title">
+                                <div class="grid grid-cols-2 gap-2">
+                                    <input id="calendar-color" type="color" class="w-full h-11 bg-slate-800 border border-slate-700 rounded-lg p-1">
+                                    <input id="calendar-symbol" maxlength="2" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="Symbol (e.g. ✨)">
+                                </div>
                                 <input id="calendar-start" type="datetime-local" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white">
                                 <input id="calendar-end" type="datetime-local" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white">
                                 <textarea id="calendar-prompt" rows="4" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white" placeholder="Prompt/event instructions for the agent..."></textarea>
@@ -2757,7 +2761,7 @@
                             ${count ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300">${count}</span>` : ''}
                         </div>
                         <div class="mt-2 space-y-1">
-                            ${(calendarEventsCache.filter(ev => formatDateKey(ev.start_time) === key).slice(0, 2).map(ev => `<div class="text-[10px] truncate text-slate-300">• ${ev.title}</div>`).join(''))}
+                            ${(calendarEventsCache.filter(ev => formatDateKey(ev.start_time) === key).slice(0, 2).map(ev => { const marker = ev.symbol || '•'; const color = ev.color || '#94a3b8'; return `<div class=\"text-[10px] truncate text-slate-300 flex items-center gap-1\"><span style=\"color:${color}\">${marker}</span><span>${ev.title}</span></div>`; }).join(''))}
                         </div>
                     </button>
                 `);
@@ -2794,12 +2798,13 @@
             panel.innerHTML = events.map(ev => `
                 <div class="glass-card p-4 rounded-xl">
                     <div class="flex items-center justify-between mb-2">
-                        <h5 class="font-semibold text-white">${ev.title}</h5>
+                        <h5 class="font-semibold text-white flex items-center gap-2"><span style="color:${ev.color || '#94a3b8'}">${ev.symbol || '•'}</span><span>${ev.title}</span></h5>
                         <span class="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">${ev.status}</span>
                     </div>
                     <div class="text-xs text-slate-400 mb-2">${new Date(ev.start_time).toLocaleString()}${ev.end_time ? ` → ${new Date(ev.end_time).toLocaleString()}` : ''}</div>
                     <div class="text-sm text-slate-300 whitespace-pre-wrap mb-3">${ev.prompt}</div>
                     <div class="flex gap-2">
+                        <button onclick="editCalendarEventPrompt(${ev.agent_id}, ${ev.id})" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1 rounded">Edit</button>
                         <button onclick="markCalendarCancelled(${ev.agent_id}, ${ev.id})" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs px-3 py-1 rounded">Cancel</button>
                         <button onclick="deleteCalendarEvent(${ev.agent_id}, ${ev.id})" class="bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 text-xs px-3 py-1 rounded">Delete</button>
                     </div>
@@ -2841,6 +2846,10 @@
                 calendarEventsCache = data.events || [];
 
                 const startInput = document.getElementById('calendar-start');
+                const colorInput = document.getElementById('calendar-color');
+                const symbolInput = document.getElementById('calendar-symbol');
+                if (colorInput && !colorInput.value) colorInput.value = '#3b82f6';
+                if (symbolInput && !symbolInput.value) symbolInput.value = '•';
                 if (startInput && !startInput.value) {
                     const d = new Date();
                     d.setMinutes(0, 0, 0);
@@ -2859,6 +2868,8 @@
             const prompt = document.getElementById('calendar-prompt').value.trim();
             const start = document.getElementById('calendar-start').value;
             const end = document.getElementById('calendar-end').value;
+            const color = document.getElementById('calendar-color').value || '#3b82f6';
+            const symbol = (document.getElementById('calendar-symbol').value || '•').slice(0, 2);
             const userId = Number(document.getElementById('calendar-user').value || 0);
 
             if (!agentId || !title || !prompt || !start || !userId) {
@@ -2871,7 +2882,9 @@
                 prompt,
                 start_time: new Date(start).toISOString(),
                 end_time: end ? new Date(end).toISOString() : null,
-                target_user_id: userId
+                target_user_id: userId,
+                color,
+                symbol
             };
 
             const res = await fetch(`/api/agents/${agentId}/calendars`, {
@@ -2889,6 +2902,29 @@
             document.getElementById('calendar-title').value = '';
             document.getElementById('calendar-prompt').value = '';
             document.getElementById('calendar-end').value = '';
+            document.getElementById('calendar-symbol').value = '•';
+            await loadCalendarEvents();
+        }
+
+
+        async function editCalendarEventPrompt(agentId, eventId) {
+            const event = calendarEventsCache.find(ev => ev.id === eventId);
+            if (!event) return;
+
+            const title = prompt('Edit title', event.title);
+            if (title === null) return;
+            const promptText = prompt('Edit prompt', event.prompt);
+            if (promptText === null) return;
+            const color = prompt('Edit color (hex like #3b82f6)', event.color || '#3b82f6');
+            if (color === null) return;
+            const symbol = prompt('Edit symbol (1-2 chars)', event.symbol || '•');
+            if (symbol === null) return;
+
+            await fetch(`/api/agents/${agentId}/calendars/${eventId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: title.trim(), prompt: promptText.trim(), color: color.trim(), symbol: symbol.trim().slice(0, 2) })
+            });
             await loadCalendarEvents();
         }
 

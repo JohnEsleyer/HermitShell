@@ -50,7 +50,9 @@ describe('Calendar events', () => {
       prompt: 'Post standup update',
       start_time: '2026-01-01T09:00:00.000Z',
       end_time: '2026-01-01T09:15:00.000Z',
-      target_user_id: 12345
+      target_user_id: 12345,
+      color: '#3b82f6',
+      symbol: '✨'
     });
 
     const events = await getCalendarEvents(agentId);
@@ -58,6 +60,8 @@ describe('Calendar events', () => {
     expect(events[0].id).toBe(id);
     expect(events[0].status).toBe('scheduled');
     expect(events[0].title).toBe('Daily standup');
+    expect(events[0].color).toBe('#3b82f6');
+    expect(events[0].symbol).toBe('✨');
   });
 
   it('updates event fields', async () => {
@@ -70,11 +74,13 @@ describe('Calendar events', () => {
       target_user_id: 1
     });
 
-    await updateCalendarEvent(id, { title: 'Updated kickoff', status: 'cancelled' });
+    await updateCalendarEvent(id, { title: 'Updated kickoff', status: 'cancelled', color: '#ef4444', symbol: '⚠️' });
     const event = await getCalendarEventById(id);
 
     expect(event?.title).toBe('Updated kickoff');
     expect(event?.status).toBe('cancelled');
+    expect(event?.color).toBe('#ef4444');
+    expect(event?.symbol).toBe('⚠️');
   });
 
   it('claims only due events', async () => {

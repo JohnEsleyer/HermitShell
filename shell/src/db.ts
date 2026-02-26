@@ -87,6 +87,8 @@ export interface CalendarEvent {
     start_time: string;
     end_time: string | null;
     target_user_id: number;
+    color?: string | null;
+    symbol?: string | null;
     status: 'scheduled' | 'running' | 'completed' | 'failed' | 'cancelled';
     last_error?: string | null;
     started_at?: string | null;
@@ -198,6 +200,8 @@ export async function initDb(): Promise<void> {
             start_time TEXT NOT NULL,
             end_time TEXT,
             target_user_id INTEGER NOT NULL,
+            color TEXT,
+            symbol TEXT,
             status TEXT DEFAULT 'scheduled',
             last_error TEXT,
             started_at DATETIME,
@@ -241,6 +245,16 @@ export async function initDb(): Promise<void> {
     try {
         await db.execute('ALTER TABLE audit_logs ADD COLUMN approved_by INTEGER');
         await db.execute('ALTER TABLE audit_logs ADD COLUMN approved_at DATETIME');
+    } catch (e) {
+    }
+
+    try {
+        await db.execute('ALTER TABLE calendar_events ADD COLUMN color TEXT');
+    } catch (e) {
+    }
+
+    try {
+        await db.execute('ALTER TABLE calendar_events ADD COLUMN symbol TEXT');
     } catch (e) {
     }
 
@@ -384,12 +398,14 @@ export async function createCalendarEvent(event: {
     start_time: string;
     end_time?: string | null;
     target_user_id: number;
+    color?: string | null;
+    symbol?: string | null;
 }): Promise<number> {
     const db = await getClient();
     const rs = await db.execute({
-        sql: `INSERT INTO calendar_events (agent_id, title, prompt, start_time, end_time, target_user_id, status)
-              VALUES (?, ?, ?, ?, ?, ?, 'scheduled')`,
-        args: [event.agent_id, event.title, event.prompt, event.start_time, event.end_time || null, event.target_user_id]
+        sql: `INSERT INTO calendar_events (agent_id, title, prompt, start_time, end_time, target_user_id, color, symbol, status)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')`,
+        args: [event.agent_id, event.title, event.prompt, event.start_time, event.end_time || null, event.target_user_id, event.color || null, event.symbol || null]
     });
     return Number(rs.lastInsertRowid);
 }
@@ -431,6 +447,8 @@ export async function updateCalendarEvent(id: number, updates: Partial<CalendarE
     if (updates.start_time !== undefined) { fields.push('start_time = ?'); values.push(updates.start_time); }
     if (updates.end_time !== undefined) { fields.push('end_time = ?'); values.push(updates.end_time); }
     if (updates.target_user_id !== undefined) { fields.push('target_user_id = ?'); values.push(updates.target_user_id); }
+    if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
+    if (updates.symbol !== undefined) { fields.push('symbol = ?'); values.push(updates.symbol); }
     if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
     if (updates.last_error !== undefined) { fields.push('last_error = ?'); values.push(updates.last_error); }
     if (updates.started_at !== undefined) { fields.push('started_at = ?'); values.push(updates.started_at); }
