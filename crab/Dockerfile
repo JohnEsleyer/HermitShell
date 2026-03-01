@@ -16,6 +16,7 @@ RUN groupadd -r hermit && useradd -r -g hermit -m -d /home/hermit hermit
 RUN mkdir -p /app/workspace && chown -R hermit:hermit /app
 
 COPY --from=builder /usr/src/crab/target/x86_64-unknown-linux-musl/release/hermit-crab /usr/local/bin/crab
+COPY system_prompt.txt /app/system_prompt.txt
 
 USER hermit
 WORKDIR /app
