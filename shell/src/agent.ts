@@ -36,7 +36,7 @@ const DANGEROUS_COMMANDS = ['rm -rf', 'sudo', 'docker', 'chmod 777', 'mkfs', 'dd
 
 function log(message: string): void {
     const timestamp = new Date().toISOString();
-    console.log(`[${timestamp}] ${message}`);
+    console.error(`[${timestamp}] ${message}`);
     const logPath = path.join(WORKSPACE_DIR, 'work', '.hermit.log');
     try {
         fs.appendFileSync(logPath, `[${timestamp}] ${message}\n`);
@@ -121,10 +121,13 @@ async function callLLM(messages: Message[]): Promise<string> {
 }
 
 function parseResponse(text: string): AgentResponse {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
+    const objectMatches = text.match(/\{[\s\S]*?\}/g) || [];
+    for (let i = objectMatches.length - 1; i >= 0; i--) {
         try {
-            const parsed = JSON.parse(jsonMatch[0]);
+            const parsed = JSON.parse(objectMatches[i]);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
+            if (!('message' in parsed) && !('terminal' in parsed) && !('action' in parsed) && !('userId' in parsed)) continue;
+
             return {
                 message: parsed.message || parsed.text || '',
                 terminal: parsed.terminal || parsed.command || '',
@@ -247,11 +250,23 @@ async function handleCalendarAction(action: string): Promise<string> {
 }
 
 async function handleFileAction(action: string): Promise<string> {
-    const filePath = path.join(WORKSPACE_DIR, 'out', action);
-    if (fs.existsSync(filePath)) {
-        return `File ${action} ready for delivery`;
+    const [rawKind, ...rest] = action.split(':');
+    const kind = (rawKind || '').trim().toUpperCase();
+    const requestedName = rest.join(':').trim();
+
+    if (kind !== 'GIVE' && kind !== 'FILE') {
+        return `Unknown file action: ${action}`;
     }
-    return `File ${action} not found in /app/workspace/out/`;
+
+    if (!requestedName || requestedName.includes('..') || requestedName.includes('/') || requestedName.includes('\\')) {
+        return `Invalid file action path: ${action}`;
+    }
+
+    const filePath = path.join(WORKSPACE_DIR, 'out', requestedName);
+    if (fs.existsSync(filePath)) {
+        return `File ${requestedName} ready for delivery`;
+    }
+    return `File ${requestedName} not found in /app/workspace/out/`;
 }
 
 async function run(): Promise<void> {
@@ -284,7 +299,6 @@ async function run(): Promise<void> {
 
         if (response.message) {
             log(`RESPONSE: ${response.message}`);
-            console.log(response.message);
         }
 
         if (response.panelActions) {
@@ -304,9 +318,13 @@ async function run(): Promise<void> {
         }
 
         if (!response.terminal) {
-            if (response.message) {
-                console.log(`\n${response.message}`);
-            }
+            const finalPayload = {
+                userId: process.env.USER_ID || '',
+                message: response.message || '',
+                terminal: '',
+                action: response.action || ''
+            };
+            console.log(JSON.stringify(finalPayload));
             break;
         }
 
