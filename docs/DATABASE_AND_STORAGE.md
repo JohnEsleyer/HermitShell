@@ -83,10 +83,11 @@ Manages access control for the Telegram bots.
 
 Persistent data that doesn't fit in the DB is stored in the `data/` directory:
 
-- `data/db/`: The SQLite/libSQL database files:
+- `data/db/`: Main control panel DB files:
   - `hermitshell.db`: Main application database (agents, users, settings, etc.)
-  - `calendar.db`: Calendar events for scheduled agent tasks
-  - `rag.db`: Long-term RAG memory for facts and knowledge
+- `data/workspaces/{agentId}_{userId}/data/`: Per-container prebuilt libSQL files:
+  - `calendar.db`: Scheduled actions/events for that specific agent-user workspace
+  - `rag.db`: Long-term RAG memory for that specific workspace
   
 - `data/workspaces/`: **Crucial Area.**
   - Folders are named `{agentId}_{userId}/`.
@@ -104,7 +105,8 @@ Persistent data that doesn't fit in the DB is stored in the `data/` directory:
 The calendar system allows agents to schedule future tasks that trigger automatically:
 
 - Agents create events using `CALENDAR_CREATE` panel action
-- Events store: title, prompt, start_time, end_time
+- Events store: title, prompt, start_time, end_time, target_user_id, color/symbol, optional recurrence_cron
+- `calendar_event_runs` stores execution history (run status + result message) for UI timeline rendering
 - When the scheduled time arrives, the system triggers the agent with the stored prompt
 - **Recurring tasks**: The agent must schedule the NEXT event in its response
 - This creates a cron-like self-prompting loop without actual cron jobs

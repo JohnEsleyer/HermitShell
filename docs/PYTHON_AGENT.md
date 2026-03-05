@@ -65,7 +65,7 @@ Agents are expected to return deterministic JSON:
 {
   "userId": "123456789",
   "message": "Task completed",
-  "action": "FILE:report.pdf",
+  "action": "GIVE:report.pdf",
   "terminal": "",
   "panelActions": ["CALENDAR_CREATE:Title|Prompt|2026-02-28T09:00:00Z|"]
 }
@@ -83,7 +83,7 @@ Agents create web apps in `/app/workspace/www/[app_name]/`:
 - **Required**: Each web app MUST have an `index.html` file
 - Use **vanilla** HTML, CSS, and JavaScript only (no frameworks like React/Vue)
 - Images go in `assets/` subfolder
-- Start server on port 8080 for user preview
+- Return `action: "APP:<app_name>"` after creating `index.html` so the panel publishes and shares URL
 
 ## 📝 Logging & Auditing
 

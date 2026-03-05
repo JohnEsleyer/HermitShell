@@ -7,7 +7,9 @@ import * as crypto from 'crypto';
 import * as chokidar from 'chokidar';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { setPreviewPassword } from './server';
-import { parseAgentResponse, parseFileAction } from './agent-response';
+import { parseAgentResponse, parseFileAction, parseAppAction } from './agent-response';
+import { startAppServer } from './app-server';
+import { getTunnelUrl } from './tunnel';
 
 interface TelegramUpdate {
     message?: {
@@ -35,6 +37,13 @@ const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
 
 const pendingDelegations = new Map<string, { agentId: number; role: string; task: string; timestamp: number }>();
 let calendarSchedulerStarted = false;
+
+function buildAppEndpoint(agentId: number, userId: number, siteName: string): string {
+    const slug = siteName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'app';
+    const hash = Buffer.from(`${agentId}_${userId}_${siteName}`).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toLowerCase();
+    return `${slug}-${hash}`;
+}
+
 
 export async function sendChatAction(token: string, chatId: number, action: 'typing' | 'upload_document' = 'typing'): Promise<void> {
     const url = `https://api.telegram.org/bot${token}/sendChatAction`;
@@ -466,6 +475,24 @@ export async function processAgentMessage(
                 processedFiles.add(filePath);
                 await sendFileViaTelegram(token, chatId, filePath, `📎 ${selectedFile}`);
                 setTimeout(() => processedFiles.delete(filePath), 30000);
+            }
+        }
+
+        const selectedApp = parseAppAction(parsed.action);
+        if (selectedApp) {
+            const started = await startAppServer(agent.id, userId, selectedApp);
+            if (!started.success) {
+                finalOutput += `
+
+❌ APP publish failed for ${selectedApp}: ${started.error || 'unknown error'}`;
+            } else {
+                const settings = await import('./db').then(m => m.getAllSettings());
+                const baseUrl = settings.public_url || getTunnelUrl() || 'http://localhost:3000';
+                const appEndpoint = buildAppEndpoint(agent.id, userId, selectedApp);
+                const appUrl = `${String(baseUrl).replace(/\/$/, '')}/apps/${appEndpoint}`;
+                finalOutput += `
+
+🌐 App is ready: ${appUrl}`;
             }
         }
 

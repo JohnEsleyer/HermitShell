@@ -334,6 +334,12 @@ HermitShell uses a "Portal" architecture for file transfers. Instead of parsing 
 - `/workspace/out/`: 📤 **Output**. Files placed here are delivered to Telegram immediately.
 - `/workspace/www/`: 🌐 **Web Apps**. Each subfolder is a separate web app with index.html.
 
+**Agent execution flow standard:**
+1. `ls -l /workspace/in`
+2. `cd /workspace/work` and execute task
+3. Move final files to `/workspace/out` and return JSON with `action: "GIVE:<file>"`
+4. For web apps, build under `/workspace/www/<unique_app_name>` and return `action: "APP:<unique_app_name>"`
+
 **Host Data Directory** (for database operations):
 - `calendar.db`: Stores scheduled events. When time arrives, your prompt triggers automatically.
 - `rag.db`: Persistent RAG memory for facts/knowledge.
@@ -375,6 +381,7 @@ The Apps dashboard shows web apps created by agents:
 - **Preview**: Click "Open" to open a modal with the app
 - **Share**: Generate temporary tunnel links for Telegram sharing (30 min expiry)
 - **Thumbnail**: Apps can be screenshotted and displayed as card thumbnails
+- **Endpoint**: Every app gets a stable endpoint like `/apps/<appname-random>` for tunnel sharing
 - **Delete**: Remove one app folder or an entire workspace www set from the dashboard
 
 ### Asset Procurement System
@@ -389,7 +396,7 @@ Since agents are air-gapped, they can request assets from the internet:
 
 Apps can have Playwright screenshots captured:
 
-- Click "Screenshot" on an app card in the Apps dashboard
+- Click "Retake Shot" on an app card in the Apps dashboard
 - Screenshots are stored in `data/screenshots/`
 - Available for preview in the dashboard
 
@@ -401,14 +408,14 @@ Agent replies are expected to be machine-readable JSON (no markdown) so the cont
 {
   "userId": "123456789",
   "message": "Done",
-  "action": "FILE:report.pdf",
+  "action": "GIVE:report.pdf",
   "terminal": "python3 /app/workspace/work/script.py",
   "panelActions": ["CALENDAR_CREATE:Title|Prompt|2026-03-01T10:00:00Z|2026-03-01T11:00:00Z|#f97316|⚙️"]
 }
 ```
 
 - `message`: sent to Telegram chat bubble (plain text, minimal)
-- `action`: optional file send instruction from `/app/workspace/out/`
+- `action`: optional routing instruction. Use `GIVE:<filename>` for file delivery from `/app/workspace/out/`, or `APP:<app_name>` to publish a web app and share endpoint URL.
 - `terminal`: optional shell command for container execution
 - `panelActions`: optional control panel actions (calendar, assets, etc.)
 
@@ -515,8 +522,8 @@ Agents use special syntax for enhanced features:
 
 ### File Delivery
 ```
-FILE: /app/workspace/report.pdf
-FILE: /app/workspace/analysis.csv
+GIVE: /app/workspace/report.pdf
+GIVE: /app/workspace/analysis.csv
 ```
 Files are automatically sent to the user via Telegram.
 
