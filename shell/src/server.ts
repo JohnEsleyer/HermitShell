@@ -1,4 +1,4 @@
-import { handleTelegramUpdate, sendTelegramMessage, smartReply, processAgentMessage, sendVerificationCode, setBotCommands, registerWebhook, startFileWatcher, startCalendarScheduler } from './telegram';
+import { handleTelegramUpdate, sendTelegramMessage, smartReply, processAgentMessage, sendVerificationCode, setBotCommands, registerWebhook, startFileWatcher, startCalendarScheduler, sendFileViaTelegram } from './telegram';
 import {
     getAllAgents, isAllowed, initDb, getAdminCount, createAdmin, getAdmin, getFirstAdmin, updateAdmin,
     getAllSettings, setSetting, getBudget, getAllowlist, addToAllowlist, removeFromAllowlist,
@@ -25,10 +25,12 @@ import cookie from '@fastify/cookie';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
+import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract } from './agent-response';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'hermitshell-secret-change-in-production';
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'hermitshell-webhook-secret';
+const WORKSPACE_ROOT = path.join(__dirname, '../../data/workspaces');
 
 const pendingVerifications = new Map<string, { code: string; timestamp: number }>();
 const previewPasswords = new Map<string, { password: string; updatedAt: number }>();
@@ -62,6 +64,78 @@ export function regeneratePreviewPassword(agentId: number, port: number): { pass
     const generated = { password: generatePreviewPassword(), updatedAt: Date.now() };
     previewPasswords.set(previewKey(agentId, port), generated);
     return generated;
+}
+
+type AgentInteractionLog = {
+    role: 'user' | 'assistant';
+    raw: string;
+    parsed: {
+        userId?: string;
+        message: string;
+        terminal: string;
+        action: string;
+        jsonContractParsed: boolean;
+    };
+    responseTo?: string;
+    actionEffects: string[];
+};
+
+function summarizeActionEffects(agentId: number, userId: number, action: string): string[] {
+    const effects: string[] = [];
+    const selectedFile = parseFileAction(action);
+    if (selectedFile) {
+        const outPath = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`, 'out', selectedFile);
+        effects.push(fs.existsSync(outPath)
+            ? `File ready for Telegram delivery: ${selectedFile}`
+            : `File action requested but file missing: ${selectedFile}`);
+    }
+
+    const selectedApp = parseAppAction(action);
+    if (selectedApp) {
+        const appIndex = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`, 'www', selectedApp, 'index.html');
+        effects.push(fs.existsSync(appIndex)
+            ? `App publish target exists: ${selectedApp}`
+            : `App action requested but app missing: ${selectedApp}`);
+    }
+
+    if (!effects.length && action) {
+        effects.push(`Action present but unsupported/invalid: ${action}`);
+    }
+
+    return effects;
+}
+
+function buildAgentInteractionLogs(agentId: number, userId: number): AgentInteractionLog[] {
+    const historyKey = `dashboard_${agentId}_${userId}`;
+    const history = loadHistory(historyKey).slice(-120);
+    const interactions: AgentInteractionLog[] = [];
+    let latestUserMessage = '';
+
+    for (const entry of history) {
+        const role = entry?.role === 'assistant' ? 'assistant' : 'user';
+        const content = String(entry?.content || '');
+        if (role === 'user') {
+            latestUserMessage = content;
+            continue;
+        }
+
+        const parsed = parseAgentResponse(content);
+        interactions.push({
+            role,
+            raw: content,
+            parsed: {
+                userId: parsed.userId,
+                message: parsed.message,
+                terminal: parsed.terminal,
+                action: parsed.action,
+                jsonContractParsed: hasStructuredContract(content)
+            },
+            responseTo: latestUserMessage || undefined,
+            actionEffects: summarizeActionEffects(agentId, userId, parsed.action)
+        });
+    }
+
+    return interactions.reverse();
 }
 
 async function captureAppScreenshot(targetUrl: string, outputPath: string): Promise<void> {
@@ -363,6 +437,76 @@ export async function startServer() {
         const agentId = request.query.agentId ? Number(request.query.agentId) : undefined;
         const limit = request.query.limit ? Number(request.query.limit) : 100;
         return await getAgentRuntimeLogs(agentId, limit);
+    });
+
+    fastify.get('/api/agent-interactions/:agentId/:userId', async (request: any, reply: any) => {
+        const agentId = Number(request.params.agentId);
+        const userId = Number(request.params.userId || 0);
+        const agent = await getAgentById(agentId);
+        if (!agent) return reply.code(404).send({ error: 'Agent not found' });
+        return { interactions: buildAgentInteractionLogs(agentId, userId) };
+    });
+
+    fastify.post('/api/agent-tests/:id/send-file', async (request: any, reply: any) => {
+        const agentId = Number(request.params.id);
+        const { userId, fileName, content } = request.body || {};
+        const targetUserId = Number(userId || 0);
+        if (!targetUserId) return reply.code(400).send({ error: 'userId is required' });
+
+        const agent = await getAgentById(agentId);
+        if (!agent) return reply.code(404).send({ error: 'Agent not found' });
+
+        const safeFileName = String(fileName || 'agent-test.txt').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const outDir = path.join(WORKSPACE_ROOT, `${agent.id}_${targetUserId}`, 'out');
+        fs.mkdirSync(outDir, { recursive: true });
+
+        const payload = String(content || `HermitShell send-file test.\nAgent: ${agent.name}\nTimestamp: ${new Date().toISOString()}\n`);
+        const outputPath = path.join(outDir, safeFileName);
+        fs.writeFileSync(outputPath, payload, 'utf8');
+
+        const delivered = await sendFileViaTelegram(agent.telegram_token, targetUserId, outputPath, `🧪 Test file from ${agent.name}`);
+        await createAgentRuntimeLog(agent.id, delivered ? 'info' : 'error', 'agent-test', 'Send file test executed', {
+            userId: targetUserId,
+            fileName: safeFileName,
+            delivered
+        });
+
+        return {
+            success: delivered,
+            fileName: safeFileName,
+            action: `GIVE:${safeFileName}`,
+            jsonContractParsed: true,
+            actionEffects: [delivered ? 'Telegram file delivery succeeded' : 'Telegram file delivery failed']
+        };
+    });
+
+    fastify.post('/api/agent-tests/:id/json-contract', async (request: any, reply: any) => {
+        const agentId = Number(request.params.id);
+        const { userId, payload } = request.body || {};
+        const targetUserId = Number(userId || 0);
+        if (!targetUserId) return reply.code(400).send({ error: 'userId is required' });
+
+        const agent = await getAgentById(agentId);
+        if (!agent) return reply.code(404).send({ error: 'Agent not found' });
+
+        const rawPayload = typeof payload === 'string' ? payload : JSON.stringify(payload || {});
+        const parsed = parseAgentResponse(rawPayload);
+        const effects = summarizeActionEffects(agent.id, targetUserId, parsed.action);
+
+        await createAgentRuntimeLog(agent.id, 'info', 'agent-test', 'JSON contract test executed', {
+            userId: targetUserId,
+            jsonContractParsed: hasStructuredContract(rawPayload),
+            action: parsed.action,
+            actionEffects: effects
+        });
+
+        return {
+            raw: rawPayload,
+            parsed,
+            jsonContractParsed: hasStructuredContract(rawPayload),
+            responseTo: 'Manual JSON contract test',
+            actionEffects: effects
+        };
     });
 
     fastify.post('/api/telegram/webhook', async (request: any, reply: any) => {
@@ -1310,7 +1454,7 @@ export async function startServer() {
 
     fastify.get('/api/files/:agentId/:userId', async (request: any, reply: any) => {
         const { agentId, userId } = request.params;
-        const workspacePath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`);
+        const workspacePath = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`);
 
         if (!fs.existsSync(workspacePath)) {
             return reply.code(404).send({ error: 'Workspace not found' });
@@ -1356,7 +1500,7 @@ export async function startServer() {
     fastify.get('/api/files/:agentId/:userId/download/*', async (request: any, reply: any) => {
         const { agentId, userId } = request.params;
         const filePath = request.params['*'];
-        const workspacePath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`);
+        const workspacePath = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`);
         const fullPath = path.join(workspacePath, filePath);
 
         if (!fullPath.startsWith(workspacePath)) {
@@ -1377,7 +1521,7 @@ export async function startServer() {
 
     fastify.get('/api/files/:agentId/:userId/download-all', async (request: any, reply: any) => {
         const { agentId, userId } = request.params;
-        const workspacePath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`);
+        const workspacePath = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`);
         if (!fs.existsSync(workspacePath)) {
             return reply.code(404).send({ error: 'Workspace not found' });
         }
@@ -1394,7 +1538,7 @@ export async function startServer() {
         const { fileName, contentBase64 } = request.body || {};
         if (!fileName || !contentBase64) return reply.code(400).send({ error: 'fileName and contentBase64 required' });
 
-        const workspacePath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`);
+        const workspacePath = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`);
         if (!fs.existsSync(workspacePath)) fs.mkdirSync(workspacePath, { recursive: true });
         const safeName = String(fileName).replace(/[^a-zA-Z0-9._-]/g, '_');
         const fullPath = path.join(workspacePath, safeName);
