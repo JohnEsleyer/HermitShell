@@ -12,6 +12,36 @@ function asString(value: unknown): string {
     return String(value);
 }
 
+function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
+    try {
+        const parsed = JSON.parse(candidate);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+
+        const hasContractField = (
+            Object.prototype.hasOwnProperty.call(parsed, 'message') ||
+            Object.prototype.hasOwnProperty.call(parsed, 'terminal') ||
+            Object.prototype.hasOwnProperty.call(parsed, 'action') ||
+            Object.prototype.hasOwnProperty.call(parsed, 'userId')
+        );
+
+        if (!hasContractField) return null;
+
+        const panelActions = Array.isArray((parsed as any).panelActions)
+            ? (parsed as any).panelActions.map((item: unknown) => asString(item)).filter(Boolean)
+            : [];
+
+        return {
+            userId: (parsed as any).userId !== undefined ? asString((parsed as any).userId) : undefined,
+            message: asString((parsed as any).message).trim(),
+            action: asString((parsed as any).action).trim(),
+            terminal: asString((parsed as any).terminal).trim(),
+            panelActions
+        };
+    } catch {
+        return null;
+    }
+}
+
 export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     const fallback: ParsedAgentResponse = {
         message: asString(rawOutput).trim(),
@@ -21,29 +51,21 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     };
 
     const output = asString(rawOutput);
+
+    const objectMatches = output.match(/\{[\s\S]*?\}/g) || [];
+    for (let i = objectMatches.length - 1; i >= 0; i--) {
+        const parsed = tryParseContractJson(objectMatches[i]);
+        if (parsed) return parsed;
+    }
+
     const firstBrace = output.indexOf('{');
     const lastBrace = output.lastIndexOf('}');
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-        return fallback;
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        const parsed = tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
+        if (parsed) return parsed;
     }
 
-    try {
-        const jsonStr = output.substring(firstBrace, lastBrace + 1);
-        const parsed = JSON.parse(jsonStr);
-        const panelActions = Array.isArray(parsed.panelActions)
-            ? parsed.panelActions.map((item: unknown) => asString(item)).filter(Boolean)
-            : [];
-
-        return {
-            userId: parsed.userId !== undefined ? asString(parsed.userId) : undefined,
-            message: asString(parsed.message).trim(),
-            action: asString(parsed.action).trim(),
-            terminal: asString(parsed.terminal).trim(),
-            panelActions
-        };
-    } catch {
-        return fallback;
-    }
+    return fallback;
 }
 
 export function parseFileAction(action: string): string | null {

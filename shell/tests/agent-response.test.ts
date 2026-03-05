@@ -15,6 +15,33 @@ describe('parseAgentResponse', () => {
     expect(result.message).toBe('Plain response');
     expect(result.action).toBe('');
   });
+
+  it('extracts contract JSON from noisy logs', () => {
+    const output = [
+      '2026-03-05T09:25:17.114Z HermitShell Agent starting...',
+      '2026-03-05T09:25:17.123Z Iteration 1/10',
+      '{"userId":"123","message":"Hello there","terminal":"","action":""}',
+      '2026-03-05T09:25:23.187Z Agent finished'
+    ].join('\n');
+
+    const result = parseAgentResponse(output);
+    expect(result.userId).toBe('123');
+    expect(result.message).toBe('Hello there');
+    expect(result.terminal).toBe('');
+    expect(result.action).toBe('');
+  });
+
+  it('uses the latest valid JSON object in output', () => {
+    const output = [
+      '{"message":"first","action":"","terminal":""}',
+      'log line',
+      '{"message":"second","action":"GIVE:hello.txt","terminal":""}'
+    ].join('\n');
+
+    const result = parseAgentResponse(output);
+    expect(result.message).toBe('second');
+    expect(result.action).toBe('GIVE:hello.txt');
+  });
 });
 
 describe('parseFileAction', () => {
@@ -24,4 +51,3 @@ describe('parseFileAction', () => {
     expect(parseFileAction('')).toBeNull();
   });
 });
-
