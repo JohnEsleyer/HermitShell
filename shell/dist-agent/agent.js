@@ -36,7 +36,6 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
-const client_1 = require("@libsql/client");
 const WORKSPACE_DIR = '/app/workspace';
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://172.17.0.1:3000';
 const USER_MSG = process.env.USER_MSG || '';
@@ -193,7 +192,15 @@ async function handleCalendarAction(action) {
     const parts = parsed.value.split('|');
     const calendarDbPath = path.join(WORKSPACE_DIR, 'work', 'calendar.db');
     try {
-        const db = (0, client_1.createClient)({ url: `file:${calendarDbPath}` });
+        let createClient;
+        try {
+            ({ createClient } = await Promise.resolve().then(() => __importStar(require('@libsql/client'))));
+        }
+        catch {
+            log('Calendar action skipped: @libsql/client not installed in runtime');
+            return 'Calendar actions are unavailable in this runtime.';
+        }
+        const db = createClient({ url: `file:${calendarDbPath}` });
         await db.execute(`
             CREATE TABLE IF NOT EXISTS calendar_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

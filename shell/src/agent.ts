@@ -3,7 +3,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { createClient } from '@libsql/client';
 
 const WORKSPACE_DIR = '/app/workspace';
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://172.17.0.1:3000';
@@ -196,6 +195,14 @@ async function handleCalendarAction(action: string): Promise<string> {
     const calendarDbPath = path.join(WORKSPACE_DIR, 'work', 'calendar.db');
 
     try {
+        let createClient: any;
+        try {
+            ({ createClient } = await import('@libsql/client'));
+        } catch {
+            log('Calendar action skipped: @libsql/client not installed in runtime');
+            return 'Calendar actions are unavailable in this runtime.';
+        }
+
         const db = createClient({ url: `file:${calendarDbPath}` });
         
         await db.execute(`
