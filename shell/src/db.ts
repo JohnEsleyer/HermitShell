@@ -81,24 +81,6 @@ export interface AgentRuntimeLog {
     created_at: string;
 }
 
-export interface CalendarEvent {
-    id: number;
-    agent_id: number;
-    title: string;
-    prompt: string;
-    start_time: string;
-    end_time: string | null;
-    target_user_id: number;
-    color?: string | null;
-    symbol?: string | null;
-    status: 'scheduled' | 'running' | 'completed' | 'failed' | 'cancelled';
-    last_error?: string | null;
-    started_at?: string | null;
-    completed_at?: string | null;
-    created_at: string;
-    updated_at: string;
-}
-
 export interface SiteScreenshot {
     id: number;
     agent_id: number;
@@ -115,6 +97,17 @@ export interface SiteTunnel {
     site_name: string;
     tunnel_url: string | null;
     expires_at: string | null;
+    is_active: number;
+    created_at: string;
+}
+
+export interface AppServer {
+    id: number;
+    agent_id: number;
+    user_id: number;
+    site_name: string;
+    port: number | null;
+    screenshot_path: string | null;
     is_active: number;
     created_at: string;
 }
@@ -213,25 +206,6 @@ export async function initDb(): Promise<void> {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (agent_id) REFERENCES agents(id)
         );
-
-        CREATE TABLE IF NOT EXISTS calendar_events (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_id INTEGER NOT NULL,
-            title TEXT NOT NULL,
-            prompt TEXT NOT NULL,
-            start_time TEXT NOT NULL,
-            end_time TEXT,
-            target_user_id INTEGER NOT NULL,
-            color TEXT,
-            symbol TEXT,
-            status TEXT DEFAULT 'scheduled',
-            last_error TEXT,
-            started_at DATETIME,
-            completed_at DATETIME,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (agent_id) REFERENCES agents(id)
-        );
     `);
 
     try {
@@ -267,16 +241,6 @@ export async function initDb(): Promise<void> {
     try {
         await db.execute('ALTER TABLE audit_logs ADD COLUMN approved_by INTEGER');
         await db.execute('ALTER TABLE audit_logs ADD COLUMN approved_at DATETIME');
-    } catch (e) {
-    }
-
-    try {
-        await db.execute('ALTER TABLE calendar_events ADD COLUMN color TEXT');
-    } catch (e) {
-    }
-
-    try {
-        await db.execute('ALTER TABLE calendar_events ADD COLUMN symbol TEXT');
     } catch (e) {
     }
 
@@ -318,6 +282,18 @@ export async function initDb(): Promise<void> {
             site_name TEXT NOT NULL,
             tunnel_url TEXT,
             expires_at DATETIME,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (agent_id) REFERENCES agents(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS app_servers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            agent_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            site_name TEXT NOT NULL,
+            port INTEGER,
+            screenshot_path TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (agent_id) REFERENCES agents(id)
@@ -452,117 +428,8 @@ export async function deleteAgent(id: number): Promise<void> {
     await db.execute({ sql: 'DELETE FROM budgets WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM audit_logs WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM agent_memory WHERE agent_id = ?', args: [id] });
-    await db.execute({ sql: 'DELETE FROM calendar_events WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM agent_runtime_logs WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM agents WHERE id = ?', args: [id] });
-}
-
-export async function createCalendarEvent(event: {
-    agent_id: number;
-    title: string;
-    prompt: string;
-    start_time: string;
-    end_time?: string | null;
-    target_user_id: number;
-    color?: string | null;
-    symbol?: string | null;
-}): Promise<number> {
-    const db = await getClient();
-    const rs = await db.execute({
-        sql: `INSERT INTO calendar_events (agent_id, title, prompt, start_time, end_time, target_user_id, color, symbol, status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')`,
-        args: [event.agent_id, event.title, event.prompt, event.start_time, event.end_time || null, event.target_user_id, event.color || null, event.symbol || null]
-    });
-    return Number(rs.lastInsertRowid);
-}
-
-export async function getCalendarEvents(agentId?: number): Promise<CalendarEvent[]> {
-    const db = await getClient();
-    if (agentId) {
-        const rs = await db.execute({
-            sql: 'SELECT * FROM calendar_events WHERE agent_id = ? ORDER BY start_time ASC',
-            args: [agentId]
-        });
-        return rs.rows as unknown as CalendarEvent[];
-    }
-
-    const rs = await db.execute('SELECT * FROM calendar_events ORDER BY start_time ASC');
-    return rs.rows as unknown as CalendarEvent[];
-}
-
-
-export async function getCalendarEventById(id: number): Promise<CalendarEvent | undefined> {
-    const db = await getClient();
-    const rs = await db.execute({
-        sql: 'SELECT * FROM calendar_events WHERE id = ?',
-        args: [id]
-    });
-    if (rs.rows.length > 0) {
-        return rs.rows[0] as unknown as CalendarEvent;
-    }
-    return undefined;
-}
-
-export async function updateCalendarEvent(id: number, updates: Partial<CalendarEvent>): Promise<void> {
-    const db = await getClient();
-    const fields: string[] = [];
-    const values: any[] = [];
-
-    if (updates.title !== undefined) { fields.push('title = ?'); values.push(updates.title); }
-    if (updates.prompt !== undefined) { fields.push('prompt = ?'); values.push(updates.prompt); }
-    if (updates.start_time !== undefined) { fields.push('start_time = ?'); values.push(updates.start_time); }
-    if (updates.end_time !== undefined) { fields.push('end_time = ?'); values.push(updates.end_time); }
-    if (updates.target_user_id !== undefined) { fields.push('target_user_id = ?'); values.push(updates.target_user_id); }
-    if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
-    if (updates.symbol !== undefined) { fields.push('symbol = ?'); values.push(updates.symbol); }
-    if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
-    if (updates.last_error !== undefined) { fields.push('last_error = ?'); values.push(updates.last_error); }
-    if (updates.started_at !== undefined) { fields.push('started_at = ?'); values.push(updates.started_at); }
-    if (updates.completed_at !== undefined) { fields.push('completed_at = ?'); values.push(updates.completed_at); }
-
-    if (!fields.length) return;
-
-    fields.push('updated_at = CURRENT_TIMESTAMP');
-    values.push(id);
-    await db.execute({
-        sql: `UPDATE calendar_events SET ${fields.join(', ')} WHERE id = ?`,
-        args: values
-    });
-}
-
-export async function deleteCalendarEvent(id: number): Promise<void> {
-    const db = await getClient();
-    await db.execute({ sql: 'DELETE FROM calendar_events WHERE id = ?', args: [id] });
-}
-
-export async function claimDueCalendarEvents(nowIso: string): Promise<CalendarEvent[]> {
-    const db = await getClient();
-    const rs = await db.execute({
-        sql: `SELECT * FROM calendar_events
-              WHERE status = 'scheduled'
-                AND start_time <= ?
-                AND (end_time IS NULL OR end_time >= ?)
-              ORDER BY start_time ASC`,
-        args: [nowIso, nowIso]
-    });
-
-    const due = rs.rows as unknown as CalendarEvent[];
-    const claimed: CalendarEvent[] = [];
-
-    for (const event of due) {
-        const update = await db.execute({
-            sql: `UPDATE calendar_events
-                  SET status = 'running', started_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                  WHERE id = ? AND status = 'scheduled'`,
-            args: [event.id]
-        });
-
-        if (Number(update.rowsAffected || 0) > 0) {
-            claimed.push({ ...event, status: 'running' });
-        }
-    }
-
-    return claimed;
 }
 
 export async function createSiteScreenshot(screenshot: {
@@ -625,6 +492,69 @@ export async function deactivateSiteTunnel(id: number): Promise<void> {
     await db.execute({
         sql: 'UPDATE site_tunnels SET is_active = 0 WHERE id = ?',
         args: [id]
+    });
+}
+
+export async function createAppServer(server: {
+    agent_id: number;
+    user_id: number;
+    site_name: string;
+    port: number;
+}): Promise<number> {
+    const db = await getClient();
+    await db.execute({
+        sql: 'UPDATE app_servers SET is_active = 0 WHERE agent_id = ? AND user_id = ? AND site_name = ?',
+        args: [server.agent_id, server.user_id, server.site_name]
+    });
+    
+    const rs = await db.execute({
+        sql: `INSERT INTO app_servers (agent_id, user_id, site_name, port, is_active) VALUES (?, ?, ?, ?, 1)`,
+        args: [server.agent_id, server.user_id, server.site_name, server.port]
+    });
+    return Number(rs.lastInsertRowid);
+}
+
+export async function getActiveAppServer(agentId: number, userId: number, siteName: string): Promise<AppServer | undefined> {
+    const db = await getClient();
+    const rs = await db.execute({
+        sql: 'SELECT * FROM app_servers WHERE agent_id = ? AND user_id = ? AND site_name = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1',
+        args: [agentId, userId, siteName]
+    });
+    if (rs.rows.length > 0) {
+        return rs.rows[0] as unknown as AppServer;
+    }
+    return undefined;
+}
+
+export async function deactivateAppServer(agentId: number, userId: number, siteName: string): Promise<void> {
+    const db = await getClient();
+    await db.execute({
+        sql: 'UPDATE app_servers SET is_active = 0 WHERE agent_id = ? AND user_id = ? AND site_name = ?',
+        args: [agentId, userId, siteName]
+    });
+}
+
+export async function updateAppServerScreenshot(agentId: number, userId: number, siteName: string, screenshotPath: string): Promise<void> {
+    const db = await getClient();
+    await db.execute({
+        sql: 'UPDATE app_servers SET screenshot_path = ? WHERE agent_id = ? AND user_id = ? AND site_name = ? AND is_active = 1',
+        args: [screenshotPath, agentId, userId, siteName]
+    });
+}
+
+export async function getAllActiveAppServers(): Promise<AppServer[]> {
+    const db = await getClient();
+    const rs = await db.execute({
+        sql: 'SELECT * FROM app_servers WHERE is_active = 1'
+    });
+    return rs.rows as unknown as AppServer[];
+}
+
+export async function deleteAppServer(agentId: number, userId: number, siteName: string): Promise<void> {
+    const db = await getClient();
+    await db.execute({
+        sql: 'DELETE FROM app_servers WHERE agent_id = ? AND user_id = ? AND site_name = ?',
+        args: [agentId, userId, siteName]
     });
 }
 
