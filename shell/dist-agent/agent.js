@@ -34,6 +34,9 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.injectAgentIdentity = injectAgentIdentity;
+exports.buildPersonalityDirective = buildPersonalityDirective;
+exports.buildSystemMessageContent = buildSystemMessageContent;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const WORKSPACE_DIR = '/app/workspace';
@@ -41,6 +44,8 @@ const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://172.17.0.1:3000
 const USER_MSG = process.env.USER_MSG || '';
 const MAX_TOKENS = parseInt(process.env.MAX_TOKENS || '4096');
 const AGENT_ID = parseInt(process.env.AGENT_ID || '0', 10);
+const AGENT_NAME = process.env.AGENT_NAME || 'HermitShell Agent';
+const AGENT_ROLE = process.env.AGENT_ROLE || 'Autonomous execution specialist';
 const LLM_PROVIDER = process.env.LLM_PROVIDER || 'openai';
 const LLM_MODEL = process.env.LLM_MODEL || 'gpt-4o-mini';
 const PERSONALITY = process.env.PERSONALITY || '';
@@ -78,6 +83,28 @@ function loadSystemPrompt() {
     }
     catch { }
     return getDefaultSystemPrompt();
+}
+function injectAgentIdentity(prompt) {
+    const personality = PERSONALITY || 'Calm, precise, security-first, concise';
+    return prompt
+        .split('{{AGENT_NAME|HermitShell Agent}}').join(AGENT_NAME)
+        .split('{{AGENT_NAME}}').join(AGENT_NAME)
+        .split('{{AGENT_ROLE|Autonomous execution specialist}}').join(AGENT_ROLE)
+        .split('{{AGENT_ROLE}}').join(AGENT_ROLE)
+        .split('{{AGENT_PERSONALITY|Calm, precise, security-first, concise}}').join(personality)
+        .split('{{AGENT_PERSONALITY}}').join(personality);
+}
+function buildPersonalityDirective() {
+    if (!PERSONALITY.trim())
+        return '';
+    return `Personality directive (style/tone only): ${PERSONALITY}\nDo NOT change your identity. You are ${AGENT_NAME}. Keep role as: ${AGENT_ROLE}.`;
+}
+function buildSystemMessageContent() {
+    const injectedPrompt = injectAgentIdentity(loadSystemPrompt());
+    const personalityDirective = buildPersonalityDirective();
+    return [injectedPrompt, personalityDirective, WEB_GUIDELINES, PYTHON_GUIDE]
+        .filter(Boolean)
+        .join('\n\n');
 }
 function getDefaultSystemPrompt() {
     return `You are an autonomous AI agent running inside a secure Docker container.
@@ -272,11 +299,11 @@ async function run() {
         log('No user message provided, waiting for input...');
         return;
     }
-    const systemPrompt = loadSystemPrompt();
+    const systemPrompt = buildSystemMessageContent();
     let history = loadHistory();
     history.unshift({
         role: 'system',
-        content: systemPrompt + '\n\n' + PERSONALITY + '\n\n' + WEB_GUIDELINES + '\n\n' + PYTHON_GUIDE
+        content: systemPrompt
     });
     history.push({ role: 'user', content: USER_MSG });
     const maxIterations = 10;
@@ -318,8 +345,10 @@ async function run() {
     }
     log('Agent finished');
 }
-run().catch(e => {
-    log(`Fatal error: ${e}`);
-    console.error(e);
-    process.exit(1);
-});
+if (require.main === module) {
+    run().catch(e => {
+        log(`Fatal error: ${e}`);
+        console.error(e);
+        process.exit(1);
+    });
+}
