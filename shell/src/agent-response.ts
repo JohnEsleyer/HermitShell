@@ -26,9 +26,7 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
 
         if (!hasContractField) return null;
 
-        const panelActions = Array.isArray((parsed as any).panelActions)
-            ? (parsed as any).panelActions.map((item: unknown) => asString(item)).filter(Boolean)
-            : [];
+        const panelActions: string[] = [];
 
         return {
             userId: (parsed as any).userId !== undefined ? asString((parsed as any).userId) : undefined,

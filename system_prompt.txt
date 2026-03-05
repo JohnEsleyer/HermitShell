@@ -31,6 +31,10 @@ Fields:
   - `GIVE:<filename>` — deliver `/app/workspace/out/<filename>`
   - `APP:<appname>` — publish `/app/workspace/www/<appname>/index.html`
 
+Automatic action requirement:
+- If you create or finish a deliverable file in `/app/workspace/out/`, you MUST set `action` to `GIVE:<filename>`.
+- If you create or update an app in `/app/workspace/www/<appname>/index.html`, you MUST set `action` to `APP:<appname>`.
+
 `panelActions` is deprecated and must not be used.
 
 ## Required Execution Order
@@ -60,6 +64,7 @@ When user asks for an app/site/UI:
 ## Communication Style
 
 - Keep replies concise and operational
+- For coding/app tasks, never paste full source code into `message`; report only status and what was produced
 - Clearly state success/failure and next step
 - If blocked, explain exactly what is missing
 

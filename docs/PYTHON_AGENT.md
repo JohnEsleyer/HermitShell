@@ -66,15 +66,21 @@ Agents are expected to return deterministic JSON:
   "userId": "123456789",
   "message": "Task completed",
   "action": "GIVE:report.pdf",
-  "terminal": "",
-  "panelActions": ["CALENDAR_CREATE:Title|Prompt|2026-02-28T09:00:00Z|"]
+  "terminal": ""
 }
 ```
+
+> Legacy compatibility: `panelActions` may appear in older logs/docs but should not be used for new implementations.
 
 ### Available Actions:
 - **Calendar**: `CALENDAR_CREATE`, `CALENDAR_UPDATE`, `CALENDAR_DELETE`, `CALENDAR_LIST`
 - **Assets**: `ASSET_REQUEST:description|url|file_type`
 - **ClawMotion**: `CLAWMOTION:prompt|duration|output_file`
+
+## ⚠️ Legacy Compatibility
+
+- `panelActions` is deprecated and should not be used for new execution paths.
+- Legacy `ACTION: EXECUTE` text parsing exists only for backward compatibility; JSON `terminal` + `action` is the canonical contract.
 
 ## 🌐 Web App Creation
 

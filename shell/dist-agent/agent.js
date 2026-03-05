@@ -90,10 +90,15 @@ Workspace structure:
 
 Available actions (return JSON):
 {
-  "message": "response to user",
+  "message": "short status response to user",
   "terminal": "bash command",
   "action": "GIVE:filename"
 }
+
+Rules:
+- If you create a file in /app/workspace/out, set action to GIVE:<filename>.
+- If you build/update a web app with /app/workspace/www/<appname>/index.html, set action to APP:<appname>.
+- Do not paste full code into message responses. Message must be status-only.
 
 The legacy \`panelActions\` field is deprecated and should not be used.
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp } from '../src/sites';
+import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveWorkspaceApp, buildWorkspaceAppPath } from '../src/sites';
 
 describe('discoverSitesFromWorkspaces', () => {
   it('returns only workspaces with visible www files', () => {
@@ -26,8 +26,8 @@ describe('discoverSitesFromWorkspaces', () => {
       userId: 10,
       agentName: 'Builder',
       imageLabel: 'hermitshell/python',
-      previewUrl: 'https://demo.example/preview/1/8080/',
-      localUrl: '/preview/1/8080/',
+      previewUrl: 'https://demo.example/app/1_10/',
+      localUrl: '/app/1_10/',
       hasPassword: true
     });
   });
@@ -42,7 +42,7 @@ describe('discoverSitesFromWorkspaces', () => {
     expect(sites).toHaveLength(1);
     expect(sites[0].agentName).toBe('Agent #5');
     expect(sites[0].imageLabel).toBe('unknown');
-    expect(sites[0].previewUrl).toBe('http://localhost:3000/preview/5/8080/');
+    expect(sites[0].previewUrl).toBe('http://localhost:3000/app/5_99/');
     expect(sites[0].hasPassword).toBe(false);
   });
 
@@ -81,5 +81,28 @@ describe('discoverSitesFromWorkspaces', () => {
     expect(removed).toBe(true);
     expect(fs.existsSync(appA)).toBe(false);
     expect(fs.existsSync(appB)).toBe(true);
+  });
+});
+
+
+describe('workspace app routing helpers', () => {
+  it('builds workspace app path in /app/<workspace>/<site> format', () => {
+    expect(buildWorkspaceAppPath('12_34', 'calculator')).toBe('/app/12_34/calculator/');
+  });
+
+  it('resolves only valid workspace app folders with index.html', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-sites-'));
+    const app = path.join(root, '3_7', 'www', 'todo');
+    fs.mkdirSync(app, { recursive: true });
+    fs.writeFileSync(path.join(app, 'index.html'), '<h1>todo</h1>');
+
+    const resolved = resolveWorkspaceApp(root, '3_7', 'todo');
+    expect(resolved).not.toBeNull();
+    expect(resolved?.appPath).toContain(path.join('3_7', 'www', 'todo'));
+
+    const invalid = resolveWorkspaceApp(root, '3_7', '../bad');
+    expect(invalid).toBeNull();
+
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });

@@ -31,6 +31,14 @@ describe('parseAgentResponse', () => {
     expect(result.action).toBe('');
   });
 
+
+  it('does not treat panelActions-only payloads as contract output', () => {
+    const raw = '{"panelActions":["CALENDAR_LIST"]}';
+    const result = parseAgentResponse(raw);
+    expect(result.message).toBe(raw);
+    expect(result.panelActions).toEqual([]);
+  });
+
   it('uses the latest valid JSON object in output', () => {
     const output = [
       '{"message":"first","action":"","terminal":""}',

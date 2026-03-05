@@ -8,6 +8,7 @@ import * as chokidar from 'chokidar';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { setPreviewPassword } from './server';
 import { parseAgentResponse, parseFileAction, parseAppAction } from './agent-response';
+import { buildWorkspaceAppPath } from './sites';
 import { startAppServer } from './app-server';
 import { getTunnelUrl } from './tunnel';
 
@@ -38,12 +39,23 @@ const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
 const pendingDelegations = new Map<string, { agentId: number; role: string; task: string; timestamp: number }>();
 let calendarSchedulerStarted = false;
 
-function buildAppEndpoint(agentId: number, userId: number, siteName: string): string {
-    const slug = siteName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'app';
-    const hash = Buffer.from(`${agentId}_${userId}_${siteName}`).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toLowerCase();
-    return `${slug}-${hash}`;
+
+
+function sanitizeUserFacingOutput(output: string): string {
+    const raw = String(output || '').trim();
+    if (!raw) return raw;
+
+    const hasLargeCode = raw.includes('```') || raw.includes('<!DOCTYPE html') || raw.includes('cat > ') || raw.includes('function ');
+    if (raw.length > 1200 || hasLargeCode) {
+        return '✅ Task completed. I kept implementation details in the workspace and will share files/URLs directly.';
+    }
+
+    return raw;
 }
 
+function buildAppUrl(baseUrl: string, agentId: number, userId: number, appName: string): string {
+    return `${String(baseUrl).replace(/\/$/, '')}${buildWorkspaceAppPath(`${agentId}_${userId}`, appName)}`;
+}
 
 export async function sendChatAction(token: string, chatId: number, action: 'typing' | 'upload_document' = 'typing'): Promise<void> {
     const url = `https://api.telegram.org/bot${token}/sendChatAction`;
@@ -466,6 +478,7 @@ export async function processAgentMessage(
         if (parsed.message) {
             finalOutput = parsed.message;
         }
+        finalOutput = sanitizeUserFacingOutput(finalOutput);
 
         const selectedFile = parseFileAction(parsed.action);
         if (selectedFile) {
@@ -488,20 +501,32 @@ export async function processAgentMessage(
             } else {
                 const settings = await import('./db').then(m => m.getAllSettings());
                 const baseUrl = settings.public_url || getTunnelUrl() || 'http://localhost:3000';
-                const appEndpoint = buildAppEndpoint(agent.id, userId, selectedApp);
-                const appUrl = `${String(baseUrl).replace(/\/$/, '')}/apps/${appEndpoint}`;
+                const appUrl = buildAppUrl(baseUrl, agent.id, userId, selectedApp);
                 finalOutput += `
 
 🌐 App is ready: ${appUrl}`;
             }
         }
 
-        if (parsed.panelActions.length > 0) {
-            const actionResults = await executePanelActions(agent.id, userId, parsed.panelActions);
-            if (actionResults.length > 0) {
-                finalOutput += "\n\n" + actionResults.join('\n');
+        try {
+            const workspaceWwwPath = path.join(WORKSPACE_DIR, `${agent.id}_${userId}`, 'www');
+            if (fs.existsSync(workspaceWwwPath) && fs.statSync(workspaceWwwPath).isDirectory()) {
+                const settings = await import('./db').then(m => m.getAllSettings());
+                const baseUrl = settings.public_url || getTunnelUrl() || 'http://localhost:3000';
+                const appFolders = fs.readdirSync(workspaceWwwPath, { withFileTypes: true })
+                    .filter((entry) => entry.isDirectory())
+                    .map((entry) => entry.name)
+                    .filter((name) => fs.existsSync(path.join(workspaceWwwPath, name, 'index.html')));
+
+                if (appFolders.length > 0) {
+                    const urls = appFolders.map((name) => `• ${name}: ${buildAppUrl(baseUrl, agent.id, userId, name)}`);
+                    finalOutput += `
+
+🌐 Available app URLs:
+${urls.join('\n')}`;
+                }
             }
-        }
+        } catch {}
 
         const estimatedCost = result.output.length * 0.00001;
         await updateSpend(agent.id, estimatedCost);
