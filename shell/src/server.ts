@@ -762,7 +762,7 @@ export async function startServer() {
 
             const settings = await getAllSettings();
             const provider = agent.llm_provider && agent.llm_provider !== 'default' ? agent.llm_provider : (settings.default_provider || 'openrouter');
-            const model = agent.llm_model && agent.llm_model !== 'default' ? agent.llm_model : (settings.default_model || 'auto');
+            const model = agent.llm_model && agent.llm_model !== 'default' ? agent.llm_model : (settings.default_model || 'openrouter/free');
 
             const providerKeyMap: Record<string, { key: string; env: string }> = {
                 'openai': { key: 'openai_api_key', env: 'OPENAI_API_KEY' },
@@ -808,7 +808,9 @@ export async function startServer() {
             } else {
                 headers['Authorization'] = `Bearer ${apiKey}`;
                 body.model = model;
-                if (provider === 'openrouter') { url = 'https://openrouter.ai/api/v1/chat/completions'; headers['HTTP-Referer'] = 'https://crabshell.local'; headers['X-Title'] = 'CrabShell'; }
+                if (provider === 'openrouter') {
+                    if (body.model === 'auto') body.model = 'openrouter/free';
+                    url = 'https://openrouter.ai/api/v1/chat/completions'; headers['HTTP-Referer'] = 'https://crabshell.local'; headers['X-Title'] = 'CrabShell'; }
                 else if (provider === 'openai') url = 'https://api.openai.com/v1/chat/completions';
                 else if (provider === 'groq') url = 'https://api.groq.com/openai/v1/chat/completions';
                 else if (provider === 'mistral') url = 'https://api.mistral.ai/v1/chat/completions';

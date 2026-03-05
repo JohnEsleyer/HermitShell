@@ -282,7 +282,7 @@ To get access, follow these steps:
 
 *System:*
 • Public URL: ${settings.public_url || 'Not set'}
-• Default Model: ${settings.default_model || 'auto'}${terminalLink}`;
+• Default Model: ${settings.default_model || 'openrouter/free'}${terminalLink}`;
     }
 
     if (text === '/logs') {
