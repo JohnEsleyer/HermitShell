@@ -1263,26 +1263,33 @@ export function escapeMarkdown(text: string): string {
     return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, '\\$1');
 }
 
-function detectWebServer(output: string, agentId: number): { url: string; port: number } | null {
-    const portPatterns = [
-        /(?:http:\/\/)?(?:0\.0\.0\.0|localhost|127\.0\.0\.1):(\d+)/,
-        /port\s*(\d+)/i,
-        /:(\d{4,5})\/?$/m,
-        /python.*http\.server.*?(\d+)/i,
-        /serving.*on.*port\s*(\d+)/i,
-        /listening.*on.*(\d+)/i
-    ];
+export function detectWebServer(output: string, agentId: number): { url: string; port: number } | null {
+    const lines = output.split(/\r?\n/);
 
-    for (const pattern of portPatterns) {
-        const match = output.match(pattern);
-        if (match) {
-            const port = parseInt(match[1], 10);
-            if (port >= 1024 && port <= 65535) {
-                const settings = require('./db').getAllSettings ? null : null;
-                return { url: `/preview/${agentId}/${port}/`, port };
-            }
+    for (const line of lines) {
+        const lower = line.toLowerCase();
+        const hasServerSignal =
+            lower.includes('http://') ||
+            lower.includes('https://') ||
+            lower.includes('listening') ||
+            lower.includes('serving') ||
+            lower.includes('started server') ||
+            lower.includes('running on');
+
+        if (!hasServerSignal) continue;
+
+        const match = line.match(/(?:http:\/\/)?(?:0\.0\.0\.0|localhost|127\.0\.0\.1):(\d{2,5})/i)
+            || line.match(/(?:port|: )\s*(\d{2,5})/i)
+            || line.match(/\b(?:port|on)\s*(\d{2,5})\b/i);
+
+        if (!match) continue;
+
+        const port = parseInt(match[1], 10);
+        if (port >= 1024 && port <= 65535) {
+            return { url: `/preview/${agentId}/${port}/`, port };
         }
     }
+
     return null;
 }
 
