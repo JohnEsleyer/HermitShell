@@ -86,6 +86,11 @@ function buildAppEndpoint(agentId: number, userId: number, siteName: string): st
     return `${toEndpointSlug(siteName)}-${hash}`;
 }
 
+
+export function buildPublicAppEndpoint(agentId: number, userId: number, siteName: string): string {
+    return `/apps/${buildAppEndpoint(agentId, userId, siteName)}`;
+}
+
 function isValidWebApp(dir: string): { hasIndexHtml: boolean; hasStyles: boolean; files: string[] } {
     const files = fs.readdirSync(dir);
     const hasIndexHtml = files.includes('index.html');
@@ -222,6 +227,26 @@ export function resolveAppEndpoint(workspaceDir: string, endpoint: string): { ag
         }
     }
     return null;
+}
+
+
+export function resolveEndpointApp(
+    workspaceDir: string,
+    endpoint: string
+): { workspaceId: string; siteName: string; appPath: string; indexPath: string } | null {
+    const resolved = resolveAppEndpoint(workspaceDir, endpoint);
+    if (!resolved) return null;
+
+    const workspaceId = `${resolved.agentId}_${resolved.userId}`;
+    const app = resolveWorkspaceApp(workspaceDir, workspaceId, resolved.siteName);
+    if (!app) return null;
+
+    return {
+        workspaceId,
+        siteName: resolved.siteName,
+        appPath: app.appPath,
+        indexPath: app.indexPath
+    };
 }
 
 export function resolveWorkspaceApp(

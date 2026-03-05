@@ -39,6 +39,18 @@ describe('parseAgentResponse', () => {
     expect(result.panelActions).toEqual([]);
   });
 
+
+  it('extracts inline GIVE action from plain text fallback output', () => {
+    const result = parseAgentResponse('Done. GIVE:hello.txt');
+    expect(result.message).toBe('Done. GIVE:hello.txt');
+    expect(result.action).toBe('GIVE:hello.txt');
+  });
+
+  it('extracts inline APP action from plain text fallback output', () => {
+    const result = parseAgentResponse('App deployed at endpoint APP:todo-ui');
+    expect(result.action).toBe('APP:todo-ui');
+  });
+
   it('uses the latest valid JSON object in output', () => {
     const output = [
       '{"message":"first","action":"","terminal":""}',

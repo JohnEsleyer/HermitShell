@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveWorkspaceApp, buildWorkspaceAppPath } from '../src/sites';
+import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveWorkspaceApp, buildWorkspaceAppPath, buildPublicAppEndpoint, resolveEndpointApp } from '../src/sites';
 
 describe('discoverSitesFromWorkspaces', () => {
   it('returns only workspaces with visible www files', () => {
@@ -88,6 +88,29 @@ describe('discoverSitesFromWorkspaces', () => {
 describe('workspace app routing helpers', () => {
   it('builds workspace app path in /app/<workspace>/<site> format', () => {
     expect(buildWorkspaceAppPath('12_34', 'calculator')).toBe('/app/12_34/calculator/');
+  });
+
+
+  it('builds public endpoint path in /apps/<endpoint> format', () => {
+    expect(buildPublicAppEndpoint(12, 34, 'calculator')).toMatch(/^\/apps\/[a-z0-9-]+$/);
+  });
+
+
+  it('resolves endpoint to workspace app path and index', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hermit-sites-'));
+    const app = path.join(root, '12_34', 'www', 'calculator');
+    fs.mkdirSync(app, { recursive: true });
+    fs.writeFileSync(path.join(app, 'index.html'), '<h1>calc</h1>');
+
+    const endpoint = buildPublicAppEndpoint(12, 34, 'calculator').replace('/apps/', '');
+    const resolved = resolveEndpointApp(root, endpoint);
+
+    expect(resolved).not.toBeNull();
+    expect(resolved?.workspaceId).toBe('12_34');
+    expect(resolved?.siteName).toBe('calculator');
+    expect(resolved?.indexPath).toContain(path.join('12_34', 'www', 'calculator', 'index.html'));
+
+    fs.rmSync(root, { recursive: true, force: true });
   });
 
   it('resolves only valid workspace app folders with index.html', () => {
