@@ -20,6 +20,7 @@ export type WebApp = {
     files: string[];
     profilePictureUrl?: string;
     containerLabel: string;
+    isActive: boolean;
 };
 
 export type SiteRecord = {
@@ -102,7 +103,7 @@ export function discoverSitesFromWorkspaces(
             const webAppPath = path.join(wwwPath, subDir.name);
             const { hasIndexHtml, hasStyles, files } = isValidWebApp(webAppPath);
             
-            if (hasIndexHtml || hasStyles || files.length > 0) {
+            if (hasIndexHtml) {
                 webApps.push({
                     agentId: parsed.agentId,
                     userId: parsed.userId,
@@ -119,7 +120,8 @@ export function discoverSitesFromWorkspaces(
                     hasStyles,
                     files,
                     profilePictureUrl: agent?.profile_picture_url || '',
-                    containerLabel: ws.name
+                    containerLabel: ws.name,
+                    isActive: false
                 });
             }
         }

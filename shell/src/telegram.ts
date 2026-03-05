@@ -731,7 +731,15 @@ export function startCalendarScheduler(): void {
                 const agent = agents.find(a => a.id === agentId);
                 if (!agent) continue;
 
-                const dueEvents = await wsClaimDueCalendarEvents(agentId, userId);
+                let dueEvents;
+                try {
+                    dueEvents = await wsClaimDueCalendarEvents(agentId, userId);
+                } catch (err: any) {
+                    if (err?.code === 'SQLITE_ERROR' && err?.message?.includes('no such table')) {
+                        continue;
+                    }
+                    throw err;
+                }
 
                 for (const event of dueEvents) {
                     try {
