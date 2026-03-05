@@ -57,6 +57,18 @@ function buildAppUrl(baseUrl: string, agentId: number, userId: number, appName: 
     return `${String(baseUrl).replace(/\/$/, '')}${buildPublicAppEndpoint(agentId, userId, appName)}`;
 }
 
+function getWorkspaceOutFiles(agentId: number, userId: number): string[] {
+    const outPath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`, 'out');
+    if (!fs.existsSync(outPath)) return [];
+
+    return fs.readdirSync(outPath)
+        .filter((name) => !name.includes('..') && !name.includes('/') && !name.includes('\\'))
+        .filter((name) => {
+            const fullPath = path.join(outPath, name);
+            return fs.existsSync(fullPath) && fs.statSync(fullPath).isFile();
+        });
+}
+
 export async function sendChatAction(token: string, chatId: number, action: 'typing' | 'upload_document' = 'typing'): Promise<void> {
     const url = `https://api.telegram.org/bot${token}/sendChatAction`;
 
@@ -403,6 +415,7 @@ export async function processAgentMessage(
     const meetingContext = meetings.length > 0
         ? meetings.map(m => `Meeting with Agent ${m.initiator_id === agent.id ? m.participant_id : m.initiator_id}: ${m.topic}\n${m.transcript || 'No transcript yet'}`).join('\n\n')
         : null;
+    const beforeOutFiles = new Set(getWorkspaceOutFiles(agent.id, userId));
 
     try {
         if (statusMessageId) {
@@ -481,14 +494,41 @@ export async function processAgentMessage(
         finalOutput = sanitizeUserFacingOutput(finalOutput);
 
         const selectedFile = parseFileAction(parsed.action);
+        let deliveredByAction = false;
         if (selectedFile) {
             const outPath = path.join(WORKSPACE_DIR, `${agent.id}_${userId}`, 'out');
             const filePath = path.join(outPath, selectedFile);
             if (fs.existsSync(filePath) && fs.statSync(filePath).isFile() && !processedFiles.has(filePath)) {
                 processedFiles.add(filePath);
                 await sendFileViaTelegram(token, chatId, filePath, `📎 ${selectedFile}`);
+                deliveredByAction = true;
                 setTimeout(() => processedFiles.delete(filePath), 30000);
             }
+        }
+
+        const afterOutFiles = getWorkspaceOutFiles(agent.id, userId);
+        const autoDiscoveredFiles = afterOutFiles.filter((name) => !beforeOutFiles.has(name));
+        if (!selectedFile && autoDiscoveredFiles.length > 0) {
+            const newestFirst = autoDiscoveredFiles
+                .map((name) => ({
+                    name,
+                    fullPath: path.join(WORKSPACE_DIR, `${agent.id}_${userId}`, 'out', name),
+                    mtime: fs.statSync(path.join(WORKSPACE_DIR, `${agent.id}_${userId}`, 'out', name)).mtimeMs
+                }))
+                .sort((a, b) => b.mtime - a.mtime)
+                .slice(0, 3);
+
+            for (const file of newestFirst) {
+                if (processedFiles.has(file.fullPath)) continue;
+                processedFiles.add(file.fullPath);
+                await sendFileViaTelegram(token, chatId, file.fullPath, `📎 ${file.name}`);
+                setTimeout(() => processedFiles.delete(file.fullPath), 30000);
+            }
+
+            const names = newestFirst.map((f) => f.name).join(', ');
+            finalOutput += `\n\n📎 Auto-delivered file(s): ${names}`;
+        } else if (deliveredByAction && selectedFile) {
+            finalOutput += `\n\n📎 Delivered file: ${selectedFile}`;
         }
 
         const selectedApp = parseAppAction(parsed.action);
