@@ -26,6 +26,7 @@ interface CalendarEvent {
     target_user_id: number;
     color: string | null;
     symbol: string | null;
+    recurrence_cron: string | null;
     status: string;
     last_error: string | null;
     started_at: string | null;
@@ -77,12 +78,29 @@ export async function initWorkspaceDatabases(agentId: number, userId: number = 0
             target_user_id INTEGER NOT NULL,
             color TEXT,
             symbol TEXT,
+            recurrence_cron TEXT,
             status TEXT DEFAULT 'scheduled',
             last_error TEXT,
             started_at TEXT,
             completed_at TEXT,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await calendarClient.execute(`CREATE INDEX IF NOT EXISTS idx_calendar_events_due ON calendar_events(status, start_time)`);
+    await calendarClient.execute(`CREATE INDEX IF NOT EXISTS idx_calendar_events_user ON calendar_events(target_user_id, start_time)`);
+
+    await calendarClient.execute(`
+        CREATE TABLE IF NOT EXISTS calendar_event_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id INTEGER NOT NULL,
+            agent_id INTEGER NOT NULL,
+            target_user_id INTEGER NOT NULL,
+            run_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            status TEXT NOT NULL,
+            result_message TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )
     `);
 
@@ -107,12 +125,13 @@ export async function createCalendarEvent(event: {
     target_user_id: number;
     color?: string | null;
     symbol?: string | null;
+    recurrence_cron?: string | null;
 }, userId: number = 0): Promise<number> {
     const client = getCalendarClient(event.agent_id, userId);
     const rs = await client.execute({
-        sql: `INSERT INTO calendar_events (agent_id, title, prompt, start_time, end_time, target_user_id, color, symbol, status)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')`,
-        args: [event.agent_id, event.title, event.prompt, event.start_time, event.end_time || null, event.target_user_id, event.color || null, event.symbol || null]
+        sql: `INSERT INTO calendar_events (agent_id, title, prompt, start_time, end_time, target_user_id, color, symbol, recurrence_cron, status)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled')`,
+        args: [event.agent_id, event.title, event.prompt, event.start_time, event.end_time || null, event.target_user_id, event.color || null, event.symbol || null, event.recurrence_cron || null]
     });
     return Number(rs.lastInsertRowid);
 }
@@ -163,6 +182,7 @@ export async function updateCalendarEvent(id: number, agentId: number, updates: 
     if (updates.color !== undefined) { fields.push('color = ?'); values.push(updates.color); }
     if (updates.symbol !== undefined) { fields.push('symbol = ?'); values.push(updates.symbol); }
     if (updates.status !== undefined) { fields.push('status = ?'); values.push(updates.status); }
+    if (updates.recurrence_cron !== undefined) { fields.push('recurrence_cron = ?'); values.push(updates.recurrence_cron); }
     if (updates.last_error !== undefined) { fields.push('last_error = ?'); values.push(updates.last_error); }
     if (updates.started_at !== undefined) { fields.push('started_at = ?'); values.push(updates.started_at); }
     if (updates.completed_at !== undefined) { fields.push('completed_at = ?'); values.push(updates.completed_at); }

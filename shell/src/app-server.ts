@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { discoverSitesFromWorkspaces } from './sites';
-import { getAllAgents, getAllSettings, createAppServer, getActiveAppServer, deactivateAppServer, updateAppServerScreenshot, getAllActiveAppServers, deleteAppServer, AppServer, createSiteTunnel, getActiveSiteTunnel, deactivateSiteTunnel } from './db';
+import { getAllAgents, getAllSettings, createAppServer, getActiveAppServer, deactivateAppServer, updateAppServerScreenshot, getAllActiveAppServers, deleteAppServer, createSiteTunnel, getActiveSiteTunnel, deactivateSiteTunnel } from './db';
 
 const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
 
@@ -161,8 +161,6 @@ export async function captureAppScreenshotInContainer(
     const appPath = path.join(workspacePath, 'www', siteName);
     const screenshotPath = path.join(appPath, 'thumbnail.png');
     
-    const settings = await getAllSettings();
-    const baseUrl = settings.public_url || `http://localhost:${status.port}`;
     const targetUrl = `http://127.0.0.1:${status.port}/`;
     
     let playwright: any;
@@ -173,7 +171,7 @@ export async function captureAppScreenshotInContainer(
     }
     
     const browser = await playwright.chromium.launch({ headless: true });
-    const page = await browser.newView({ viewport: { width: 1280, height: 720 } });
+    const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     
     try {
         await page.goto(targetUrl, { waitUntil: 'networkidle', timeout: 15000 });

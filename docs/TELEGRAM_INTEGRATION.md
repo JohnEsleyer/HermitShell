@@ -22,7 +22,7 @@ Any file dropped into a Telegram chat with the bot (e.g., a `.csv`, `.py`, or `.
 ### 2. Outbound (Agent to User)
 When an agent creates a file it wants the user to see:
 - It writes the file to `/app/workspace/out/`.
-- It emits deterministic JSON output with `"action": "FILE:<filename>"`.
+- It emits deterministic JSON output with `"action": "GIVE:<filename>"`.
 - The Orchestrator's **Chokidar-based File Watcher** detects the add/write event.
 - It triggers `sendFileViaTelegram()`, which uploads the file back to the original Telegram chat as a document.
 
@@ -34,7 +34,7 @@ If an agent hosts a simple website (e.g., by running `python -m http.server`), t
 - **Each subfolder is a separate web app** with its own `index.html`
 - Use vanilla HTML/CSS/JS only (no frameworks)
 - The Orchestrator serves these files under a unique URL like:
-  `{public_url}/preview/{agentId}_{userId}/`
+  `{public_url}/apps/{appname-random}` (redirects to preview path)
 - This allows for rich, interactive UIs to be built and "deployed" instantly by an agent.
 
 ## ⌨️ Bot Commands & Interactivity

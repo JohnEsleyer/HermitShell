@@ -31,7 +31,7 @@
                 <span class="text-white font-medium">${escapeHtml(app.siteName)}</span>
                 ${app.hasIndexHtml ? '<span class="text-xs px-1.5 py-0.5 rounded bg-green-600/20 text-green-400">index.html</span>' : ''}
               </div>
-              <div class="text-xs text-slate-500 mt-1">${app.files?.length || 0} files</div>
+              <div class="text-xs text-slate-500 mt-1">${app.files?.length || 0} files</div><div class="text-[10px] text-orange-300 mono mt-1">/${escapeHtml(app.endpoint || '')}</div>
             </div>
           </div>
           <div class="flex gap-2 mt-3">
@@ -40,7 +40,7 @@
                 onclick="openSitePreview(${site.agentId}, ${site.userId}, '${app.siteName}', '${app.previewUrl}')">
               <i data-lucide="eye" class="w-3 h-3"></i> Open
             </button>
-            <button class="bg-purple-600 hover:bg-purple-500 text-white text-xs py-1.5 px-3 rounded-lg" onclick="captureSiteScreenshotFor(${site.agentId}, ${site.userId}, '${app.siteName}')">Screenshot</button>
+            <button class="bg-purple-600 hover:bg-purple-500 text-white text-xs py-1.5 px-3 rounded-lg" onclick="captureSiteScreenshotFor(${site.agentId}, ${site.userId}, '${app.siteName}')">Retake Shot</button>
             <button class="js-delete-app text-red-400 hover:text-red-300 text-xs py-1.5 px-2 rounded-lg" data-agent-id="${site.agentId}" data-user-id="${site.userId}" data-site-name="${escapeHtml(app.siteName)}">Delete</button>
           </div>
         </div>`;

@@ -32,7 +32,7 @@ A lightweight **libSQL (SQLite compatibility)** implementation using `@libsql/cl
 ### 4. Telegram Bridge (`telegram.ts`)
 - `handleTelegramUpdate()`: Routes message, documents, and callback queries to the appropriate agent.
 - `startFileWatcher()`: Uses **Chokidar** to monitor each agent's `/out/` directory.
-- `processAgentMessage()`: Parses deterministic JSON output (`message`, `action`, `terminal`, `panelActions`) and sends explicit `FILE:<name>` actions from `/out/`.
+- `processAgentMessage()`: Parses deterministic JSON output (`message`, `action`, `terminal`, `panelActions`) and sends explicit `GIVE:<name>` actions from `/out/`.
 - `sendApprovalRequest()`: Sends interactive buttons ("Approve" / "Deny") to the operator for HITL (Human-in-the-Loop) verification.
 - `startCalendarScheduler()`: CRON-based scheduler that triggers calendar events at specified times.
 
