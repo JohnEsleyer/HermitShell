@@ -4,10 +4,10 @@
   "description": "The Shell - Node.js host controller for CrabShell",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/ensure-deps.js && npm run build:agent && tsc",
     "build:agent": "tsc src/agent.ts --outDir dist-agent --module commonjs --esModuleInterop --target es2020",
-    "postbuild": "cp -r ../dashboard/src/public/* dashboard/dist/",
-    "start": "node dist/server.js",
+    "postbuild": "mkdir -p dashboard/dist && cp -r ../dashboard/src/public/* dashboard/dist/",
+    "start": "node scripts/start-with-build.js",
     "dev": "ts-node src/server.ts",
     "test": "vitest run",
     "test:watch": "vitest"

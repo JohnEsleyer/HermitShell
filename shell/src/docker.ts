@@ -45,6 +45,23 @@ const CACHE_DIR = path.join(__dirname, '../../data/cache');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+
+function ensureWorkspaceAgentRuntime(workspacePath: string): void {
+    const sourceAgentPath = path.join(__dirname, '../dist-agent/agent.js');
+    const targetAgentPath = path.join(workspacePath, 'agent.js');
+
+    if (!fs.existsSync(sourceAgentPath)) {
+        throw new Error(`Missing runtime agent bundle at ${sourceAgentPath}. Run 'npm run build:agent' in shell/.`);
+    }
+
+    const shouldCopy = !fs.existsSync(targetAgentPath)
+        || fs.statSync(sourceAgentPath).mtimeMs > fs.statSync(targetAgentPath).mtimeMs;
+
+    if (shouldCopy) {
+        fs.copyFileSync(sourceAgentPath, targetAgentPath);
+    }
+}
+
 const LABEL_PREFIX = 'hermitshell.';
 const LABELS = {
     AGENT_ID: `${LABEL_PREFIX}agent_id`,
@@ -107,6 +124,7 @@ async function createNewCubicle(config: AgentConfig): Promise<Docker.Container> 
     fs.mkdirSync(path.join(workspacePath, 'www'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'work'), { recursive: true });
     fs.mkdirSync(path.join(workspacePath, 'data'), { recursive: true });
+    ensureWorkspaceAgentRuntime(workspacePath);
 
     const settings = await getAllSettings();
     const provider = config.llmProvider || settings.default_provider || 'openrouter';
@@ -188,7 +206,9 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
         const containerId = container.id;
 
         const userId = config.userId || 0;
-        
+        const workspacePath = path.join(WORKSPACE_DIR, `${config.agentId}_${userId}`);
+        ensureWorkspaceAgentRuntime(workspacePath);
+
         if (workspaceDataExists(config.agentId, userId)) {
             await initWorkspaceDatabases(config.agentId, userId);
         }
@@ -207,7 +227,7 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
         const historyB64 = Buffer.from(JSON.stringify(injectedHistory)).toString('base64');
 
         const exec = await container.exec({
-            Cmd: ['sh', '-c', 'node /app/agent.js 2>&1 | tee -a /app/workspace/work/.hermit.log'],
+            Cmd: ['sh', '-c', 'node /app/workspace/agent.js 2>&1 | tee -a /app/workspace/work/.hermit.log'],
             Env: [
                 `USER_MSG=${config.userMessage}`,
                 `HISTORY=${historyB64}`,
