@@ -23,7 +23,7 @@ import * as http from 'http';
 import { execFileSync } from 'child_process';
 import cookie from '@fastify/cookie';
 import { loadHistory, saveHistory, clearHistory } from './history';
-import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveAppEndpoint, resolveWorkspaceApp } from './sites';
+import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
 
 const PORT = process.env.PORT || 3000;
@@ -1017,11 +1017,50 @@ export async function startServer() {
     const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
 
 
+    const appContentTypes: Record<string, string> = {
+        '.html': 'text/html; charset=utf-8',
+        '.css': 'text/css; charset=utf-8',
+        '.js': 'application/javascript; charset=utf-8',
+        '.json': 'application/json; charset=utf-8',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp'
+    };
+
+    fastify.get('/apps/:endpoint/*', async (request: any, reply: any) => {
+        const endpoint = String(request.params.endpoint || '');
+        const nestedPath = String(request.params['*'] || '');
+        const resolved = resolveEndpointApp(WORKSPACE_DIR, endpoint);
+        if (!resolved) return reply.code(404).send({ error: 'App endpoint not found' });
+
+        if (nestedPath.includes('..') || nestedPath.includes('\\')) {
+            return reply.code(400).send({ error: 'Invalid path' });
+        }
+
+        const targetPath = path.join(resolved.appPath, nestedPath);
+        if (!targetPath.startsWith(resolved.appPath)) {
+            return reply.code(400).send({ error: 'Invalid path' });
+        }
+
+        if (!fs.existsSync(targetPath) || !fs.statSync(targetPath).isFile()) {
+            return reply.code(404).send({ error: 'File not found' });
+        }
+
+        const ext = path.extname(targetPath).toLowerCase();
+        const body = fs.readFileSync(targetPath);
+        return reply.type(appContentTypes[ext] || 'application/octet-stream').send(body);
+    });
+
     fastify.get('/apps/:endpoint', async (request: any, reply: any) => {
         const endpoint = String(request.params.endpoint || '');
-        const resolved = resolveAppEndpoint(WORKSPACE_DIR, endpoint);
+        const resolved = resolveEndpointApp(WORKSPACE_DIR, endpoint);
         if (!resolved) return reply.code(404).send({ error: 'App endpoint not found' });
-        return reply.redirect(`/app/${resolved.agentId}_${resolved.userId}/${encodeURIComponent(resolved.siteName)}/`);
+
+        const html = fs.readFileSync(resolved.indexPath, 'utf8');
+        return reply.type('text/html; charset=utf-8').send(html);
     });
 
     fastify.get('/app/:workspaceId/:siteName/*', async (request: any, reply: any) => {

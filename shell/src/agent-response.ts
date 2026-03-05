@@ -40,6 +40,24 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
     }
 }
 
+function extractInlineAction(text: string): string {
+    const content = asString(text);
+    if (!content.trim()) return '';
+
+    const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const lineMatch = [...lines].reverse().find((line) => /^(GIVE|FILE|APP)\s*:/i.test(line));
+    if (lineMatch) {
+        return lineMatch.replace(/^['"`]|['"`]$/g, '').trim();
+    }
+
+    const inline = content.match(/\b(GIVE|FILE|APP)\s*:\s*([^\s'"`]+)/i);
+    if (inline) {
+        return `${inline[1].toUpperCase()}:${inline[2].trim()}`;
+    }
+
+    return '';
+}
+
 export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     const fallback: ParsedAgentResponse = {
         message: asString(rawOutput).trim(),
@@ -61,6 +79,14 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
         const parsed = tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
         if (parsed) return parsed;
+    }
+
+    const inferredAction = extractInlineAction(output);
+    if (inferredAction) {
+        return {
+            ...fallback,
+            action: inferredAction
+        };
     }
 
     return fallback;

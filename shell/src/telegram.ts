@@ -8,7 +8,7 @@ import * as chokidar from 'chokidar';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { setPreviewPassword } from './server';
 import { parseAgentResponse, parseFileAction, parseAppAction } from './agent-response';
-import { buildWorkspaceAppPath } from './sites';
+import { buildPublicAppEndpoint } from './sites';
 import { startAppServer } from './app-server';
 import { getTunnelUrl } from './tunnel';
 
@@ -54,7 +54,7 @@ function sanitizeUserFacingOutput(output: string): string {
 }
 
 function buildAppUrl(baseUrl: string, agentId: number, userId: number, appName: string): string {
-    return `${String(baseUrl).replace(/\/$/, '')}${buildWorkspaceAppPath(`${agentId}_${userId}`, appName)}`;
+    return `${String(baseUrl).replace(/\/$/, '')}${buildPublicAppEndpoint(agentId, userId, appName)}`;
 }
 
 export async function sendChatAction(token: string, chatId: number, action: 'typing' | 'upload_document' = 'typing'): Promise<void> {

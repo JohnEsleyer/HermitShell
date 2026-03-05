@@ -1,4 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import { processAgentMessage } from '../src/telegram';
 import * as docker from '../src/docker';
 import * as db from '../src/db';
@@ -44,6 +46,7 @@ vi.mock('../src/workspace-db', () => ({
 global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true }) })) as any;
 
 describe('Legacy panelActions are ignored', () => {
+  const workspaceRoot = path.join(__dirname, '../../data/workspaces');
   const mockToken = 'test-token';
   const mockChatId = 12345;
   const mockUserId = 12345;
@@ -61,6 +64,10 @@ describe('Legacy panelActions are ignored', () => {
     (db.isAllowed as any).mockResolvedValue(true);
   });
 
+  afterEach(() => {
+    fs.rmSync(path.join(workspaceRoot, '1_12345'), { recursive: true, force: true });
+  });
+
   it('ignores panelActions-only payload', async () => {
     (docker.spawnAgent as any).mockResolvedValue({
       containerId: 'cont-123',
@@ -71,6 +78,23 @@ describe('Legacy panelActions are ignored', () => {
 
     expect(workspaceDb.getCalendarEvents).not.toHaveBeenCalled();
     expect(result.output).toContain('panelActions');
+  });
+
+
+  it('delivers files when action appears as inline GIVE text', async () => {
+    const outDir = path.join(workspaceRoot, '1_12345', 'out');
+    fs.mkdirSync(outDir, { recursive: true });
+    fs.writeFileSync(path.join(outDir, 'hello.txt'), 'Hello World');
+
+    (docker.spawnAgent as any).mockResolvedValue({
+      containerId: 'cont-123',
+      output: 'Sending you file now. GIVE:hello.txt'
+    });
+
+    await processAgentMessage(mockToken, mockChatId, mockUserId, 'Create file');
+
+    const urls = (global.fetch as any).mock.calls.map((call: any[]) => String(call[0] || ''));
+    expect(urls.some((url: string) => url.includes('/sendDocument'))).toBe(true);
   });
 
   it('keeps deterministic message/action payload behavior', async () => {
