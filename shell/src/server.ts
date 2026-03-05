@@ -478,6 +478,22 @@ export async function startServer() {
             delivered
         });
 
+        const historyKey = `dashboard_${agent.id}_${targetUserId}`;
+        const history = loadHistory(historyKey);
+        history.push({ role: 'user', content: 'Send File Test button clicked' });
+        history.push({
+            role: 'assistant',
+            content: JSON.stringify({
+                userId: String(targetUserId),
+                message: delivered
+                    ? `Send file test delivered ${safeFileName} to Telegram.`
+                    : `Send file test failed to deliver ${safeFileName} to Telegram.`,
+                terminal: '',
+                action: `GIVE:${safeFileName}`
+            })
+        });
+        saveHistory(historyKey, history.slice(-80));
+
         return {
             success: delivered,
             fileName: safeFileName,

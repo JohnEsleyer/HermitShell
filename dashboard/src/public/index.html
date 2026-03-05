@@ -4121,7 +4121,7 @@
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
             if (!activeLogsAgentId || !userId) return alert('Select an allowlisted user first.');
             const out = document.getElementById('agent-logs-content');
-            out.innerHTML = '<div class="text-slate-300">Running send file test...</div>';
+            out.insertAdjacentHTML('afterbegin', '<div class="text-slate-300 text-xs">Running send file test...</div>');
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/send-file`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -4129,9 +4129,10 @@
             });
             const data = await res.json();
             if (data.error) {
-                out.innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
+                out.insertAdjacentHTML('afterbegin', `<div class="text-red-400 text-xs">Send File Test failed: ${escapeHtml(data.error)}</div>`);
             } else {
-                out.innerHTML = `<pre class="text-xs text-green-300 whitespace-pre-wrap">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                out.insertAdjacentHTML('afterbegin', `<div class="text-green-300 text-xs">Send File Test complete (${escapeHtml(data.fileName || 'file')}). Refreshing history...</div>`);
+                await loadAgentInteractions();
             }
         }
 
