@@ -299,22 +299,19 @@ The tunnel URL is saved to the database and used for all webhook registrations.
 
 ### Web App Previews
 
-Agents can create web applications that are accessible via the tunnel:
+Current app-sharing flow is workspace based:
 
 ```
-Agent creates web app:
-  python3 -m http.server 8080
-  streamlit run app.py --server.port 8080
-  flask run --port 8080
-
 User accesses via:
-  https://<tunnel>.trycloudflare.com/preview/<agent_id>/8080/
+  https://<tunnel>.trycloudflare.com/app/<agent_id>_<user_id>/<app_name>/
 ```
 
-**How it works:**
-1. Agent starts a web server on port 8080 (or any port)
-2. Shell proxies requests to the container's internal IP
-3. User can preview the app in their browser
+**How it works (current):**
+1. Agent creates web app in `/app/workspace/www/<app_name>/index.html`
+2. Shell publishes it via workspace app routing
+3. User receives and opens the stable `/app/...` URL
+
+> Legacy note: older runtime preview used `/preview/<agent_id>/8080/` proxying from a running server process.
 
 ### Automatic File Delivery (The Portal)
 
@@ -409,15 +406,17 @@ Agent replies are expected to be machine-readable JSON (no markdown) so the cont
   "userId": "123456789",
   "message": "Done",
   "action": "GIVE:report.pdf",
-  "terminal": "python3 /app/workspace/work/script.py",
-  "panelActions": ["CALENDAR_CREATE:Title|Prompt|2026-03-01T10:00:00Z|2026-03-01T11:00:00Z|#f97316|⚙️"]
+  "terminal": "python3 /app/workspace/work/script.py"
 }
 ```
 
 - `message`: sent to Telegram chat bubble (plain text, minimal)
 - `action`: optional routing instruction. Use `GIVE:<filename>` for file delivery from `/app/workspace/out/`, or `APP:<app_name>` to publish a web app and share endpoint URL.
 - `terminal`: optional shell command for container execution
-- `panelActions`: optional control panel actions (calendar, assets, etc.)
+
+**Legacy vs Current**
+- ✅ Current: `userId`, `message`, `action`, `terminal`
+- ⚠️ Legacy (do not use for new work): `panelActions`, text `ACTION: EXECUTE` formats
 
 ### Long-Term RAG Memory
 
@@ -534,7 +533,9 @@ python3 -m http.server 8080
 streamlit run app.py --server.port 8080
 flask run --port 8080
 ```
-Access at: `https://<tunnel>/preview/<agent_id>/8080/`
+Access at: `https://<tunnel>/app/<agent_id>_<user_id>/<app_name>/`
+
+> Legacy note: `/preview/<agent_id>/8080/` is older preview behavior and should not be used for new app-sharing flows.
 
 ### Delegation
 ```
@@ -544,38 +545,11 @@ TASK: Analyze the data file
 ```
 Requires operator approval before spawning sub-agent.
 
-### Calendar Actions (Panel Actions in JSON)
-Agents end responses with JSON to trigger control panel actions:
-```json
-{
-  "message": "Task scheduled!",
-  "panelActions": ["CALENDAR_CREATE:Title|Prompt|2026-02-28T09:00:00Z|"]
-}
-```
+### Legacy Controls (for migration context only)
+Older versions used `panelActions` (calendar, asset requests, ClawMotion).
 
-**Available Calendar Actions:**
-- `CALENDAR_CREATE:title|prompt|start_time|end_time`
-- `CALENDAR_UPDATE:id|title|prompt|start_time|end_time`
-- `CALENDAR_DELETE:id`
-- `CALENDAR_LIST`
-
-### Asset Request
-Request files from the internet (requires user approval):
-```json
-{
-  "message": "I need this dataset",
-  "panelActions": ["ASSET_REQUEST:CSV Dataset|https://example.com/data.csv|csv"]
-}
-```
-
-### ClawMotion Video Creation
-Create videos using ClawMotion:
-```json
-{
-  "message": "Creating video...",
-  "panelActions": ["CLAWMOTION:Generate a sunset timelapse|30|output.mp4"]
-}
-```
+These are now **legacy/deprecated** and should not be used for new implementations.
+For new work, rely on deterministic JSON contract fields plus explicit server-side APIs.
 
 ### Telegram Message Optimization
 Due to Telegram's message limit, agents should:
@@ -633,7 +607,7 @@ hermitshell.created_at: "2026-02-20T10:00:00Z"
 | `/api/settings/batch` | POST | Save settings (trims values, auto-allowlist) |
 | `/api/files/:agentId/:userId` | GET | List workspace files |
 | `/api/files/:agentId/:userId/download/*` | GET | Download a file |
-| `/preview/:agentId/:port/*` | GET | Proxy to agent's web app |
+| `/preview/:agentId/:port/*` | GET | Legacy proxy preview endpoint (kept for compatibility) |
 | `/webhook/:token` | POST | Telegram webhook (returns 202) |
 
 ### Database Schema
