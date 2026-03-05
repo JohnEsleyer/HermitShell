@@ -68,6 +68,7 @@ export function regeneratePreviewPassword(agentId: number, port: number): { pass
 
 type AgentInteractionLog = {
     role: 'user' | 'assistant';
+    source: 'dashboard' | 'telegram';
     raw: string;
     parsed: {
         userId?: string;
@@ -106,34 +107,40 @@ function summarizeActionEffects(agentId: number, userId: number, action: string)
 }
 
 function buildAgentInteractionLogs(agentId: number, userId: number): AgentInteractionLog[] {
-    const historyKey = `dashboard_${agentId}_${userId}`;
-    const history = loadHistory(historyKey).slice(-120);
+    const dashboardHistory = loadHistory(`dashboard_${agentId}_${userId}`).slice(-120);
+    const telegramHistory = loadHistory(`telegram_${agentId}_${userId}`).slice(-120);
     const interactions: AgentInteractionLog[] = [];
-    let latestUserMessage = '';
 
-    for (const entry of history) {
-        const role = entry?.role === 'assistant' ? 'assistant' : 'user';
-        const content = String(entry?.content || '');
-        if (role === 'user') {
-            latestUserMessage = content;
-            continue;
+    const collectAssistantEntries = (history: any[], source: 'dashboard' | 'telegram') => {
+        let latestUserMessage = '';
+        for (const entry of history) {
+            const role = entry?.role === 'assistant' ? 'assistant' : 'user';
+            const content = String(entry?.content || '');
+            if (role === 'user') {
+                latestUserMessage = content;
+                continue;
+            }
+
+            const parsed = parseAgentResponse(content);
+            interactions.push({
+                role,
+                source,
+                raw: content,
+                parsed: {
+                    userId: parsed.userId,
+                    message: parsed.message,
+                    terminal: parsed.terminal,
+                    action: parsed.action,
+                    jsonContractParsed: hasStructuredContract(content)
+                },
+                responseTo: latestUserMessage || undefined,
+                actionEffects: summarizeActionEffects(agentId, userId, parsed.action)
+            });
         }
+    };
 
-        const parsed = parseAgentResponse(content);
-        interactions.push({
-            role,
-            raw: content,
-            parsed: {
-                userId: parsed.userId,
-                message: parsed.message,
-                terminal: parsed.terminal,
-                action: parsed.action,
-                jsonContractParsed: hasStructuredContract(content)
-            },
-            responseTo: latestUserMessage || undefined,
-            actionEffects: summarizeActionEffects(agentId, userId, parsed.action)
-        });
-    }
+    collectAssistantEntries(dashboardHistory, 'dashboard');
+    collectAssistantEntries(telegramHistory, 'telegram');
 
     return interactions.reverse();
 }
