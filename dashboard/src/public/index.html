@@ -1841,10 +1841,23 @@
                 <div class="md:col-span-4 flex gap-2 flex-wrap">
                     <button onclick="loadAgentInteractions()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm">Refresh Logs</button>
                     <button onclick="runSendFileTest()" class="bg-green-600 hover:bg-green-500 text-white px-3 py-2 rounded-lg text-sm">Send File Test</button>
-                    <button onclick="runJsonContractTest()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-lg text-sm">JSON Contract Agent Test</button>
+                                    </div>
+            </div>
+            <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0">
+                <div id="agent-logs-content" class="overflow-y-auto p-4 space-y-3 text-sm border-b lg:border-b-0 lg:border-r border-slate-700"></div>
+                <div class="p-4 space-y-3 overflow-y-auto">
+                    <div>
+                        <label class="block text-xs text-purple-300 mb-1">JSON Contract Input</label>
+                        <textarea id="agent-json-test-input" class="w-full h-[42vh] bg-slate-800 border border-purple-700/70 rounded-lg p-3 text-xs text-purple-100 font-mono" spellcheck="false">{
+  "userId": "123456789",
+  "message": "Sending the file",
+  "terminal": "",
+  "action": "GIVE:report.pdf"
+}</textarea>
+                    </div>
+                    <button onclick="runJsonContractTest()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-lg text-sm">Run JSON Contract Test</button>
                 </div>
             </div>
-            <div id="agent-logs-content" class="flex-1 overflow-y-auto p-4 space-y-3 text-sm"></div>
         </div>
     </div>
 
@@ -1865,6 +1878,7 @@
         let pendingVerificationToken = null;
         let activeChatAgentId = null;
         let activeLogsAgentId = null;
+        const testAgentStates = new Map();
         let cachedAllowlistUsers = [];
         window.usingDefaultCreds = false;
 
@@ -2767,7 +2781,7 @@
                             </div>
 
                             <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-                                <button onclick="testAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-lg border border-green-600/30"> <i data-lucide="play" class="w-3 h-3"></i><span>Test Agent</span></button>
+                                <button id="test-agent-btn-${agent.id}" onclick="testAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-lg border border-green-600/30">${renderTestAgentButtonContent(agent.id)}</button>
                                 <button onclick="openTerminal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="terminal" class="w-3 h-3"></i><span>Terminal</span></button>
                                 <button onclick="openAgentLogsModal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 py-2 rounded-lg border border-blue-600/30"> <i data-lucide="file-text" class="w-3 h-3"></i><span>Logs</span></button>
                                 <button onclick="openAgentChat(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 py-2 rounded-lg border border-cyan-600/30"> <i data-lucide="message-circle" class="w-3 h-3"></i><span>Chat</span></button>
@@ -3474,9 +3488,29 @@
             }
         }
 
+        function renderTestAgentButtonContent(agentId) {
+            const state = testAgentStates.get(agentId) || 'idle';
+            if (state === 'loading') {
+                return '<i data-lucide="loader-2" class="w-3 h-3 animate-spin"></i><span>Testing...</span>';
+            }
+            if (state === 'success') {
+                return '<i data-lucide="check" class="w-3 h-3"></i><span>Success</span>';
+            }
+            return '<i data-lucide="play" class="w-3 h-3"></i><span>Test Agent</span>';
+        }
+
+        function setTestAgentState(agentId, state) {
+            testAgentStates.set(agentId, state);
+            const button = document.getElementById(`test-agent-btn-${agentId}`);
+            if (button) {
+                button.innerHTML = renderTestAgentButtonContent(agentId);
+                lucide.createIcons();
+            }
+        }
+
         async function testAgent(id, name) {
-            const message = prompt(`Send a test message to ${name}:`, 'Hello! Tell me about your environment.');
-            if (!message) return;
+            const message = `Test prompt from dashboard for ${name}. Respond with your status and current capabilities in JSON.`;
+            setTestAgentState(id, 'loading');
 
             document.getElementById('test-modal').classList.remove('hidden');
             document.getElementById('test-loading').classList.remove('hidden');
@@ -3496,15 +3530,19 @@
 
                 const outputEl = document.getElementById('test-output');
                 if (data.error) {
+                    setTestAgentState(id, 'idle');
                     outputEl.innerText = 'ERROR:\n' + data.error;
                     outputEl.classList.add('text-red-400');
                     outputEl.classList.remove('text-green-400');
                 } else {
+                    setTestAgentState(id, 'success');
+                    setTimeout(() => setTestAgentState(id, 'idle'), 2200);
                     outputEl.innerText = data.output;
                     outputEl.classList.add('text-green-400');
                     outputEl.classList.remove('text-red-400');
                 }
             } catch (e) {
+                setTestAgentState(id, 'idle');
                 document.getElementById('test-loading').classList.add('hidden');
                 document.getElementById('test-content').classList.remove('hidden');
 
@@ -4065,8 +4103,10 @@
 
                 out.innerHTML = interactions.map((entry, idx) => {
                     const effects = (entry.actionEffects || []).map(e => `<li>${escapeHtml(e)}</li>`).join('');
+                    const sourceTag = entry.source === 'telegram' ? 'bg-cyan-900/40 text-cyan-300 border-cyan-700/60' : 'bg-slate-700/60 text-slate-200 border-slate-600';
                     return `<div class="bg-slate-800/70 border border-slate-700 rounded-lg p-3 space-y-2">
                         <div class="flex justify-between text-xs text-slate-400"><span>Response #${interactions.length - idx}</span><span>${entry.parsed?.jsonContractParsed ? '✅ JSON parsed' : '❌ JSON parse failed'}</span></div>
+                        <div class="text-[10px] inline-flex px-2 py-1 rounded border ${sourceTag}">${escapeHtml(entry.source || 'dashboard')}</div>
                         <pre class="text-xs text-green-300 whitespace-pre-wrap">${escapeHtml(JSON.stringify({ userId: entry.parsed?.userId || '', message: entry.parsed?.message || '', terminal: entry.parsed?.terminal || '', action: entry.parsed?.action || '' }, null, 2))}</pre>
                         <div><span class="text-slate-400 text-xs">Responding to:</span> <span class="text-slate-200">${escapeHtml(entry.responseTo || '-')}</span></div>
                         <div><span class="text-slate-400 text-xs">Detected system actions:</span><ul class="list-disc ml-5 text-slate-200">${effects || '<li>None</li>'}</ul></div>
@@ -4098,14 +4138,8 @@
         async function runJsonContractTest() {
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
             if (!activeLogsAgentId || !userId) return alert('Select an allowlisted user first.');
-            const sample = `{
-  "userId": "123456789",
-  "message": "Sending the file",
-  "terminal": "",
-  "action": "GIVE:report.pdf"
-}`;
-            const payload = prompt('Paste agent JSON payload to impersonate the agent:', sample);
-            if (!payload) return;
+            const payload = document.getElementById('agent-json-test-input').value;
+            if (!payload?.trim()) return alert('JSON payload is required.');
             const out = document.getElementById('agent-logs-content');
             out.innerHTML = '<div class="text-slate-300">Running JSON contract test...</div>';
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/json-contract`, {
@@ -4117,7 +4151,7 @@
             if (data.error) {
                 out.innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
             } else {
-                out.innerHTML = `<pre class="text-xs text-green-300 whitespace-pre-wrap">${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                out.innerHTML = `<div class="bg-purple-950/30 border border-purple-700/70 rounded-lg p-3"><div class="text-xs text-purple-300 mb-2">JSON Contract Agent Test</div><pre class="text-xs text-purple-200 whitespace-pre-wrap">${escapeHtml(JSON.stringify(data, null, 2))}</pre></div>`;
             }
         }
 
