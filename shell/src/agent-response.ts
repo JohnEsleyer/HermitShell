@@ -48,9 +48,10 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
 
 export function parseFileAction(action: string): string | null {
     const normalized = asString(action).trim();
-    if (!normalized.toUpperCase().startsWith('FILE:')) return null;
+    const upper = normalized.toUpperCase();
+    if (!upper.startsWith('GIVE:') && !upper.startsWith('FILE:')) return null;
 
-    const candidate = normalized.slice(5).trim();
+    const candidate = normalized.slice(normalized.indexOf(':') + 1).trim();
     if (!candidate) return null;
 
     if (candidate.includes('..') || candidate.includes('/') || candidate.includes('\\')) {
@@ -60,3 +61,12 @@ export function parseFileAction(action: string): string | null {
     return candidate;
 }
 
+export function parseAppAction(action: string): string | null {
+    const normalized = asString(action).trim();
+    if (!normalized.toUpperCase().startsWith('APP:')) return null;
+
+    const appName = normalized.slice(4).trim();
+    if (!appName) return null;
+    if (appName.includes('..') || appName.includes('/') || appName.includes('\\')) return null;
+    return appName;
+}

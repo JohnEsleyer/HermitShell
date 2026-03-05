@@ -12,6 +12,7 @@ export type WebApp = {
     imageLabel: string;
     previewUrl: string;
     localUrl: string;
+    endpoint: string;
     hasPassword: boolean;
     password?: string;
     passwordUpdatedAt?: string;
@@ -31,6 +32,7 @@ export type SiteRecord = {
     imageLabel: string;
     previewUrl: string;
     localUrl: string;
+    endpoint: string;
     hasPassword: boolean;
     password?: string;
     passwordUpdatedAt?: string;
@@ -61,6 +63,15 @@ function parseWorkspaceName(name: string): { agentId: number; userId: number } |
     const match = name.match(/^(\d+)_(\d+)$/);
     if (!match) return null;
     return { agentId: Number(match[1]), userId: Number(match[2]) };
+}
+
+function toEndpointSlug(siteName: string): string {
+    return siteName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'app';
+}
+
+function buildAppEndpoint(agentId: number, userId: number, siteName: string): string {
+    const hash = Buffer.from(`${agentId}_${userId}_${siteName}`).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 6).toLowerCase();
+    return `${toEndpointSlug(siteName)}-${hash}`;
 }
 
 function isValidWebApp(dir: string): { hasIndexHtml: boolean; hasStyles: boolean; files: string[] } {
@@ -113,6 +124,7 @@ export function discoverSitesFromWorkspaces(
                     imageLabel: normalizeImageLabel(agent?.docker_image),
                     previewUrl: `${cleanBase}/preview/${parsed.agentId}/8080/${subDir.name}/`,
                     localUrl: `/preview/${parsed.agentId}/8080/${subDir.name}/`,
+                    endpoint: buildAppEndpoint(parsed.agentId, parsed.userId, subDir.name),
                     hasPassword: !!password?.password,
                     password: password?.password,
                     passwordUpdatedAt: password?.updatedAt ? new Date(password.updatedAt).toISOString() : undefined,
@@ -135,6 +147,7 @@ export function discoverSitesFromWorkspaces(
                 imageLabel: normalizeImageLabel(agent?.docker_image),
                 previewUrl: `${cleanBase}/preview/${parsed.agentId}/8080/`,
                 localUrl: `/preview/${parsed.agentId}/8080/`,
+                endpoint: buildAppEndpoint(parsed.agentId, parsed.userId, 'workspace'),
                 hasPassword: !!password?.password,
                 password: password?.password,
                 passwordUpdatedAt: password?.updatedAt ? new Date(password.updatedAt).toISOString() : undefined,
@@ -176,4 +189,24 @@ export function deleteWebApp(workspaceDir: string, agentId: number, userId: numb
     if (!fs.existsSync(appPath) || !fs.statSync(appPath).isDirectory()) return false;
     fs.rmSync(appPath, { recursive: true, force: true });
     return true;
+}
+
+
+export function resolveAppEndpoint(workspaceDir: string, endpoint: string): { agentId: number; userId: number; siteName: string } | null {
+    if (!fs.existsSync(workspaceDir)) return null;
+    const workspaces = fs.readdirSync(workspaceDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+    for (const ws of workspaces) {
+        const parsed = parseWorkspaceName(ws.name);
+        if (!parsed) continue;
+        const wwwPath = path.join(workspaceDir, ws.name, 'www');
+        if (!fs.existsSync(wwwPath)) continue;
+        const subDirs = fs.readdirSync(wwwPath, { withFileTypes: true }).filter(d => d.isDirectory());
+        for (const subDir of subDirs) {
+            const candidate = buildAppEndpoint(parsed.agentId, parsed.userId, subDir.name);
+            if (candidate === endpoint) {
+                return { agentId: parsed.agentId, userId: parsed.userId, siteName: subDir.name };
+            }
+        }
+    }
+    return null;
 }

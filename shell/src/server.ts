@@ -23,7 +23,7 @@ import * as http from 'http';
 import { execFileSync } from 'child_process';
 import cookie from '@fastify/cookie';
 import { loadHistory, saveHistory, clearHistory } from './history';
-import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp } from './sites';
+import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveAppEndpoint } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
 
 const PORT = process.env.PORT || 3000;
@@ -1013,6 +1013,14 @@ export async function startServer() {
     });
 
     const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
+
+
+    fastify.get('/apps/:endpoint', async (request: any, reply: any) => {
+        const endpoint = String(request.params.endpoint || '');
+        const resolved = resolveAppEndpoint(WORKSPACE_DIR, endpoint);
+        if (!resolved) return reply.code(404).send({ error: 'App endpoint not found' });
+        return reply.redirect(`/preview/${resolved.agentId}/8080/${encodeURIComponent(resolved.siteName)}/`);
+    });
 
     fastify.get('/api/sites', async (_request: any, reply: any) => {
         try {

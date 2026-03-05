@@ -26,7 +26,7 @@ The workspace is organized into specialized folders:
 
 ### 3. 📤 `/app/workspace/out/` (Outgoing Portal)
 - Monitored in real-time by the Orchestrator's file pipeline
-- Files can be delivered to Telegram through explicit agent JSON action `FILE:<filename>`
+- Files can be delivered to Telegram through explicit agent JSON action `GIVE:<filename>`
 - Works for PDFs, CSV, images, videos, or any file type
 
 ### 4. 🌐 `/app/workspace/www/` (Apps Portal)
