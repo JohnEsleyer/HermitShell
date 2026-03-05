@@ -187,6 +187,11 @@ export async function captureAppScreenshotInContainer(
     }
 }
 
+function extractTryCloudflareUrl(output: string): string | null {
+    const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
+    return match ? match[0] : null;
+}
+
 export async function createAppTunnel(
     agentId: number,
     userId: number,
@@ -222,16 +227,14 @@ export async function createAppTunnel(
             }
         }, 30000);
         
-        tunnelProcess.stderr?.on('data', async (data: Buffer) => {
+        const onData = async (data: Buffer) => {
             const line = data.toString();
-            const match = line.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+            const tunnelUrl = extractTryCloudflareUrl(line);
             
-            if (match && !resolved) {
+            if (tunnelUrl && !resolved) {
                 clearTimeout(timeout);
                 resolved = true;
-                
-                const tunnelUrl = match[0];
-                
+
                 await createSiteTunnel({
                     agent_id: agentId,
                     user_id: userId,
@@ -249,7 +252,10 @@ export async function createAppTunnel(
                 
                 resolve({ success: true, tunnelUrl });
             }
-        });
+        };
+
+        tunnelProcess.stdout?.on('data', onData);
+        tunnelProcess.stderr?.on('data', onData);
         
         tunnelProcess.on('error', (err) => {
             clearTimeout(timeout);
