@@ -40,6 +40,22 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
     }
 }
 
+export function hasStructuredContract(rawOutput: string): boolean {
+    const output = asString(rawOutput);
+    const objectMatches = output.match(/\{[\s\S]*?\}/g) || [];
+    for (let i = objectMatches.length - 1; i >= 0; i--) {
+        if (tryParseContractJson(objectMatches[i])) return true;
+    }
+
+    const firstBrace = output.indexOf('{');
+    const lastBrace = output.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        return !!tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
+    }
+
+    return false;
+}
+
 function extractInlineAction(text: string): string {
     const content = asString(text);
     if (!content.trim()) return '';
