@@ -1,4 +1,5 @@
 import { spawn, ChildProcess } from 'child_process';
+import { promises as dns } from 'dns';
 import { setSetting, getSetting } from './db';
 
 let tunnelProcess: ChildProcess | null = null;
@@ -31,6 +32,42 @@ async function readTunnelUrlFromProcess(process: ChildProcess): Promise<string |
     });
 }
 
+
+async function waitForPublicHostname(url: string, attempts = 8, delayMs = 3000): Promise<boolean> {
+    try {
+        const hostname = new URL(url).hostname;
+
+        for (let i = 0; i < attempts; i++) {
+            try {
+                const records = await dns.resolve4(hostname);
+                if (records.length > 0) return true;
+            } catch {
+                // DNS may still be propagating for fresh Quick Tunnel hostnames
+            }
+
+            if (i < attempts - 1) {
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            }
+        }
+    } catch {
+        return false;
+    }
+
+    return false;
+}
+
+async function registerWebhookWithRetry(registerFn: () => Promise<boolean>, attempts = 4, delayMs = 4000): Promise<boolean> {
+    for (let i = 0; i < attempts; i++) {
+        const ok = await registerFn();
+        if (ok) return true;
+
+        if (i < attempts - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delayMs * (i + 1)));
+        }
+    }
+
+    return false;
+}
 async function isTunnelEndpointReachable(url: string): Promise<boolean> {
     try {
         const res = await fetch(`${url}/dashboard/`, {
@@ -74,7 +111,7 @@ export async function startTunnel(port: number): Promise<string | null> {
 
     return new Promise((resolve) => {
         console.log('[Tunnel] Starting Cloudflare Quick Tunnel...');
-        
+
         try {
             tunnelProcess = spawn('cloudflared', [
                 'tunnel',
@@ -99,12 +136,12 @@ export async function startTunnel(port: number): Promise<string | null> {
                     clearTimeout(timeout);
                     resolved = true;
                     currentUrl = url;
-                    
+
                     console.log(`[Tunnel] ✅ Public URL: ${currentUrl}`);
-                    
+
                     await setSetting('public_url', currentUrl);
                     await setSetting('tunnel_started_at', new Date().toISOString());
-                    
+
                     restartAttempts = 0;
                     resolve(currentUrl);
                 }
@@ -122,7 +159,7 @@ export async function startTunnel(port: number): Promise<string | null> {
             tunnelProcess.on('exit', (code) => {
                 console.log(`[Tunnel] Process exited with code ${code}`);
                 tunnelProcess = null;
-                
+
                 if (!resolved) {
                     clearTimeout(timeout);
                     resolved = true;
@@ -170,28 +207,35 @@ export function stopTunnel(): void {
 export async function syncWebhooks(port: number): Promise<number> {
     const { getAllAgents } = await import('./db');
     const { registerWebhook } = await import('./telegram');
-    
+
     const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || 'hermitshell-webhook-secret';
-    
+
     if (!currentUrl) {
         console.log('[Tunnel] No tunnel URL, skipping webhook sync');
         return 0;
     }
-    
+
     const agents = await getAllAgents();
     let successCount = 0;
-    
+
+    const hostnameReady = await waitForPublicHostname(currentUrl);
+    if (!hostnameReady) {
+        console.warn('[Tunnel] Tunnel hostname is not resolvable yet; webhook sync may fail until DNS propagates.');
+    }
+
     for (const agent of agents) {
         if (agent.is_active && agent.telegram_token) {
             try {
-                const ok = await registerWebhook(agent.telegram_token, currentUrl, WEBHOOK_SECRET);
+                const ok = await registerWebhookWithRetry(
+                    () => registerWebhook(agent.telegram_token, currentUrl!, WEBHOOK_SECRET)
+                );
                 if (ok) successCount++;
             } catch (err) {
                 console.error(`[Tunnel] Failed to sync webhook for agent ${agent.id}`);
             }
         }
     }
-    
+
     console.log(`[Tunnel] Synced ${successCount}/${agents.length} webhooks`);
     return successCount;
 }
