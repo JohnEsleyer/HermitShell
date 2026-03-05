@@ -16,7 +16,7 @@ import {
 } from './workspace-db';
 import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, restartAgentContainer } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
-import { startTunnel, syncWebhooks, getTunnelUrl } from './tunnel';
+import { startTunnel, syncWebhooks, getTunnelUrl, ensureHealthyTunnel } from './tunnel';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -1535,16 +1535,20 @@ export async function startServer() {
     const existingUrl = await getSetting('public_url');
     if (!existingUrl || existingUrl === '') {
         console.log('🚇 Starting Cloudflare Tunnel...');
-        const tunnelUrl = await startTunnel(Number(PORT));
-        if (tunnelUrl) {
-            console.log(`✅ Tunnel active: ${tunnelUrl}`);
-            console.log('🔄 Syncing webhooks...');
-            await syncWebhooks(Number(PORT));
-        } else {
-            console.log('⚠️ Tunnel failed to start. Set public_url manually in Settings.');
-        }
     } else {
-        console.log(`🌐 Using configured public URL: ${existingUrl}`);
+        console.log(`🌐 Validating configured public URL: ${existingUrl}`);
+    }
+
+    const tunnelUrl = existingUrl && !existingUrl.includes('trycloudflare.com')
+        ? existingUrl
+        : await ensureHealthyTunnel(Number(PORT));
+
+    if (tunnelUrl && tunnelUrl.includes('trycloudflare.com')) {
+        console.log(`✅ Tunnel active: ${tunnelUrl}`);
+        console.log('🔄 Syncing webhooks...');
+        await syncWebhooks(Number(PORT));
+    } else if (!tunnelUrl) {
+        console.log('⚠️ Tunnel failed to start. Set public_url manually in Settings.');
     }
 }
 

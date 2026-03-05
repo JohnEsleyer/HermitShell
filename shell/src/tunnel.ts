@@ -6,6 +6,43 @@ let currentUrl: string | null = null;
 let restartAttempts = 0;
 const MAX_RESTART_ATTEMPTS = 5;
 
+export function extractTryCloudflareUrl(output: string): string | null {
+    const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
+    return match ? match[0] : null;
+}
+
+async function readTunnelUrlFromProcess(process: ChildProcess): Promise<string | null> {
+    return new Promise((resolve) => {
+        const onData = (data: Buffer) => {
+            const line = data.toString();
+            const url = extractTryCloudflareUrl(line);
+            if (!url) return;
+            cleanup();
+            resolve(url);
+        };
+
+        const cleanup = () => {
+            process.stdout?.off('data', onData);
+            process.stderr?.off('data', onData);
+        };
+
+        process.stdout?.on('data', onData);
+        process.stderr?.on('data', onData);
+    });
+}
+
+async function isTunnelEndpointReachable(url: string): Promise<boolean> {
+    try {
+        const res = await fetch(`${url}/dashboard/`, {
+            method: 'HEAD',
+            signal: AbortSignal.timeout(10000)
+        });
+        return res.status !== 530;
+    } catch {
+        return false;
+    }
+}
+
 export function getTunnelUrl(): string | null {
     return currentUrl;
 }
@@ -46,6 +83,8 @@ export async function startTunnel(port: number): Promise<string | null> {
                 stdio: ['ignore', 'pipe', 'pipe']
             });
 
+            const urlPromise = readTunnelUrlFromProcess(tunnelProcess);
+
             let resolved = false;
             const timeout = setTimeout(() => {
                 if (!resolved) {
@@ -55,14 +94,11 @@ export async function startTunnel(port: number): Promise<string | null> {
                 }
             }, 30000);
 
-            tunnelProcess.stderr?.on('data', async (data: Buffer) => {
-                const line = data.toString();
-                
-                const match = line.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
-                if (match && !resolved) {
+            urlPromise.then(async (url) => {
+                if (url && !resolved) {
                     clearTimeout(timeout);
                     resolved = true;
-                    currentUrl = match[0];
+                    currentUrl = url;
                     
                     console.log(`[Tunnel] ✅ Public URL: ${currentUrl}`);
                     
@@ -102,6 +138,24 @@ export async function startTunnel(port: number): Promise<string | null> {
             resolve(null);
         }
     });
+}
+
+export async function ensureHealthyTunnel(port: number): Promise<string | null> {
+    const existingUrl = await getSetting('public_url');
+    if (!existingUrl || !existingUrl.includes('trycloudflare.com')) {
+        return existingUrl || null;
+    }
+
+    const reachable = await isTunnelEndpointReachable(existingUrl);
+    if (reachable) {
+        currentUrl = existingUrl;
+        return existingUrl;
+    }
+
+    console.log('[Tunnel] Existing trycloudflare URL is unhealthy, restarting tunnel...');
+    await setSetting('public_url', '');
+    stopTunnel();
+    return startTunnel(port);
 }
 
 export function stopTunnel(): void {
