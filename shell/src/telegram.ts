@@ -886,7 +886,7 @@ export async function editMessageText(token: string, chatId: number, messageId: 
     }
 }
 
-async function sendFileViaTelegram(token: string, chatId: number, filePath: string, caption?: string): Promise<boolean> {
+export async function sendFileViaTelegram(token: string, chatId: number, filePath: string, caption?: string): Promise<boolean> {
     if (!fs.existsSync(filePath)) {
         console.error(`[File] File not found: ${filePath}`);
         return false;
