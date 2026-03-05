@@ -79,9 +79,10 @@ Available actions (return JSON):
 {
   "message": "response to user",
   "terminal": "bash command",
-  "panelActions": ["CALENDAR_CREATE:Title|Prompt|Time|", "CALENDAR_LIST"],
   "action": "GIVE:filename"
 }
+
+The legacy \`panelActions\` field is deprecated and should not be used.
 
 Security: Never expose secrets, validate inputs, don't exfiltrate data. Always check /app/workspace/in using ls -l /app/workspace/in before starting work and start commands from /app/workspace/work.`;
 }
