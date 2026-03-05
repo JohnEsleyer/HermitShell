@@ -207,7 +207,7 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
         const historyB64 = Buffer.from(JSON.stringify(injectedHistory)).toString('base64');
 
         const exec = await container.exec({
-            Cmd: ['sh', '-c', 'python3 /usr/local/bin/agent.py 2>&1 | tee -a /app/workspace/work/.hermit.log'],
+            Cmd: ['sh', '-c', 'node /app/agent.js 2>&1 | tee -a /app/workspace/work/.hermit.log'],
             Env: [
                 `USER_MSG=${config.userMessage}`,
                 `HISTORY=${historyB64}`,

@@ -84,8 +84,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl jq sed gawk bash coreutils iputils-ping dnsutils ca-certificates \
     nodejs npm sqlite3 ffmpeg python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
-COPY crab/agent.py /usr/local/bin/agent.py
-RUN chmod +x /usr/local/bin/agent.py
+COPY shell/dist-agent/agent.js /app/agent.js
+COPY shell/dist-agent/agent.d.ts /app/agent.d.ts 2>/dev/null || true
+COPY shell/node_modules/@libsql/client /app/node_modules/@libsql/client 2>/dev/null || true
+COPY shell/node_modules/@libsql/client/lib-cjs /app/node_modules/@libsql/client/lib-cjs 2>/dev/null || true
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
 EOF
@@ -96,8 +98,10 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends curl jq ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir requests pandas numpy
-COPY crab/agent.py /usr/local/bin/agent.py
-RUN chmod +x /usr/local/bin/agent.py
+COPY shell/dist-agent/agent.js /app/agent.js
+COPY shell/dist-agent/agent.d.ts /app/agent.d.ts 2>/dev/null || true
+COPY shell/node_modules/@libsql/client /app/node_modules/@libsql/client 2>/dev/null || true
+COPY shell/node_modules/@libsql/client/lib-cjs /app/node_modules/@libsql/client/lib-cjs 2>/dev/null || true
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
 EOF
@@ -107,9 +111,12 @@ $DOCKER build -t hermit/netsec:latest -f - . << 'EOF'
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl jq nmap iputils-ping dnsutils net-tools openssl ca-certificates \
+    nodejs npm \
     && rm -rf /var/lib/apt/lists/*
-COPY crab/agent.py /usr/local/bin/agent.py
-RUN chmod +x /usr/local/bin/agent.py
+COPY shell/dist-agent/agent.js /app/agent.js
+COPY shell/dist-agent/agent.d.ts /app/agent.d.ts 2>/dev/null || true
+COPY shell/node_modules/@libsql/client /app/node_modules/@libsql/client 2>/dev/null || true
+COPY shell/node_modules/@libsql/client/lib-cjs /app/node_modules/@libsql/client/lib-cjs 2>/dev/null || true
 WORKDIR /workspace
 CMD ["sleep", "infinity"]
 EOF
@@ -121,6 +128,7 @@ npm install --legacy-peer-deps 2>/dev/null || npm install
 npm install @fastify/cookie@8.3.0 @fastify/static@6.12.0 --legacy-peer-deps 2>/dev/null || true
 
 npm run build
+npm run build:agent
 cd ..
 
 echo "📦 Building Dashboard..."
