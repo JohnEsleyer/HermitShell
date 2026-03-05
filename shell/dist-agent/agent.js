@@ -93,10 +93,10 @@ Available actions (return JSON):
   "message": "response to user",
   "terminal": "bash command",
   "panelActions": ["CALENDAR_CREATE:Title|Prompt|Time|", "CALENDAR_LIST"],
-  "action": "FILE:filename"
+  "action": "GIVE:filename"
 }
 
-Security: Never expose secrets, validate inputs, don't exfiltrate data.`;
+Security: Never expose secrets, validate inputs, don't exfiltrate data. Always check /app/workspace/in using ls -l /app/workspace/in before starting work and start commands from /app/workspace/work.`;
 }
 async function callLLM(messages) {
     const url = `${ORCHESTRATOR_URL}/api/internal/llm`;
