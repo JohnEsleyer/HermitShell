@@ -1834,7 +1834,9 @@
             <div class="p-4 border-b border-slate-700 bg-slate-900/40 grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
                 <div class="md:col-span-2">
                     <label class="block text-xs text-slate-400 mb-1">Telegram User ID</label>
-                    <input id="agent-logs-user-id" type="number" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white" placeholder="123456789">
+                    <select id="agent-logs-user-id" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-white">
+                        <option value="">Select allowlisted user</option>
+                    </select>
                 </div>
                 <div class="md:col-span-4 flex gap-2 flex-wrap">
                     <button onclick="loadAgentInteractions()" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-sm">Refresh Logs</button>
@@ -1863,6 +1865,7 @@
         let pendingVerificationToken = null;
         let activeChatAgentId = null;
         let activeLogsAgentId = null;
+        let cachedAllowlistUsers = [];
         window.usingDefaultCreds = false;
 
         const AUTH_TOKEN_KEY = 'hermitshell_session_token';
@@ -4007,6 +4010,7 @@
             document.getElementById('agent-logs-title').innerText = `${agentName} · Agent Logs`;
             document.getElementById('agent-logs-modal').classList.remove('hidden');
             document.getElementById('agent-logs-modal').classList.add('flex');
+            await populateAgentLogsUserDropdown();
             await loadAgentInteractions();
             lucide.createIcons();
         }
@@ -4017,11 +4021,35 @@
             activeLogsAgentId = null;
         }
 
+        async function populateAgentLogsUserDropdown() {
+            const userSelect = document.getElementById('agent-logs-user-id');
+            if (!userSelect) return;
+
+            try {
+                const res = await fetch('/api/allowlist');
+                cachedAllowlistUsers = await res.json();
+            } catch (e) {
+                cachedAllowlistUsers = [];
+            }
+
+            const options = cachedAllowlistUsers
+                .map((user) => {
+                    const label = user.first_name || user.username || user.user_id;
+                    return `<option value="${user.user_id}">${escapeHtml(label)} (${user.user_id})</option>`;
+                })
+                .join('');
+
+            userSelect.innerHTML = `<option value="">Select allowlisted user</option>${options}`;
+            if (cachedAllowlistUsers.length) {
+                userSelect.value = String(cachedAllowlistUsers[0].user_id);
+            }
+        }
+
         async function loadAgentInteractions() {
             const out = document.getElementById('agent-logs-content');
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
             if (!activeLogsAgentId || !userId) {
-                out.innerHTML = '<div class="text-slate-400">Enter a Telegram user ID to load logs.</div>';
+                out.innerHTML = '<div class="text-slate-400">Select an allowlisted user to load logs.</div>';
                 return;
             }
 
@@ -4051,7 +4079,7 @@
 
         async function runSendFileTest() {
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
-            if (!activeLogsAgentId || !userId) return alert('Enter Telegram user ID first.');
+            if (!activeLogsAgentId || !userId) return alert('Select an allowlisted user first.');
             const out = document.getElementById('agent-logs-content');
             out.innerHTML = '<div class="text-slate-300">Running send file test...</div>';
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/send-file`, {
@@ -4069,7 +4097,7 @@
 
         async function runJsonContractTest() {
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
-            if (!activeLogsAgentId || !userId) return alert('Enter Telegram user ID first.');
+            if (!activeLogsAgentId || !userId) return alert('Select an allowlisted user first.');
             const sample = `{
   "userId": "123456789",
   "message": "Sending the file",
