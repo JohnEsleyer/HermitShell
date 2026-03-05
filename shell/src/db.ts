@@ -302,7 +302,7 @@ export async function initDb(): Promise<void> {
 
     await db.executeMultiple(`
         INSERT OR IGNORE INTO settings (key, value) VALUES ('default_provider', 'openrouter');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('default_model', 'auto');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('default_model', 'openrouter/free');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('public_url', '');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('default_daily_limit', '1.00');
         INSERT OR IGNORE INTO settings (key, value) VALUES ('hitl_enabled', 'false');

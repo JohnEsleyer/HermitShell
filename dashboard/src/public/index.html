@@ -2144,7 +2144,7 @@
                 updateModelOptions();
 
                 const modelSelect = document.getElementById('setting-default_model');
-                const savedModel = settings.default_model || 'auto';
+                const savedModel = settings.default_model || 'openrouter/free';
                 const models = PROVIDER_MODELS[settings.default_provider] || [];
                 const modelExists = models.some(m => m.value === savedModel);
 

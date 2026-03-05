@@ -128,7 +128,7 @@ async function createNewCubicle(config: AgentConfig): Promise<Docker.Container> 
 
     const settings = await getAllSettings();
     const provider = config.llmProvider || settings.default_provider || 'openrouter';
-    const model = config.llmModel || settings.default_model || 'auto';
+    const model = config.llmModel || settings.default_model || 'openrouter/free';
 
     const envVars = [
         `AGENT_ID=${config.agentId}`,
@@ -185,7 +185,7 @@ async function createNewCubicle(config: AgentConfig): Promise<Docker.Container> 
 export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
     const settings = await getAllSettings();
     const provider = config.llmProvider || settings.default_provider || 'openrouter';
-    const model = config.llmModel || settings.default_model || 'auto';
+    const model = config.llmModel || settings.default_model || 'openrouter/free';
     const providerKeyMap: Record<string, { key: string; env: string }> = {
         'openai': { key: 'openai_api_key', env: 'OPENAI_API_KEY' },
         'anthropic': { key: 'anthropic_api_key', env: 'ANTHROPIC_API_KEY' },

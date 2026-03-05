@@ -40,6 +40,7 @@ const WORKSPACE_DIR = '/app/workspace';
 const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || 'http://172.17.0.1:3000';
 const USER_MSG = process.env.USER_MSG || '';
 const MAX_TOKENS = parseInt(process.env.MAX_TOKENS || '4096');
+const AGENT_ID = parseInt(process.env.AGENT_ID || '0', 10);
 const LLM_PROVIDER = process.env.LLM_PROVIDER || 'openai';
 const LLM_MODEL = process.env.LLM_MODEL || 'gpt-4o-mini';
 const PERSONALITY = process.env.PERSONALITY || '';
@@ -102,6 +103,7 @@ async function callLLM(messages) {
     const url = `${ORCHESTRATOR_URL}/api/internal/llm`;
     const payload = {
         messages,
+        agentId: AGENT_ID,
         model: LLM_MODEL,
         provider: LLM_PROVIDER,
         max_tokens: MAX_TOKENS,
