@@ -88,8 +88,13 @@ describe('resource usage calculations', () => {
     );
 
     expect(summary.hostMemoryUsedBytes).toBe(750);
+    expect(summary.hostMemoryFreeBytes).toBe(250);
     expect(summary.hostMemoryPercent).toBeCloseTo(75, 2);
     expect(summary.containerMemoryOfHostPercent).toBeCloseTo(30, 2);
+    expect(summary.remainingMemoryBytes).toBe(700);
     expect(summary.containersCpuPercent).toBeCloseTo(12.5, 2);
+    expect(summary.containersCpuOfHostPercent).toBeCloseTo(3.125, 3);
+    expect(summary.hostCpuLoadPercent).toBeCloseTo(25, 2);
+    expect(summary.hostCpuRemainingPercent).toBeCloseTo(75, 2);
   });
 });
