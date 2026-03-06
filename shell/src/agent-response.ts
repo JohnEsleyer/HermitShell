@@ -22,6 +22,29 @@ function parseLabeledContract(rawOutput: string): ParsedAgentResponse | null {
     };
 }
 
+function parseTaggedContract(rawOutput: string): ParsedAgentResponse | null {
+    const text = asString(rawOutput);
+    const extract = (tag: string): string => {
+        const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
+        const match = text.match(regex);
+        return match ? asString(match[1]).trim() : '';
+    };
+
+    const message = extract('message');
+    const terminal = extract('terminal');
+    const action = extract('action');
+    const thought = extract('thought');
+    const hasAnyTag = Boolean(message || terminal || action || thought || text.match(/<\/?(thought|message|terminal|action)>/i));
+    if (!hasAnyTag) return null;
+
+    return {
+        message: message || text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim(),
+        terminal,
+        action,
+        panelActions: []
+    };
+}
+
 function asString(value: unknown): string {
     if (typeof value === 'string') return value;
     if (value === null || value === undefined) return '';
@@ -112,6 +135,9 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
         const parsed = tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
         if (parsed) return parsed;
     }
+
+    const tagged = parseTaggedContract(output);
+    if (tagged) return tagged;
 
     const labeled = parseLabeledContract(output);
     if (labeled) return labeled;

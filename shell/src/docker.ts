@@ -285,16 +285,19 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
                 if (line.includes('COMMAND_OUTPUT:')) {
                     sendProgress(`📤 Processing output...`);
                 }
-                if (line.includes('[HITL] APPROVAL_REQUIRED:')) {
+                if (line.includes('[HITL] INTERNET_ACCESS_REQUIRED:')) {
                     try {
                         const cmd = line.split('REQUIRED:')[1]?.trim() || 'Unknown command';
-                        approvalLogId = await createAuditLog(config.agentId, containerId, cmd, 'Pending approval');
+                        approvalLogId = await createAuditLog(config.agentId, containerId, cmd, 'Pending Network Access');
                         await sendApprovalRequest(config.agentId, containerId, cmd, approvalLogId);
-                        sendProgress('⏳ Waiting for approval...', cmd.slice(0, 40));
+                        sendProgress('🌐 Waiting for network approval...', cmd.slice(0, 40));
                     } catch (err) { }
                 }
-                if (line.includes('[HITL] APPROVED') || line.includes('[HITL] EXECUTED')) {
-                    if (approvalLogId) await import('./db').then(m => m.updateAuditLog(approvalLogId as number, 'approved'));
+                if (line.includes('[HITL] APPROVED')) {
+                    if (approvalLogId) await import('./db').then(m => m.updateAuditLog(approvalLogId as number, 'Network Allowed'));
+                }
+                if (line.includes('[HITL] DENIED')) {
+                    if (approvalLogId) await import('./db').then(m => m.updateAuditLog(approvalLogId as number, 'Network Blocked'));
                 }
                 if (line.includes('[MEETING]')) {
                     sendProgress('🤝 Coordinating with other agents...');

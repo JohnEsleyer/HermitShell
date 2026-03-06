@@ -170,7 +170,7 @@ export async function initDb(): Promise<void> {
             output_snippet TEXT,
             approved_by INTEGER,
             approved_at DATETIME,
-            status TEXT DEFAULT 'pending',
+            status TEXT DEFAULT 'Executed',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (agent_id) REFERENCES agents(id)
         );
@@ -803,7 +803,7 @@ export async function createAuditLog(
     const db = await getClient();
     const rs = await db.execute({
         sql: 'INSERT INTO audit_logs (agent_id, container_id, command, output_snippet, status) VALUES (?, ?, ?, ?, ?)',
-        args: [agentId, containerId, command, outputSnippet.substring(0, 500), 'pending']
+        args: [agentId, containerId, command, outputSnippet.substring(0, 500), 'Executed']
     });
     return Number(rs.lastInsertRowid);
 }

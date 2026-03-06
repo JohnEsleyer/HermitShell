@@ -358,8 +358,11 @@ export async function startServer() {
         const auditLogs = await getAuditLogs(undefined, 500);
         const runtimeLogs = await getAgentRuntimeLogs(undefined, 500);
         const errors24h = runtimeLogs.filter(l => l.level === 'error').length;
-        const approvedCount = auditLogs.filter(l => l.status === 'approved').length;
-        const pendingCount = auditLogs.filter(l => l.status === 'pending').length;
+        const approvedCount = auditLogs.filter(l => {
+            const st = String(l.status || '').toLowerCase();
+            return st.includes('executed') || st.includes('allowed');
+        }).length;
+        const pendingCount = auditLogs.filter(l => String(l.status || '').toLowerCase().includes('pending network')).length;
 
         return {
             dockerStatus: dockerOk ? 'online' : 'offline',

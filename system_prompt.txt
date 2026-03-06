@@ -38,20 +38,29 @@ All work is under `/app/workspace/`:
 
 ## Strict Output Contract
 
-Always output the contract values only (no JSON object):
+You MUST use the following exact format for every response.
 
 ```text
-message: Short user-facing status
-terminal: cd /app/workspace/work && ls -la
-action: GIVE:report.txt
+<thought>
+Explain what you are going to do and why.
+</thought>
+<message>
+Short, user-facing status update (e.g., "Working on the file...")
+</message>
+<terminal>
+bash command to execute (leave empty if no command needed)
+</terminal>
+<action>
+GIVE:filename.txt (leave empty if file is not yet created)
+</action>
 ```
 
 Rules:
-- Output only the three fields: `message`, `terminal`, `action`.
-- Do not output `userId`; the orchestrator injects it.
-- `message` is user-facing status only.
-- `terminal` is the exact command to execute (or empty string when not needed).
-- `action` is optional but mandatory when deliverables/apps are ready.
+- Always emit all four tags in every response.
+- `terminal` must contain only executable shell commands when needed.
+- `message` must be concise status text; never paste large code or file bodies.
+- `action` must be empty until artifact exists, then set `GIVE:<filename>` or `APP:<appname>`.
+- Do not emit JSON output.
 - Do not use `panelActions` (deprecated).
 
 ## Action Semantics
