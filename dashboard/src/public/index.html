@@ -281,6 +281,64 @@
                 padding: 1rem;
             }
         }
+    
+        .neo-panel {
+            background: linear-gradient(145deg, rgba(30, 41, 59, 0.82), rgba(15, 23, 42, 0.86));
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            box-shadow: 0 18px 40px -28px rgba(14, 165, 233, 0.45);
+        }
+
+        .neo-kpi {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .neo-kpi::after {
+            content: '';
+            position: absolute;
+            inset: auto -20% -55% -20%;
+            height: 90%;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.24), transparent 70%);
+            pointer-events: none;
+        }
+
+        .badge-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, .25);
+            padding: .2rem .55rem;
+            font-size: .68rem;
+            color: #cbd5e1;
+            background: rgba(30, 41, 59, .55);
+        }
+
+        .agent-neo-card {
+            background: linear-gradient(155deg, rgba(15, 23, 42, .92), rgba(30, 41, 59, .88));
+            border: 1px solid rgba(148, 163, 184, .2);
+            box-shadow: 0 16px 38px -24px rgba(56, 189, 248, .38), inset 0 1px 0 rgba(255,255,255,.03);
+        }
+
+        .agent-neo-card::before {
+            content: '';
+            position: absolute;
+            inset: -35% -25% auto auto;
+            width: 180px;
+            height: 180px;
+            background: radial-gradient(circle, rgba(14, 165, 233, .2), transparent 72%);
+            pointer-events: none;
+        }
+
+        .agent-pill {
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, .25);
+            background: rgba(30, 41, 59, .55);
+            color: #e2e8f0;
+            font-size: 10px;
+            padding: 2px 8px;
+        }
+
     </style>
 </head>
 
@@ -381,15 +439,12 @@
                     class="nav-item flex items-center space-x-3 px-4 py-3 bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-xl">
                     <i data-lucide="grid" class="w-5 h-5"></i><span class="font-semibold">Agents</span>
                 </a>
-                <a href="#" data-section="cubicles" onclick="showSection('cubicles')"
+                <a href="#" data-section="cubicle" onclick="showSection('cubicle')"
                     class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
-                        data-lucide="box" class="w-5 h-5"></i><span>Cubicles</span></a>
+                        data-lucide="box" class="w-5 h-5"></i><span>Cubicle</span></a>
                 <a href="#" data-section="sites" onclick="showSection('sites')"
                     class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
                         data-lucide="globe" class="w-5 h-5"></i><span>Apps</span></a>
-                <a href="#" data-section="files" onclick="showSection('files')"
-                    class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
-                        data-lucide="folder-open" class="w-5 h-5"></i><span>Files</span></a>
                 <a href="#" data-section="calendars" onclick="showSection('calendars')"
                     class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
                         data-lucide="calendar-days" class="w-5 h-5"></i><span>Calendars</span></a>
@@ -440,6 +495,10 @@
                                     class="text-green-400">SECURE</span></p>
                         </div>
                         <div class="flex items-center space-x-3">
+                            <button onclick="openSkillsModal()"
+                                class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold transition-all border border-slate-700 flex items-center gap-2"
+                                title="Open Skills Manager"><i data-lucide="sparkles" class="w-4 h-4"></i><span
+                                    class="hidden sm:inline">Skills</span></button>
                             <button onclick="syncWebhooks(event)"
                                 class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2"
                                 title="Reconnect bots to Telegram"><i data-lucide="refresh-cw" class="w-4 h-4"></i><span
@@ -453,15 +512,12 @@
                         <a href="#" data-section="agents" onclick="showSection('agents')"
                             class="nav-item bg-orange-500/10 text-orange-400 border-orange-500/20"><i data-lucide="grid"
                                 class="w-4 h-4 inline mr-1"></i>Agents</a>
-                        <a href="#" data-section="cubicles" onclick="showSection('cubicles')"
+                        <a href="#" data-section="cubicle" onclick="showSection('cubicle')"
                             class="nav-item text-slate-300"><i data-lucide="box"
-                                class="w-4 h-4 inline mr-1"></i>Cubicles</a>
+                                class="w-4 h-4 inline mr-1"></i>Cubicle</a>
                         <a href="#" data-section="sites" onclick="showSection('sites')"
                             class="nav-item text-slate-300"><i data-lucide="globe"
                                 class="w-4 h-4 inline mr-1"></i>Apps</a>
-                        <a href="#" data-section="files" onclick="showSection('files')"
-                            class="nav-item text-slate-300"><i data-lucide="folder-open"
-                                class="w-4 h-4 inline mr-1"></i>Files</a>
                         <a href="#" data-section="calendars" onclick="showSection('calendars')"
                             class="nav-item text-slate-300"><i data-lucide="calendar-days"
                                 class="w-4 h-4 inline mr-1"></i>Calendars</a>
@@ -531,10 +587,13 @@
                             </div>
                         </div>
 
-                        <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                            <i data-lucide="grid" class="w-5 h-5 text-orange-500"></i>
-                            Deployed Agents
-                        </h3>
+                        <div class="mb-6">
+                            <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i data-lucide="grid" class="w-5 h-5 text-orange-500"></i>
+                                Deployed Agents
+                            </h3>
+                            <p class="text-xs text-slate-400 mt-1">Modern operator cockpit for live agent control, observability, and skill injection.</p>
+                        </div>
 
                         <div id="agent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 
@@ -552,22 +611,61 @@
                                 No runtime logs yet.</div>
                         </div>
                     </div>
-
-                    <!-- Cubicles Section -->
-                    <div id="section-cubicles" class="hidden">
+                    <!-- Cubicle Section -->
+                    <div id="section-cubicle" class="hidden">
                         <div class="flex justify-between items-center mb-6">
                             <h3 class="text-xl font-bold text-white flex items-center gap-2">
                                 <i data-lucide="box" class="w-5 h-5 text-orange-500"></i>
-                                Running Cubicles
+                                Cubicle Dashboard
                             </h3>
-                            <button onclick="loadCubicles()"
+                            <button onclick="loadCubicleDashboard()"
                                 class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium transition-all text-sm flex items-center gap-2 border border-slate-700">
                                 <i data-lucide="refresh-cw" class="w-4 h-4"></i>
                                 Refresh
                             </button>
                         </div>
 
-                        <div class="glass-card rounded-2xl overflow-hidden">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+                            <div class="neo-panel neo-kpi rounded-2xl p-4">
+                                <div class="text-xs text-slate-400">ACTIVE CONTAINERS</div>
+                                <div id="cubicle-kpi-running" class="text-2xl font-bold text-cyan-300 mt-1">0</div>
+                                <div class="text-xs text-slate-400 mt-1">Across all agents</div>
+                            </div>
+                            <div class="neo-panel neo-kpi rounded-2xl p-4">
+                                <div class="text-xs text-slate-400">TOTAL CPU</div>
+                                <div id="cubicle-kpi-cpu" class="text-2xl font-bold text-emerald-300 mt-1">0.0%</div>
+                                <div class="text-xs text-slate-400 mt-1">Live container allocation</div>
+                            </div>
+                            <div class="neo-panel neo-kpi rounded-2xl p-4">
+                                <div class="text-xs text-slate-400">TOTAL MEMORY</div>
+                                <div id="cubicle-kpi-memory" class="text-2xl font-bold text-violet-300 mt-1">0 MB</div>
+                                <div class="text-xs text-slate-400 mt-1">Current usage snapshot</div>
+                            </div>
+                        </div>
+
+                        <div class="neo-panel p-5 rounded-2xl mb-5">
+                            <div class="flex items-center justify-between gap-3 mb-3">
+                                <h4 class="text-sm font-semibold text-white flex items-center gap-2"><i data-lucide="folder-open" class="w-4 h-4 text-orange-400"></i>Workspace Browser</h4>
+                                <span class="badge-chip"><i data-lucide="scan-search" class="w-3 h-3"></i>Unified with container view</span>
+                            </div>
+                            <div class="grid md:grid-cols-5 gap-3">
+                                <select id="files-agent"
+                                    class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"></select>
+                                <select id="files-user"
+                                    class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"></select>
+                                <button onclick="loadWorkspaceFiles()"
+                                    class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold">Load
+                                    Workspace</button>
+                                <button onclick="downloadWorkspaceArchive()"
+                                    class="bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-lg">Download
+                                    .tar.gz</button>
+                                <input type="file" id="workspace-upload"
+                                    class="text-xs text-slate-300 bg-slate-900/50 border border-slate-700 rounded-lg p-2"
+                                    onchange="uploadWorkspaceFile(event)">
+                            </div>
+                        </div>
+
+                        <div class="neo-panel rounded-2xl overflow-hidden">
                             <table class="w-full text-sm">
                                 <thead class="bg-slate-800/50 text-slate-400">
                                     <tr>
@@ -586,6 +684,10 @@
                                 <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-3 text-slate-600"></i>
                                 <p>No running cubicles. Spawn an agent to create a cubicle.</p>
                             </div>
+                        </div>
+
+                        <div id="files-browser" class="neo-panel rounded-2xl p-5 text-sm text-slate-300 mt-5">
+                            Select an agent and user, then click <strong>Load Workspace</strong>.
                         </div>
                     </div>
 
@@ -638,36 +740,6 @@
                                     <iframe id="site-preview-frame" class="w-full h-full" src=""></iframe>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- Files Section -->
-                    <div id="section-files" class="hidden">
-                        <h3 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                            <i data-lucide="folder-open" class="w-5 h-5 text-orange-500"></i>
-                            Files & Workspace Browser
-                        </h3>
-                        <div class="glass-card p-5 rounded-2xl mb-5">
-                            <div class="grid md:grid-cols-5 gap-3">
-                                <select id="files-agent"
-                                    class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"></select>
-                                <select id="files-user"
-                                    class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"></select>
-                                <button onclick="loadWorkspaceFiles()"
-                                    class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold">Load
-                                    Workspace</button>
-                                <button onclick="downloadWorkspaceArchive()"
-                                    class="bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-lg">Download
-                                    .tar.gz</button>
-                                <input type="file" id="workspace-upload"
-                                    class="text-xs text-slate-300 bg-slate-900/50 border border-slate-700 rounded-lg p-2"
-                                    onchange="uploadWorkspaceFile(event)">
-                            </div>
-                            <p class="text-xs text-slate-400 mt-3">This makes it easier to review what an agent created
-                                before forwarding outputs in Telegram.</p>
-                        </div>
-                        <div id="files-browser" class="glass-card rounded-2xl p-5 text-sm text-slate-300">
-                            Select an agent and user, then click <strong>Load Workspace</strong>.
                         </div>
                     </div>
 
@@ -946,6 +1018,22 @@
                                         Set</span>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Skills Section -->
+                    <div id="section-skills" class="hidden">
+                        <div class="flex items-center justify-between mb-6">
+                            <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                <i data-lucide="sparkles" class="w-5 h-5 text-orange-500"></i>
+                                Skills
+                            </h3>
+                            <button onclick="openSkillsModal()"
+                                class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold">Open
+                                Skills Manager</button>
+                        </div>
+                        <div class="glass-card p-5 rounded-2xl text-slate-300 text-sm">
+                            Skills are markdown files injected into the agent context prompt.
                         </div>
                     </div>
 
@@ -1959,6 +2047,34 @@
         </div>
     </div>
 
+
+    <div id="skills-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-6xl h-[86vh] rounded-2xl shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center">
+                <h3 class="text-lg font-bold text-white flex items-center gap-2"><i data-lucide="sparkles" class="w-5 h-5 text-orange-500"></i>Skills</h3>
+                <div class="flex gap-2">
+                    <button onclick="createSkillPrompt()" class="bg-orange-600 hover:bg-orange-500 text-white px-3 py-2 rounded-lg text-sm">New Skill</button>
+                    <button onclick="closeSkillsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 h-[calc(86vh-64px)]">
+                <div class="border-r border-slate-700 p-3 overflow-y-auto">
+                    <div id="skills-list" class="space-y-2 text-sm text-slate-300"></div>
+                </div>
+                <div class="md:col-span-2 p-4 overflow-y-auto">
+                    <div class="space-y-3">
+                        <input id="skill-name-input" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white" placeholder="Skill name">
+                        <textarea id="skill-content-input" class="w-full h-[52vh] bg-slate-800 border border-slate-700 rounded-lg p-3 text-white mono" placeholder="# Skill content (markdown)"></textarea>
+                        <div class="flex justify-end gap-2">
+                            <button onclick="deleteActiveSkill()" class="bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 px-4 py-2 rounded-lg text-sm">Delete</button>
+                            <button onclick="saveActiveSkill()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm">Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         lucide.createIcons();
         let authState = 'loading';
@@ -1978,6 +2094,8 @@
         let activeLogsAgentId = null;
         const testAgentStates = new Map();
         let cachedAllowlistUsers = [];
+        let cachedSkills = [];
+        let activeSkillId = null;
         window.usingDefaultCreds = false;
 
         const AUTH_TOKEN_KEY = 'hermitshell_session_token';
@@ -2104,24 +2222,24 @@
             document.getElementById('section-settings').classList.add('hidden');
             document.getElementById('section-metrics').classList.add('hidden');
             document.getElementById('section-allowlist').classList.add('hidden');
-            document.getElementById('section-cubicles').classList.add('hidden');
+            document.getElementById('section-cubicle').classList.add('hidden');
             document.getElementById('section-sites').classList.add('hidden');
-            document.getElementById('section-files').classList.add('hidden');
-            document.getElementById('section-calendars').classList.add('hidden');
+                        document.getElementById('section-calendars').classList.add('hidden');
             document.getElementById('section-memories').classList.add('hidden');
+            document.getElementById('section-skills').classList.add('hidden');
             document.getElementById('section-' + section).classList.remove('hidden');
 
             const titles = {
                 'agents': 'Mission Control',
-                'cubicles': 'Running Cubicles',
+                'cubicle': 'Cubicle',
                 'audit': 'Audit Logs',
                 'settings': 'Settings',
                 'metrics': 'System Metrics',
                 'allowlist': 'User Allowlist',
                 'sites': 'Apps',
-                'files': 'Files',
-                'calendars': 'Calendars',
-                'memories': 'Agent Memories'
+                                'calendars': 'Calendars',
+                'memories': 'Agent Memories',
+                'skills': 'Skills'
             };
             document.getElementById('page-title').innerText = titles[section] || 'Mission Control';
 
@@ -2129,9 +2247,9 @@
             if (section === 'metrics') loadMetrics();
             if (section === 'allowlist') loadAllowlist();
             if (section === 'settings') loadSettings();
-            if (section === 'cubicles') loadCubicles();
+            if (section === 'cubicle') loadCubicleDashboard();
             if (section === 'sites') loadSites();
-            if (section === 'files') loadFilesSection();
+            if (section === 'skills') loadSkillsList();
             if (section === 'calendars') loadCalendarsSection();
             if (section === 'memories') loadMemoriesSection();
         }
@@ -2471,6 +2589,23 @@
             } catch (e) { }
         }
 
+        async function loadCubicleDashboard() {
+            await Promise.all([loadCubicles(), loadFilesSection()]);
+        }
+
+        function updateCubicleKpis(containers) {
+            const running = containers.filter(c => c.State === 'running').length;
+            const totalCpu = containers.reduce((sum, c) => sum + Number(c?.resourceUsage?.cpuPercent || 0), 0);
+            const totalMemBytes = containers.reduce((sum, c) => sum + Number(c?.resourceUsage?.memoryUsageBytes || 0), 0);
+
+            const runningEl = document.getElementById('cubicle-kpi-running');
+            const cpuEl = document.getElementById('cubicle-kpi-cpu');
+            const memEl = document.getElementById('cubicle-kpi-memory');
+            if (runningEl) runningEl.innerText = String(running);
+            if (cpuEl) cpuEl.innerText = `${totalCpu.toFixed(1)}%`;
+            if (memEl) memEl.innerText = formatBytes(totalMemBytes);
+        }
+
         async function loadCubicles() {
             try {
                 const res = await fetch('/api/containers');
@@ -2480,6 +2615,7 @@
                 const empty = document.getElementById('cubicles-empty');
 
                 const hermitContainers = containers;
+                updateCubicleKpis(hermitContainers);
 
                 if (hermitContainers.length === 0) {
                     tbody.innerHTML = '';
@@ -2490,19 +2626,18 @@
 
                 empty.classList.add('hidden');
                 tbody.innerHTML = hermitContainers.map(c => {
-                    const statusColor = c.State === 'running' ? 'text-green-400' : c.State === 'exited' ? 'text-red-400' : 'text-yellow-400';
-                    const statusIcon = c.State === 'running' ? '●' : '○';
+                    const statusColor = c.State === 'running' ? 'text-green-300 bg-green-500/15 border-green-500/30' : c.State === 'exited' ? 'text-red-300 bg-red-500/15 border-red-500/30' : 'text-yellow-300 bg-yellow-500/15 border-yellow-500/30';
 
                     const name = c.Names && c.Names[0] ? c.Names[0].replace('/', '') : 'cubicle';
 
                     return `
-                        <tr class="hover:bg-white/5">
+                        <tr class="hover:bg-white/5 transition-colors">
                             <td class="px-4 py-3 font-mono text-slate-400">
                                 <div>${c.Id.substring(0, 12)}</div>
                                 <div class="text-[10px] text-slate-500">${name}</div>
                             </td>
-                            <td class="px-4 py-3">${c.Image}</td>
-                            <td class="px-4 py-3 ${statusColor} font-mono">${statusIcon} ${c.State.toUpperCase()}</td>
+                            <td class="px-4 py-3 text-slate-200">${c.Image}</td>
+                            <td class="px-4 py-3"><span class="inline-flex px-2 py-1 rounded-full text-[11px] font-mono border ${statusColor}">${c.State.toUpperCase()}</span></td>
                             <td class="px-4 py-3 text-slate-400">${c.Status}</td>
                             <td class="px-4 py-3 text-xs">
                                 ${c.resourceUsage ? `
@@ -2512,11 +2647,11 @@
                                 ` : '<div class="text-slate-500">N/A</div>'}
                             </td>
                             <td class="px-4 py-3 flex gap-2">
-                                <button onclick="viewContainer('${c.Id}')" class="text-orange-500 hover:text-white text-xs">Terminal</button>
+                                <button onclick="viewContainer('${c.Id}')" class="text-orange-400 hover:text-orange-200 text-xs">Terminal</button>
                                 ${c.State === 'running'
-                            ? `<button onclick="stopContainer('${c.Id}')" class="text-yellow-400 hover:text-white text-xs">Stop</button>`
-                            : `<button onclick="startContainer('${c.Id}')" class="text-green-400 hover:text-white text-xs">Start</button>`}
-                                <button onclick="deleteContainer('${c.Id}')" class="text-red-400 hover:text-white text-xs">Delete</button>
+                            ? `<button onclick="stopContainer('${c.Id}')" class="text-yellow-400 hover:text-yellow-200 text-xs">Stop</button>`
+                            : `<button onclick="startContainer('${c.Id}')" class="text-green-400 hover:text-green-200 text-xs">Start</button>`}
+                                <button onclick="deleteContainer('${c.Id}')" class="text-red-400 hover:text-red-200 text-xs">Delete</button>
                             </td>
                         </tr>
                     `;
@@ -2841,6 +2976,10 @@
             }
         }
 
+        function openAgentSkills(agentId, agentName) {
+            openSkillsModal();
+        }
+
         async function loadAgents() {
             const grid = document.getElementById('agent-grid');
 
@@ -2930,7 +3069,7 @@
                     }[status] || statusDot.idle;
 
                     const card = `
-                        <div class="glass-card rounded-2xl p-5 relative group overflow-hidden space-y-4">
+                        <div class="agent-neo-card rounded-2xl p-5 relative group overflow-hidden space-y-4">
                             <div class="absolute top-4 right-4 flex items-center gap-2">
                                 ${statusDot}
                             </div>
@@ -2939,7 +3078,11 @@
                                 ${avatarImg(agent)}
                                 <div class="min-w-0">
                                     <h3 class="text-lg font-bold text-white truncate">${agent.name} ${hitlBadge}</h3>
-                                    <p class="text-xs text-orange-400 font-mono truncate">${agent.role || 'No role configured'}</p>
+                                    <div class="flex items-center gap-2 mt-1">
+                                        <span class="agent-pill">#${agent.id}</span>
+                                        <span class="agent-pill">${(agent.llm_model && agent.llm_model !== 'default') ? agent.llm_model : 'default model'}</span>
+                                    </div>
+                                    <p class="text-xs text-orange-400 font-mono truncate mt-1">${agent.role || 'No role configured'}</p>
                                     <p class="text-xs text-slate-400 mt-1 max-h-9 overflow-hidden">${agent.profile_bio || ''}</p>
                                 </div>
                             </div>
@@ -2954,11 +3097,12 @@
                                 <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="${color} h-full" style="width: ${Math.min(percent, 100)}%"></div></div>
                             </div>
 
-                            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
                                 <button id="test-agent-btn-${agent.id}" onclick="testAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-lg border border-green-600/30">${renderTestAgentButtonContent(agent.id)}</button>
                                 <button onclick="openTerminal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="terminal" class="w-3 h-3"></i><span>Terminal</span></button>
                                 <button onclick="openAgentLogsModal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 py-2 rounded-lg border border-blue-600/30"> <i data-lucide="file-text" class="w-3 h-3"></i><span>Logs</span></button>
                                 <button onclick="openAgentChat(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 py-2 rounded-lg border border-cyan-600/30"> <i data-lucide="message-circle" class="w-3 h-3"></i><span>Chat</span></button>
+                                <button onclick="openAgentSkills(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-fuchsia-600/20 hover:bg-fuchsia-600/30 text-fuchsia-300 py-2 rounded-lg border border-fuchsia-500/30"> <i data-lucide="sparkles" class="w-3 h-3"></i><span>Skills</span></button>
                                 <button onclick="editAgent(${agent.id}, this)" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span></button>
                                 <button onclick="deleteAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 py-2 rounded-lg border border-red-600/30"> <i data-lucide="trash-2" class="w-3 h-3"></i><span>Delete</span></button>
                             </div>
@@ -2973,7 +3117,7 @@
                 }
                 cachedAgents = agents;
                 if (!document.getElementById('section-sites').classList.contains('hidden')) loadSites();
-                if (!document.getElementById('section-files').classList.contains('hidden')) loadFilesSection();
+                if (!document.getElementById('section-cubicle').classList.contains('hidden')) loadFilesSection();
             } catch (e) { }
         }
 
@@ -3183,6 +3327,125 @@
             } catch (e) {
                 alert('Failed to capture screenshot: ' + e.message);
             }
+        }
+
+        async function parseJsonSafe(res) {
+            try {
+                return await res.json();
+            } catch {
+                return {};
+            }
+        }
+
+        async function loadSkillsList() {
+            try {
+                const res = await fetch('/api/skills');
+                const data = await parseJsonSafe(res);
+                if (!res.ok) {
+                    throw new Error(data.error || `Failed to load skills (${res.status})`);
+                }
+                cachedSkills = data.skills || [];
+                const list = document.getElementById('skills-list');
+                if (!list) return;
+                if (!cachedSkills.length) {
+                    list.innerHTML = '<div class="text-slate-500 text-sm">No skills yet. Create one.</div>';
+                    return;
+                }
+                list.innerHTML = cachedSkills.map(skill => `
+                    <button onclick="openSkill('${skill.id}')" class="w-full text-left p-3 rounded-lg border ${activeSkillId === skill.id ? 'border-orange-500 bg-orange-500/10 text-white' : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700/50'}">
+                        <div class="font-semibold truncate">${escapeHtml(skill.name)}</div>
+                        <div class="text-xs text-slate-400 mt-1 truncate">${escapeHtml(skill.preview || '')}</div>
+                    </button>
+                `).join('');
+            } catch (e) {
+                const list = document.getElementById('skills-list');
+                if (list) list.innerHTML = '<div class="text-red-400 text-sm">Failed to load skills.</div>';
+            }
+        }
+
+        async function openSkillsModal() {
+            const modal = document.getElementById('skills-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            await loadSkillsList();
+            if (cachedSkills.length) {
+                await openSkill(cachedSkills[0].id);
+            } else {
+                activeSkillId = null;
+                document.getElementById('skill-name-input').value = '';
+                document.getElementById('skill-content-input').value = '';
+            }
+            lucide.createIcons();
+        }
+
+        function closeSkillsModal() {
+            const modal = document.getElementById('skills-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        async function openSkill(skillId) {
+            activeSkillId = skillId;
+            const res = await fetch(`/api/skills/${skillId}`);
+            const data = await parseJsonSafe(res);
+            if (!res.ok) {
+                alert(data.error || 'Failed to open skill');
+                return;
+            }
+            document.getElementById('skill-name-input').value = data.skill.name || '';
+            document.getElementById('skill-content-input').value = data.skill.content || '';
+            await loadSkillsList();
+        }
+
+        async function createSkillPrompt() {
+            const name = prompt('Skill name');
+            if (!name) return;
+            const res = await fetch('/api/skills', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, content: `# ${name}
+
+Describe how the agent should behave.` })
+            });
+            const data = await parseJsonSafe(res);
+            if (!res.ok) {
+                alert(data.error || 'Failed to create skill');
+                return;
+            }
+            await loadSkillsList();
+            await openSkill(data.skill.id);
+        }
+
+        async function saveActiveSkill() {
+            if (!activeSkillId) return;
+            const name = document.getElementById('skill-name-input').value;
+            const content = document.getElementById('skill-content-input').value;
+            const res = await fetch(`/api/skills/${activeSkillId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, content })
+            });
+            const data = await parseJsonSafe(res);
+            if (!res.ok) {
+                alert(data.error || 'Failed to save skill');
+                return;
+            }
+            await loadSkillsList();
+        }
+
+        async function deleteActiveSkill() {
+            if (!activeSkillId) return;
+            if (!confirm('Delete this skill?')) return;
+            const res = await fetch(`/api/skills/${activeSkillId}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await parseJsonSafe(res);
+                alert(data.error || 'Failed to delete skill');
+                return;
+            }
+            activeSkillId = null;
+            document.getElementById('skill-name-input').value = '';
+            document.getElementById('skill-content-input').value = '';
+            await loadSkillsList();
         }
 
         async function loadFilesSection() {

@@ -51,6 +51,7 @@ const LLM_MODEL = process.env.LLM_MODEL || 'gpt-4o-mini';
 const PERSONALITY = process.env.PERSONALITY || '';
 const WEB_GUIDELINES = process.env.WEB_GUIDELINES || '';
 const PYTHON_GUIDE = process.env.PYTHON_GUIDE || '';
+const SKILLS_PROMPT = process.env.SKILLS_PROMPT || '';
 const DANGEROUS_COMMANDS = ['rm -rf', 'sudo', 'docker', 'chmod 777', 'mkfs', 'dd if='];
 function log(message) {
     const timestamp = new Date().toISOString();
@@ -103,6 +104,7 @@ function buildSystemMessageContent() {
     const injectedPrompt = injectAgentIdentity(loadSystemPrompt());
     const personalityDirective = buildPersonalityDirective();
     return [injectedPrompt, personalityDirective, WEB_GUIDELINES, PYTHON_GUIDE]
+        .concat(SKILLS_PROMPT ? [SKILLS_PROMPT] : [])
         .filter(Boolean)
         .join('\n\n');
 }
