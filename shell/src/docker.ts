@@ -2,9 +2,18 @@ import Docker from 'dockerode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PassThrough } from 'stream';
+import * as os from 'os';
 import { createAuditLog, getAgentById, getAllSettings, getSetting, getActiveMeetings } from './db';
 import { sendApprovalRequest } from './telegram';
 import { searchRagMemories, initWorkspaceDatabases, workspaceDataExists } from './workspace-db';
+
+import {
+    calculateCpuPercent,
+    calculateMemoryUsage,
+    ContainerResourceUsage,
+    summarizeContainerResources,
+    summarizeSystemResources
+} from './resource-usage';
 
 let docker: Docker;
 try {
@@ -354,6 +363,66 @@ export async function getCubicleStatus(agentId: number, userId: number) {
 
 export async function listContainers() {
     return (await docker.listContainers({ all: true })).filter(c => c.Labels && c.Labels[LABELS.AGENT_ID]);
+}
+
+async function getContainerResourceUsage(containerInfo: Docker.ContainerInfo): Promise<ContainerResourceUsage> {
+    const container = docker.getContainer(containerInfo.Id);
+    const stats = await container.stats({ stream: false }) as any;
+    const memory = calculateMemoryUsage(stats);
+
+    return {
+        id: containerInfo.Id,
+        name: containerInfo.Names?.[0]?.replace('/', '') || 'cubicle',
+        image: containerInfo.Image,
+        state: containerInfo.State,
+        status: containerInfo.Status,
+        cpuPercent: calculateCpuPercent(stats),
+        memoryUsageBytes: memory.usageBytes,
+        memoryLimitBytes: memory.limitBytes,
+        memoryPercent: memory.percent
+    };
+}
+
+export async function getContainerResources() {
+    const containers = await listContainers();
+    const resources = await Promise.all(
+        containers.map(async (containerInfo) => {
+            try {
+                return await getContainerResourceUsage(containerInfo as Docker.ContainerInfo);
+            } catch {
+                return {
+                    id: containerInfo.Id,
+                    name: containerInfo.Names?.[0]?.replace('/', '') || 'cubicle',
+                    image: containerInfo.Image,
+                    state: containerInfo.State,
+                    status: containerInfo.Status,
+                    cpuPercent: 0,
+                    memoryUsageBytes: 0,
+                    memoryLimitBytes: 0,
+                    memoryPercent: 0
+                };
+            }
+        })
+    );
+
+    return summarizeContainerResources(resources);
+}
+
+export async function getSystemResources() {
+    const containerSummary = await getContainerResources();
+    return {
+        ...summarizeSystemResources(
+            {
+                totalMemoryBytes: os.totalmem(),
+                freeMemoryBytes: os.freemem(),
+                loadAverage: os.loadavg() as [number, number, number],
+                cpuCount: os.cpus().length,
+                uptimeSeconds: os.uptime()
+            },
+            containerSummary
+        ),
+        containers: containerSummary.containers
+    };
 }
 
 export async function checkDocker() {
