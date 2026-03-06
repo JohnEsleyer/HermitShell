@@ -16,7 +16,7 @@ import {
 } from './workspace-db';
 import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, restartAgentContainer, getSystemResources, getContainerResources } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
-import { startTunnel, syncWebhooks, getTunnelUrl, ensureHealthyTunnel } from './tunnel';
+import { startTunnel, syncWebhooks, getTunnelUrl, ensureHealthyTunnel, startTunnelHealthCheck } from './tunnel';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as http from 'http';
@@ -1878,6 +1878,7 @@ export async function startServer() {
         console.log(`✅ Tunnel active: ${tunnelUrl}`);
         console.log('🔄 Syncing webhooks...');
         await syncWebhooks(Number(PORT));
+        startTunnelHealthCheck(Number(PORT), 60000);
     } else if (!tunnelUrl) {
         console.log('⚠️ Tunnel failed to start. Set public_url manually in Settings.');
     }

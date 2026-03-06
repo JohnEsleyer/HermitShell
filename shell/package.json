@@ -1,6 +1,6 @@
 {
   "name": "hermitshell",
-  "version": "2026.03.06",
+  "version": "2026.03.07",
   "description": "The Shell - Node.js host controller for CrabShell",
   "main": "dist/server.js",
   "scripts": {

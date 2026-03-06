@@ -248,6 +248,52 @@ export function stopTunnel(): void {
     }
 }
 
+let healthCheckInterval: NodeJS.Timeout | null = null;
+let lastHealthCheckStatus = true;
+
+export function startTunnelHealthCheck(port: number, intervalMs = 60000): void {
+    if (healthCheckInterval) {
+        console.log('[Tunnel] Health check already running');
+        return;
+    }
+
+    console.log(`[Tunnel] Starting health check (every ${intervalMs}ms)...`);
+
+    healthCheckInterval = setInterval(async () => {
+        const url = currentUrl;
+        if (!url) {
+            console.log('[Tunnel] Health check: No URL, starting new tunnel...');
+            lastHealthCheckStatus = false;
+            await ensureHealthyTunnel(port);
+            return;
+        }
+
+        if (!url.includes('trycloudflare.com')) {
+            return;
+        }
+
+        const reachable = await isTunnelEndpointReachable(url);
+        if (!reachable && lastHealthCheckStatus) {
+            console.log('[Tunnel] Health check: Tunnel unhealthy, restarting...');
+            await setSetting('public_url', '');
+            stopTunnel();
+            await startTunnel(port);
+        } else if (!reachable) {
+            lastHealthCheckStatus = false;
+        } else {
+            lastHealthCheckStatus = true;
+        }
+    }, intervalMs);
+}
+
+export function stopTunnelHealthCheck(): void {
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+        console.log('[Tunnel] Health check stopped');
+    }
+}
+
 export async function syncWebhooks(port: number): Promise<number> {
     const { getAllAgents } = await import('./db');
     const { registerWebhook } = await import('./telegram');
