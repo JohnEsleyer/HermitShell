@@ -6,6 +6,7 @@ import * as os from 'os';
 import { createAuditLog, getAgentById, getAllSettings, getSetting, getActiveMeetings } from './db';
 import { sendApprovalRequest } from './telegram';
 import { searchRagMemories, initWorkspaceDatabases, workspaceDataExists } from './workspace-db';
+import { buildSkillsPromptContext } from './skills';
 
 import {
     calculateCpuPercent,
@@ -149,6 +150,7 @@ async function createNewCubicle(config: AgentConfig): Promise<Docker.Container> 
         `PERSONALITY=${config.personality || ''}`,
         `PYTHON_GUIDE=Always use virtual environments for Python: python3 -m venv venv && source venv/bin/activate && pip install <package>. Never install packages globally with pip. Use npm for Node.js packages (works globally).`,
         `WEB_GUIDELINES=When working with the web: 1) Never send secrets/API keys in URLs or logs. 2) Use environment variables for sensitive data, never hardcode keys. 3) Validate and sanitize all user inputs. 4) When installing packages, prefer well-maintained packages and check for vulnerabilities. 5) Don't exfiltrate data - only return results to the user.`,
+        `SKILLS_PROMPT=${buildSkillsPromptContext()}`,
     ];
 
     if (config.requireApproval) envVars.push('HITL_ENABLED=true');
@@ -247,6 +249,7 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
                 `ORCHESTRATOR_URL=http://172.17.0.1:3000`,
                 `PYTHON_GUIDE=Always use virtual environments for Python: python3 -m venv venv && source venv/bin/activate && pip install <package>. Never install packages globally with pip. Use npm for Node.js packages (works globally).`,
                 `WEB_GUIDELINES=When working with the web: 1) Never send secrets/API keys in URLs or logs. 2) Use environment variables for sensitive data, never hardcode keys. 3) Validate and sanitize all user inputs. 4) When installing packages, prefer well-maintained packages and check for vulnerabilities. 5) Don't exfiltrate data - only return results to the user.`,
+                `SKILLS_PROMPT=${buildSkillsPromptContext()}`,
                 ...((await container.inspect()).Config.Env || [])
             ],
             AttachStdout: true,

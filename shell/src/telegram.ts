@@ -1231,16 +1231,26 @@ async function handleWorkspaceCommand(agent: any, userId: number): Promise<strin
 }
 
 async function handleResetCommand(agent: any, userId: number): Promise<string> {
+    const workspacePath = path.join(WORKSPACE_DIR, `${agent.id}_${userId}`);
     const status = await getCubicleStatus(agent.id, userId);
+
     if (status?.containerId) {
         try {
             await removeCubicle(status.containerId);
-            return `🔄 *Cubicle Reset*\n\nOld container removed.\nSend a message to spawn a fresh one.`;
         } catch (e: any) {
-            return `❌ Failed to reset: ${e.message}`;
+            return `❌ Failed to reset container: ${e.message}`;
         }
     }
-    return `📊 No cubicle to reset.\n\nSend a message to create one.`;
+
+    if (fs.existsSync(workspacePath)) {
+        try {
+            fs.rmSync(workspacePath, { recursive: true, force: true });
+        } catch (e: any) {
+            return `❌ Failed to wipe workspace data: ${e.message}`;
+        }
+    }
+
+    return `🔄 *Container Fully Reset*\n\nCubicle removed and workspace deleted.\nSend a message to spawn a fresh one.`;
 }
 
 async function handleBudgetCommand(agent: any): Promise<string> {

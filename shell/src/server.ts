@@ -26,6 +26,7 @@ import { loadHistory, saveHistory, clearHistory } from './history';
 import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
 import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract } from './agent-response';
+import { listSkills, getSkill, createSkill, updateSkill, deleteSkill } from './skills';
 
 const PORT = process.env.PORT || 3000;
 const SESSION_SECRET = process.env.SESSION_SECRET || 'hermitshell-secret-change-in-production';
@@ -1595,6 +1596,38 @@ export async function startServer() {
         } catch (e: any) {
             return { logs: `Error reading logs: ${e.message}` };
         }
+    });
+
+    fastify.get('/api/skills', async () => {
+        return { skills: listSkills() };
+    });
+
+    fastify.get('/api/skills/:id', async (request: any, reply: any) => {
+        const skill = getSkill(String(request.params.id || ''));
+        if (!skill) return reply.code(404).send({ error: 'Skill not found' });
+        return { skill };
+    });
+
+    fastify.post('/api/skills', async (request: any, reply: any) => {
+        const { name, content } = request.body || {};
+        if (!name || typeof name !== 'string') {
+            return reply.code(400).send({ error: 'name is required' });
+        }
+        const skill = createSkill(name, String(content || ''));
+        return { skill };
+    });
+
+    fastify.put('/api/skills/:id', async (request: any, reply: any) => {
+        const { name, content } = request.body || {};
+        const skill = updateSkill(String(request.params.id || ''), { name, content });
+        if (!skill) return reply.code(404).send({ error: 'Skill not found' });
+        return { skill };
+    });
+
+    fastify.delete('/api/skills/:id', async (request: any, reply: any) => {
+        const ok = deleteSkill(String(request.params.id || ''));
+        if (!ok) return reply.code(404).send({ error: 'Skill not found' });
+        return { success: true };
     });
 
     fastify.post('/preview-login', async (request: any, reply: any) => {
