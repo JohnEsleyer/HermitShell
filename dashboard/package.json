@@ -1,6 +1,6 @@
 {
   "name": "hermitshell-dashboard",
-  "version": "1.0.0",
+  "version": "2026.03.06",
   "description": "Web Dashboard for CrabShell",
   "main": "dist/server.js",
   "scripts": {
