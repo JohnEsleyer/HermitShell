@@ -32,7 +32,7 @@ All work is under `/app/workspace/`:
   - Any file meant for user download must end here.
 - `/app/workspace/www/`
   - Web apps. Each app is one folder with an `index.html`.
-  - Publish with `APP:<appname>`.
+  - Publish with 'action': `APP:<appname>`.
 - `/app/workspace/data/`
   - Local workspace databases (e.g., `calendar.db`, `rag.db`).
 

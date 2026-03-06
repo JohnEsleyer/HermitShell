@@ -7,6 +7,14 @@ let currentUrl: string | null = null;
 let restartAttempts = 0;
 const MAX_RESTART_ATTEMPTS = 5;
 
+/**
+ * Extracts trycloudflare URL from cloudflared output.
+ * Handles both single-line and multi-line output formats.
+ * 
+ * Single-line: "INF Your quick Tunnel has been created! Visit it at https://abc-123.trycloudflare.com"
+ * Multi-line:  "+------------------------------------------------------------------+
+ *                |  https://recording-cells-reasoning-fact.trycloudflare.com   |"
+ */
 export function extractTryCloudflareUrl(output: string): string | null {
     const match = output.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
     return match ? match[0] : null;
@@ -88,6 +96,16 @@ export function isTunnelRunning(): boolean {
     return tunnelProcess !== null && !tunnelProcess.killed;
 }
 
+/**
+ * Starts a new Cloudflare Quick Tunnel.
+ * 
+ * IMPORTANT: This function MUST return a valid URL string, never null,
+ * when cloudflared successfully starts. The caller (ensureHealthyTunnel)
+ * relies on this behavior to determine if tunnel startup succeeded.
+ * 
+ * @param port Local port to tunnel
+ * @returns The public trycloudflare URL, or null only if tunnel failed to start
+ */
 export async function startTunnel(port: number): Promise<string | null> {
     if (tunnelProcess && !tunnelProcess.killed) {
         console.log('[Tunnel] Already running, returning existing URL');
@@ -177,18 +195,44 @@ export async function startTunnel(port: number): Promise<string | null> {
     });
 }
 
+/**
+ * Ensures a healthy tunnel is running.
+ * 
+ * CRITICAL BEHAVIOR - DO NOT MODIFY WITHOUT UNDERSTANDING:
+ * 1. If public_url is null/empty/undefined: MUST start a NEW tunnel (never return null!)
+ * 2. If public_url is a custom domain (doesn't contain trycloudflare.com): Return it as-is
+ * 3. If public_url is a trycloudflare URL: Check if reachable
+ *    - If reachable: Use existing URL
+ *    - If NOT reachable (530): Clear URL, stop old tunnel, start NEW tunnel
+ * 
+ * REGRESSION WARNING (2026-03-06):
+ * A previous bug caused this function to return null when public_url was missing from DB,
+ * which resulted in DNS_PROBE_FINISHED_NXDOMAIN errors. The fix ensures startTunnel()
+ * is ALWAYS called when no valid public_url exists.
+ */
 export async function ensureHealthyTunnel(port: number): Promise<string | null> {
     const existingUrl = await getSetting('public_url');
-    if (!existingUrl || !existingUrl.includes('trycloudflare.com')) {
-        return existingUrl || null;
+    
+    // CASE 1: No URL in database - MUST start new tunnel
+    // This was the bug: previously returned null here instead of calling startTunnel()
+    if (!existingUrl || existingUrl.trim() === '') {
+        console.log('[Tunnel] No public_url found, starting new tunnel...');
+        return startTunnel(port);
+    }
+    
+    // CASE 2: Custom domain - use as-is (not a trycloudflare URL)
+    if (!existingUrl.includes('trycloudflare.com')) {
+        return existingUrl;
     }
 
+    // CASE 3: trycloudflare URL - verify it's still working
     const reachable = await isTunnelEndpointReachable(existingUrl);
     if (reachable) {
         currentUrl = existingUrl;
         return existingUrl;
     }
 
+    // CASE 4: trycloudflare URL is broken (530) - restart tunnel
     console.log('[Tunnel] Existing trycloudflare URL is unhealthy, restarting tunnel...');
     await setSetting('public_url', '');
     stopTunnel();
