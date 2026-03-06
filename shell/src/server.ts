@@ -14,7 +14,7 @@ import {
     storeRagMemory as wsStoreRagMemory, getRagMemories as wsGetRagMemories, searchRagMemories as wsSearchRagMemories,
     deleteRagMemory as wsDeleteRagMemory, clearRagMemories as wsClearRagMemories
 } from './workspace-db';
-import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, restartAgentContainer } from './docker';
+import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, restartAgentContainer, getSystemResources, getContainerResources } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
 import { startTunnel, syncWebhooks, getTunnelUrl, ensureHealthyTunnel } from './tunnel';
 import * as fs from 'fs';
@@ -348,6 +348,7 @@ export async function startServer() {
     fastify.get('/api/stats', async () => {
         const dockerOk = await checkDocker();
         const containers = dockerOk ? await listContainers() : [];
+        const resourceSummary = dockerOk ? await getSystemResources() : null;
         const agents = await getAllAgents();
         const totalSpend = await getTotalSpend();
         const allowlist = await getAllowlist();
@@ -372,6 +373,7 @@ export async function startServer() {
                 runtimeErrors: errors24h,
                 runtimeLogCount: runtimeLogs.length
             },
+            systemResources: resourceSummary,
             operator: operator,
             agents: agents.map(a => ({
                 ...a,
@@ -1071,7 +1073,17 @@ export async function startServer() {
     });
 
     fastify.get('/api/containers', async () => {
-        return await listContainers();
+        const dockerOk = await checkDocker();
+        if (!dockerOk) return [];
+
+        const resources = await getContainerResources();
+        const usageById = new Map(resources.containers.map((c) => [c.id, c]));
+        const containers = await listContainers();
+
+        return containers.map((container) => ({
+            ...container,
+            resourceUsage: usageById.get(container.Id) || null
+        }));
     });
 
     fastify.post('/api/containers/:id/stop', async (request: any, reply: any) => {

@@ -549,6 +549,7 @@
                                         <th class="px-4 py-3 text-left font-mono">IMAGE</th>
                                         <th class="px-4 py-3 text-left font-mono">STATUS</th>
                                         <th class="px-4 py-3 text-left font-mono">CREATED</th>
+                                        <th class="px-4 py-3 text-left font-mono">RESOURCES</th>
                                         <th class="px-4 py-3 text-left font-mono">ACTIONS</th>
                                     </tr>
                                 </thead>
@@ -814,6 +815,25 @@
                                 </div>
                                 <div class="text-2xl font-bold text-white" id="metric-allowlist">0</div>
                                 <div class="text-xs text-slate-400 mt-1">Allowed Users</div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="glass-card p-4 rounded-xl">
+                                <div class="text-xs text-slate-400">Host Memory</div>
+                                <div id="metric-host-memory" class="text-xl font-bold text-cyan-400">0%</div>
+                            </div>
+                            <div class="glass-card p-4 rounded-xl">
+                                <div class="text-xs text-slate-400">Container Memory</div>
+                                <div id="metric-container-memory" class="text-xl font-bold text-orange-400">0%</div>
+                            </div>
+                            <div class="glass-card p-4 rounded-xl">
+                                <div class="text-xs text-slate-400">Container CPU</div>
+                                <div id="metric-container-cpu" class="text-xl font-bold text-green-400">0%</div>
+                            </div>
+                            <div class="glass-card p-4 rounded-xl">
+                                <div class="text-xs text-slate-400">Load Avg (1m)</div>
+                                <div id="metric-load-avg" class="text-xl font-bold text-purple-400">0.00</div>
                             </div>
                         </div>
 
@@ -2329,6 +2349,19 @@
             window.location.reload();
         }
 
+
+        function formatBytes(bytes) {
+            if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let value = bytes;
+            let unitIdx = 0;
+            while (value >= 1024 && unitIdx < units.length - 1) {
+                value /= 1024;
+                unitIdx += 1;
+            }
+            return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIdx]}`;
+        }
+
         async function loadStats() {
             try {
                 const res = await fetch('/api/stats');
@@ -2373,6 +2406,13 @@
                             <td class="px-4 py-3">${c.Image}</td>
                             <td class="px-4 py-3 ${statusColor} font-mono">${statusIcon} ${c.State.toUpperCase()}</td>
                             <td class="px-4 py-3 text-slate-400">${c.Status}</td>
+                            <td class="px-4 py-3 text-xs">
+                                ${c.resourceUsage ? `
+                                    <div class="text-green-300 font-mono">CPU ${c.resourceUsage.cpuPercent.toFixed(1)}%</div>
+                                    <div class="text-blue-300 font-mono">MEM ${c.resourceUsage.memoryPercent.toFixed(1)}%</div>
+                                    <div class="text-slate-500 font-mono">${formatBytes(c.resourceUsage.memoryUsageBytes)}</div>
+                                ` : '<div class="text-slate-500">N/A</div>'}
+                            </td>
                             <td class="px-4 py-3 flex gap-2">
                                 <button onclick="viewContainer('${c.Id}')" class="text-orange-500 hover:text-white text-xs">Terminal</button>
                                 ${c.State === 'running'
@@ -2450,6 +2490,12 @@
                 document.getElementById('metric-audit-approved').innerText = stats.metrics?.auditApprovals || 0;
                 document.getElementById('metric-audit-pending').innerText = stats.metrics?.auditPending || 0;
                 document.getElementById('metric-runtime-errors').innerText = stats.metrics?.runtimeErrors || 0;
+
+                const resources = stats.systemResources;
+                document.getElementById('metric-host-memory').innerText = resources ? `${resources.hostMemoryPercent.toFixed(1)}%` : 'N/A';
+                document.getElementById('metric-container-memory').innerText = resources ? `${resources.containersMemoryPercent.toFixed(1)}%` : 'N/A';
+                document.getElementById('metric-container-cpu').innerText = resources ? `${resources.containersCpuPercent.toFixed(1)}%` : 'N/A';
+                document.getElementById('metric-load-avg').innerText = resources ? `${(resources.loadAverage?.[0] || 0).toFixed(2)}` : 'N/A';
 
                 const openaiStatus = document.getElementById('metric-openai');
                 const openrouterStatus = document.getElementById('metric-openrouter');
