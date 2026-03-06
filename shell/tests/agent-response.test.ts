@@ -52,6 +52,17 @@ describe('parseAgentResponse', () => {
   });
 
 
+
+  it('parses xml-style tagged contract fields', () => {
+    const result = parseAgentResponse(`<thought>plan</thought>
+<message>Created file</message>
+<terminal>echo hi > /app/workspace/out/a.txt</terminal>
+<action>GIVE:a.txt</action>`);
+    expect(result.message).toBe('Created file');
+    expect(result.terminal).toBe('echo hi > /app/workspace/out/a.txt');
+    expect(result.action).toBe('GIVE:a.txt');
+  });
+
   it('parses labeled contract fields without JSON envelope', () => {
     const result = parseAgentResponse(`message: Created file\nterminal: echo hi > /app/workspace/out/a.txt\naction: GIVE:a.txt`);
     expect(result.message).toBe('Created file');
