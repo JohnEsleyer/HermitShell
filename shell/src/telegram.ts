@@ -1131,28 +1131,44 @@ export function startFileWatcher() {
 export async function registerWebhook(token: string, baseUrl: string, secret: string): Promise<boolean> {
     const cleanBaseUrl = baseUrl.replace(/\/$/, '');
     const cleanSecret = secret.replace(/[^a-zA-Z0-9_-]/g, '') || 'hermitSecret123';
+    const maxDnsRetryAttempts = 6;
 
     try {
         await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`);
     } catch { }
 
-    try {
-        const webhookUrl = `${cleanBaseUrl}/webhook/${token}?secret=${encodeURIComponent(cleanSecret)}`;
-        const tgUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}&secret_token=${cleanSecret}`;
+    for (let attempt = 1; attempt <= maxDnsRetryAttempts; attempt++) {
+        try {
+            const webhookUrl = `${cleanBaseUrl}/webhook/${token}?secret=${encodeURIComponent(cleanSecret)}`;
+            const tgUrl = `https://api.telegram.org/bot${token}/setWebhook?url=${encodeURIComponent(webhookUrl)}&secret_token=${cleanSecret}`;
 
-        const response = await fetch(tgUrl);
-        const data = await response.json() as any;
+            const response = await fetch(tgUrl);
+            const data = await response.json() as any;
 
-        if (data.ok) {
-            await setBotCommands(token);
-            return true;
+            if (data.ok) {
+                await setBotCommands(token);
+                return true;
+            }
+
+            const description = String(data?.description || '').toLowerCase();
+            const isDnsPropagationError = description.includes('failed to resolve host');
+
+            if (isDnsPropagationError && attempt < maxDnsRetryAttempts) {
+                const delayMs = 4000 * attempt;
+                console.warn(`[Webhook] Hostname propagation pending for ${token.substring(0, 8)}... retrying in ${delayMs}ms (attempt ${attempt}/${maxDnsRetryAttempts})`);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+                continue;
+            }
+
+            console.error(`Failed to set webhook for token ${token.substring(0, 8)}...:`, data);
+            return false;
+        } catch (e) {
+            console.error('Error setting webhook:', e);
+            return false;
         }
-        console.error(`Failed to set webhook for token ${token.substring(0, 8)}...:`, data);
-        return false;
-    } catch (e) {
-        console.error('Error setting webhook:', e);
-        return false;
     }
+
+    return false;
 }
 
 export async function setBotCommands(token: string): Promise<void> {
