@@ -22,7 +22,7 @@ Any file dropped into a Telegram chat with the bot (e.g., a `.csv`, `.py`, or `.
 ### 2. Outbound (Agent to User)
 When an agent creates a file it wants the user to see:
 - It writes the file to `/app/workspace/out/`.
-- It emits deterministic JSON output with `"action": "GIVE:<filename>"`.
+- It emits deterministic contract output with `<action>GIVE:<filename></action>` (JSON/labeled fallback still parsed for compatibility).
 - The Orchestrator's **Chokidar-based File Watcher** detects the add/write event.
 - It triggers `sendFileViaTelegram()`, which uploads the file back to the original Telegram chat as a document.
 
@@ -41,9 +41,10 @@ If an agent hosts a simple website (e.g., by running `python -m http.server`), t
 
 The Telegram bot is more than just text-based. It includes:
 - **Custom Keyboard**: Quick access to `/status`, `/workspace`, `/budget`, `/reset`, and `/help`.
-- **Inline Buttons**:
-  - **HITL Approvals**: Direct buttons to "Approve" or "Deny" dangerous commands.
-  - **Web Previews**: Buttons that appear when the agent is hosting a preview site.
+- **HITL Flow (Reply-based)**:
+  - Network requests trigger a prompt to the operator.
+  - Operator replies **Yes** or **No** in Telegram to allow/block internet access.
+- **Web Previews**: Buttons appear when the agent is hosting a preview site.
 - **Admin Commands**:
   - `/containers`: For the owner/operator to see all active agent cubicles.
   - `/agents`: List all configured agents and their status.

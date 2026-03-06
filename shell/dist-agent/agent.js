@@ -52,7 +52,7 @@ const PERSONALITY = process.env.PERSONALITY || '';
 const WEB_GUIDELINES = process.env.WEB_GUIDELINES || '';
 const PYTHON_GUIDE = process.env.PYTHON_GUIDE || '';
 const SKILLS_PROMPT = process.env.SKILLS_PROMPT || '';
-const DANGEROUS_COMMANDS = ['rm -rf', 'sudo', 'docker', 'chmod 777', 'mkfs', 'dd if='];
+const INTERNET_COMMANDS = ['curl ', 'wget ', 'npm install', 'pip install', 'git clone', 'apt-get', 'apk add'];
 function log(message) {
     const timestamp = new Date().toISOString();
     console.error(`[${timestamp}] ${message}`);
@@ -172,6 +172,26 @@ function parseLabeledResponse(text) {
         panelActions: []
     };
 }
+function parseTaggedResponse(text) {
+    const extract = (tag) => {
+        const regex = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i');
+        const match = text.match(regex);
+        return match ? match[1].trim() : '';
+    };
+    const message = extract('message');
+    const terminal = extract('terminal');
+    const action = extract('action');
+    const thought = extract('thought');
+    const hasAnyTag = Boolean(message || terminal || action || thought || text.match(/<\/?(thought|message|terminal|action)>/i));
+    if (!hasAnyTag)
+        return null;
+    return {
+        message: message || text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim(),
+        terminal,
+        action,
+        panelActions: []
+    };
+}
 function parseResponse(text) {
     const objectMatches = text.match(/\{[\s\S]*?\}/g) || [];
     for (let i = objectMatches.length - 1; i >= 0; i--) {
@@ -190,28 +210,37 @@ function parseResponse(text) {
         }
         catch { }
     }
+    const tagged = parseTaggedResponse(text);
+    if (tagged)
+        return tagged;
     const labeled = parseLabeledResponse(text);
     if (labeled)
         return labeled;
     return { message: text };
 }
-function isDangerous(command) {
+function isInternetRequest(command) {
     const lower = command.toLowerCase();
-    return DANGEROUS_COMMANDS.some(d => lower.includes(d.toLowerCase()));
+    return INTERNET_COMMANDS.some(d => lower.includes(d));
 }
 async function executeCommand(command) {
     if (!command.trim())
         return '';
     log(`COMMAND: ${command}`);
-    if (isDangerous(command)) {
+    if (isInternetRequest(command)) {
         const approvalFile = '/tmp/hermit_approval.lock';
-        log(`[HITL] APPROVAL_REQUIRED: ${command}`);
+        const denyFile = '/tmp/hermit_deny.lock';
+        log(`[HITL] INTERNET_ACCESS_REQUIRED: ${command}`);
         const maxWait = 120000;
         const checkInterval = 2000;
         let waited = 0;
         while (waited < maxWait) {
             await new Promise(r => setTimeout(r, checkInterval));
             waited += checkInterval;
+            if (fs.existsSync(denyFile)) {
+                log(`[HITL] DENIED: ${command}`);
+                fs.unlinkSync(denyFile);
+                return 'Error: The operator explicitly DENIED internet access for this command.';
+            }
             if (fs.existsSync(approvalFile)) {
                 log(`[HITL] APPROVED: ${command}`);
                 fs.unlinkSync(approvalFile);

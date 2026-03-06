@@ -4,26 +4,25 @@ This document helps future developers distinguish **current** behaviors from **l
 
 ## Current Contract (Use This)
 
-Agent responses should use deterministic JSON:
+Agent responses should use deterministic XML-style tags:
 
-```json
-{
-  "userId": "123456789",
-  "message": "Short status",
-  "terminal": "cd /app/workspace/work && ls -la",
-  "action": "GIVE:report.txt"
-}
+```text
+<thought>Plan</thought>
+<message>Short status</message>
+<terminal>cd /app/workspace/work && ls -la</terminal>
+<action>GIVE:report.txt</action>
 ```
 
-Supported fields:
-- `userId`
-- `message`
-- `terminal`
-- `action`
+Canonical fields:
+- `<thought>`
+- `<message>`
+- `<terminal>`
+- `<action>`
 
 ## Legacy (Do Not Use for New Features)
 
 - `panelActions`
+- JSON envelope contract (still parsed but no longer primary)
 - Textual `ACTION: EXECUTE` contracts
 
 These may appear in older logs, tests, or historical docs for migration context.

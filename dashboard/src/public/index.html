@@ -348,7 +348,13 @@
             padding: 2px 8px;
         }
 
-    </style>
+    
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: #1e293b; border: 1px solid #334155; color: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); animation: slideIn 0.3s ease-out forwards; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+        .toast.error { border-left: 4px solid #ef4444; }
+        .toast.success { border-left: 4px solid #10b981; }
+        @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+</style>
 </head>
 
 <body class="h-screen flex text-slate-200">
@@ -791,11 +797,11 @@
                                     <option value="">All Agents</option>
                                 </select>
                                 <select id="audit-status-filter" onchange="loadAuditLogs()" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm">
-                                    <option value="">All Status</option>
-                                    <option value="approved">Approved</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="denied">Denied</option>
-                                    <option value="error">Error</option>
+                                    <option value="">All Activity</option>
+                                    <option value="Executed">Standard Executions</option>
+                                    <option value="Pending Network">Pending Network Requests</option>
+                                    <option value="Network Allowed">Allowed Network Activity</option>
+                                    <option value="Network Blocked">Blocked Network Activity</option>
                                 </select>
                                 <input type="text" id="audit-search" oninput="loadAuditLogs()" placeholder="Search commands..." class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-white text-sm flex-1">
                             </div>
@@ -807,11 +813,11 @@
                                 <div id="audit-total" class="text-2xl font-bold text-white">0</div>
                             </div>
                             <div class="glass-card p-4 rounded-2xl">
-                                <div class="text-xs text-slate-400">Approved</div>
+                                <div class="text-xs text-slate-400">Executed / Allowed</div>
                                 <div id="audit-approved" class="text-2xl font-bold text-green-400">0</div>
                             </div>
                             <div class="glass-card p-4 rounded-2xl">
-                                <div class="text-xs text-slate-400">Pending</div>
+                                <div class="text-xs text-slate-400">Pending Network</div>
                                 <div id="audit-pending" class="text-2xl font-bold text-yellow-400">0</div>
                             </div>
                             <div class="glass-card p-4 rounded-2xl">
@@ -1158,7 +1164,7 @@
                                     <div class="flex items-center gap-2 mb-2">
                                         <label class="text-xs font-mono text-slate-400">OPERATOR TELEGRAM ID</label>
                                         <button
-                                            onclick="alert('Send /start to @userinfobot on Telegram to get your User ID')"
+                                            onclick="showToast('Send /start to @userinfobot on Telegram to get your User ID')"
                                             class="text-slate-400 hover:text-orange-500 transition-colors"
                                             title="How to find my ID?">
                                             <i data-lucide="help-circle" class="w-4 h-4"></i>
@@ -2057,6 +2063,19 @@
         const testAgentStates = new Map();
         let cachedAllowlistUsers = [];
         let cachedSkills = [];
+
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.innerHTML = type === 'error'
+                ? `<i data-lucide="alert-circle" class="text-red-400"></i> ${escapeHtml(String(msg || ''))}`
+                : `<i data-lucide="check-circle" class="text-green-400"></i> ${escapeHtml(String(msg || ''))}`;
+            container.appendChild(toast);
+            lucide.createIcons();
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+        }
         let activeSkillId = null;
         window.usingDefaultCreds = false;
 
@@ -2422,12 +2441,12 @@
                 });
 
                 if (res.ok) {
-                    alert('Settings saved successfully!');
+                    showToast('Settings saved successfully!');
                 } else {
-                    alert('Failed to save settings');
+                    showToast('Failed to save settings');
                 }
             } catch (e) {
-                alert('Error saving settings: ' + e.message);
+                showToast('Error saving settings: ' + e.message);
             }
         }
 
@@ -2436,11 +2455,11 @@
             const password = document.getElementById('setting-admin-password').value;
 
             if (!username || !password) {
-                return alert('Both username and password are required');
+                return showToast('Both username and password are required');
             }
 
             if (username === 'admin' && password === 'crab123') {
-                return alert('Please enter a secure password different from the default.');
+                return showToast('Please enter a secure password different from the default.');
             }
 
             try {
@@ -2451,14 +2470,14 @@
                 });
 
                 if (res.ok) {
-                    alert('Credentials updated successfully! Please log in again.');
+                    showToast('Credentials updated successfully! Please log in again.');
                     window.location.reload();
                 } else {
                     const data = await res.json();
-                    alert('Error: ' + data.error);
+                    showToast('Error: ' + data.error);
                 }
             } catch (e) {
-                alert('Network error: ' + e.message);
+                showToast('Network error: ' + e.message);
             }
         }
 
@@ -2492,7 +2511,7 @@
                     setStoredSessionToken(data.token);
                 }
 
-                alert('Login successful! Redirecting...');
+                showToast('Login successful! Redirecting...');
                 window.location.reload();
             } catch (err) {
                 console.error('Login error:', err);
@@ -2630,10 +2649,10 @@
                     loadCubicles();
                     loadStats();
                 } else {
-                    alert('Failed to start container');
+                    showToast('Failed to start container');
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                showToast('Error: ' + e.message);
             }
         }
 
@@ -2645,10 +2664,10 @@
                     loadCubicles();
                     loadStats();
                 } else {
-                    alert('Failed to stop container');
+                    showToast('Failed to stop container');
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                showToast('Error: ' + e.message);
             }
         }
 
@@ -2661,10 +2680,10 @@
                     loadStats();
                 } else {
                     const data = await res.json();
-                    alert('Failed to delete container: ' + (data.error || 'Unknown error'));
+                    showToast('Failed to delete container: ' + (data.error || 'Unknown error'));
                 }
             } catch (e) {
-                alert('Error: ' + e.message);
+                showToast('Error: ' + e.message);
             }
         }
 
@@ -2769,7 +2788,7 @@
                 await fetch('/api/allowlist/' + userId, { method: 'DELETE' });
                 loadAllowlist();
             } catch (e) {
-                alert('Failed to remove user');
+                showToast('Failed to remove user');
             }
         }
 
@@ -2787,7 +2806,7 @@
             const username = document.getElementById('allowlist-username').value;
             const firstName = document.getElementById('allowlist-first-name').value;
 
-            if (!userId) return alert('User ID is required');
+            if (!userId) return showToast('User ID is required');
 
             try {
                 await fetch('/api/allowlist', {
@@ -2801,7 +2820,7 @@
                 document.getElementById('allowlist-first-name').value = '';
                 loadAllowlist();
             } catch (e) {
-                alert('Failed to add user');
+                showToast('Failed to add user');
             }
         }
 
@@ -2815,13 +2834,11 @@
         }
 
         function badgeClassForAuditStatus(status) {
-            const classes = {
-                approved: 'text-green-300 bg-green-500/15 border border-green-500/30',
-                denied: 'text-red-300 bg-red-500/15 border border-red-500/30',
-                pending: 'text-yellow-300 bg-yellow-500/15 border border-yellow-500/30',
-                error: 'text-red-300 bg-red-500/15 border border-red-500/30'
-            };
-            return classes[status] || 'text-slate-300 bg-slate-700/40 border border-slate-600';
+            const s = String(status || '').toLowerCase();
+            if (s.includes('allowed')) return 'text-green-300 bg-green-500/15 border border-green-500/30';
+            if (s.includes('blocked') || s.includes('error')) return 'text-red-300 bg-red-500/15 border border-red-500/30';
+            if (s.includes('pending network')) return 'text-yellow-300 bg-yellow-500/15 border border-yellow-500/30';
+            return 'text-blue-300 bg-blue-500/15 border border-blue-500/30';
         }
 
         async function loadUniversalLogs() {
@@ -2848,7 +2865,7 @@
                 }
 
                 const cards = logs.map(log => {
-                    const status = String(log.status || 'unknown').toLowerCase();
+                    const status = String(log.status || 'unknown');
                     const responseText = log.response_text || log.output_snippet || '';
                     const actionType = log.action_type || 'command';
                     const summary = responseText || log.command || 'No command logged';
@@ -2880,7 +2897,7 @@
             const file = event.target.files?.[0];
             if (!file) return;
             if (!file.type.startsWith('image/')) {
-                alert('Only image files are allowed.');
+                showToast('Only image files are allowed.');
                 return;
             }
 
@@ -2893,7 +2910,7 @@
                 preview.src = dataUrl;
                 preview.classList.remove('hidden');
             };
-            reader.onerror = () => alert('Failed to read the selected file.');
+            reader.onerror = () => showToast('Failed to read the selected file.');
             reader.readAsDataURL(file);
         }
 
@@ -3177,7 +3194,7 @@
                         const res = await fetch(`/api/sites/${agentId}/${port}/password/regenerate`, { method: 'POST' });
                         const body = await res.json();
                         if (!res.ok) {
-                            alert(body.error || 'Failed to regenerate password');
+                            showToast(body.error || 'Failed to regenerate password');
                             return;
                         }
                         const holder = document.getElementById(`site-password-${agentId}-${port}`);
@@ -3203,7 +3220,7 @@
                         const res = await fetch(`/api/sites/${agentId}/${userId}`, { method: 'DELETE' });
                         const body = await res.json();
                         if (!res.ok) {
-                            alert(body.error || 'Failed to delete site');
+                            showToast(body.error || 'Failed to delete site');
                             return;
                         }
                         await loadSites();
@@ -3219,7 +3236,7 @@
                         const res = await fetch(`/api/sites/${agentId}/${userId}/${siteName}`, { method: 'DELETE' });
                         const body = await res.json();
                         if (!res.ok) {
-                            alert(body.error || 'Failed to delete app');
+                            showToast(body.error || 'Failed to delete app');
                             return;
                         }
                         await loadSites();
@@ -3307,14 +3324,14 @@
                 const data = await res.json();
                 
                 if (!res.ok) {
-                    alert(data.error || 'Failed to create tunnel');
+                    showToast(data.error || 'Failed to create tunnel');
                     return;
                 }
                 
                 await navigator.clipboard.writeText(data.tunnelUrl);
-                alert(`Tunnel link copied to clipboard!\n\nLink: ${data.tunnelUrl}\nExpires: ${new Date(data.expiresAt).toLocaleString()}`);
+                showToast(`Tunnel link copied to clipboard!\n\nLink: ${data.tunnelUrl}\nExpires: ${new Date(data.expiresAt).toLocaleString()}`);
             } catch (e) {
-                alert('Failed to share site: ' + e.message);
+                showToast('Failed to share site: ' + e.message);
             }
         }
         
@@ -3326,14 +3343,14 @@
                 const data = await res.json();
                 
                 if (!res.ok) {
-                    alert(data.error || 'Failed to capture screenshot');
+                    showToast(data.error || 'Failed to capture screenshot');
                     return;
                 }
                 
-                alert('Screenshot captured.');
+                showToast('Screenshot captured.');
                 await loadSites();
             } catch (e) {
-                alert('Failed to capture screenshot: ' + e.message);
+                showToast('Failed to capture screenshot: ' + e.message);
             }
         }
 
@@ -3397,7 +3414,7 @@
             const res = await fetch(`/api/skills/${skillId}`);
             const data = await parseJsonSafe(res);
             if (!res.ok) {
-                alert(data.error || 'Failed to open skill');
+                showToast(data.error || 'Failed to open skill');
                 return;
             }
             document.getElementById('skill-name-input').value = data.skill.name || '';
@@ -3417,7 +3434,7 @@ Describe how the agent should behave.` })
             });
             const data = await parseJsonSafe(res);
             if (!res.ok) {
-                alert(data.error || 'Failed to create skill');
+                showToast(data.error || 'Failed to create skill');
                 return;
             }
             await loadSkillsList();
@@ -3435,7 +3452,7 @@ Describe how the agent should behave.` })
             });
             const data = await parseJsonSafe(res);
             if (!res.ok) {
-                alert(data.error || 'Failed to save skill');
+                showToast(data.error || 'Failed to save skill');
                 return;
             }
             await loadSkillsList();
@@ -3447,7 +3464,7 @@ Describe how the agent should behave.` })
             const res = await fetch(`/api/skills/${activeSkillId}`, { method: 'DELETE' });
             if (!res.ok) {
                 const data = await parseJsonSafe(res);
-                alert(data.error || 'Failed to delete skill');
+                showToast(data.error || 'Failed to delete skill');
                 return;
             }
             activeSkillId = null;
@@ -3517,7 +3534,7 @@ Describe how the agent should behave.` })
             const res = await fetch(`/api/files/${agentId}/${userId}/${relPath}`, { method: 'DELETE' });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                return alert(err.error || 'Failed to delete path');
+                return showToast(err.error || 'Failed to delete path');
             }
             await loadWorkspaceFiles();
         }
@@ -3710,7 +3727,7 @@ Describe how the agent should behave.` })
             const userId = Number(document.getElementById('calendar-user').value || 0);
 
             if (!agentId || !title || !prompt || !start || !userId) {
-                alert('Please fill agent, user, title, prompt, and start time.');
+                showToast('Please fill agent, user, title, prompt, and start time.');
                 return;
             }
 
@@ -3733,7 +3750,7 @@ Describe how the agent should behave.` })
 
             if (!res.ok) {
                 const err = await res.json();
-                alert(err.error || 'Failed to create event');
+                showToast(err.error || 'Failed to create event');
                 return;
             }
 
@@ -3813,9 +3830,15 @@ Describe how the agent should behave.` })
                 const tbody = document.getElementById('audit-tbody');
                 const emptyEl = document.getElementById('audit-empty');
 
-                const approvedCount = logs.filter(log => log.status === 'approved').length;
-                const pendingCount = logs.filter(log => log.status === 'pending').length;
-                const riskCount = logs.filter(log => log.status === 'denied' || log.status === 'error').length;
+                const approvedCount = logs.filter(log => {
+                    const st = String(log.status || '').toLowerCase();
+                    return st.includes('executed') || st.includes('allowed');
+                }).length;
+                const pendingCount = logs.filter(log => String(log.status || '').toLowerCase().includes('pending network')).length;
+                const riskCount = logs.filter(log => {
+                    const st = String(log.status || '').toLowerCase();
+                    return st.includes('blocked') || st.includes('error');
+                }).length;
                 document.getElementById('audit-total').innerText = String(logs.length);
                 document.getElementById('audit-approved').innerText = String(approvedCount);
                 document.getElementById('audit-pending').innerText = String(pendingCount);
@@ -3830,7 +3853,7 @@ Describe how the agent should behave.` })
                 if (emptyEl) emptyEl.classList.add('hidden');
 
                 tbody.innerHTML = logs.map(log => {
-                    const status = String(log.status || 'unknown').toLowerCase();
+                    const status = String(log.status || 'unknown');
                     const actionType = log.action_type || 'command';
                     const responseText = log.response_text || log.output_snippet || 'No response recorded';
                     const commandText = log.command || 'No command recorded';
@@ -3936,10 +3959,10 @@ Describe how the agent should behave.` })
                     loadStats();
                 } else {
                     const data = await res.json();
-                    alert('Failed to delete agent: ' + (data.error || 'Unknown error'));
+                    showToast('Failed to delete agent: ' + (data.error || 'Unknown error'));
                 }
             } catch (e) {
-                alert('Failed to delete agent: ' + e.message);
+                showToast('Failed to delete agent: ' + e.message);
             }
         }
 
@@ -3953,10 +3976,10 @@ Describe how the agent should behave.` })
                     loadStats();
                 } else {
                     const data = await res.json();
-                    alert('Failed to reset budget: ' + (data.error || 'Unknown error'));
+                    showToast('Failed to reset budget: ' + (data.error || 'Unknown error'));
                 }
             } catch (e) {
-                alert('Failed to reset budget: ' + e.message);
+                showToast('Failed to reset budget: ' + e.message);
             }
         }
 
@@ -4032,7 +4055,7 @@ Describe how the agent should behave.` })
         function copyTestOutput() {
             const output = document.getElementById('test-output').innerText;
             navigator.clipboard.writeText(output).then(() => {
-                alert('Copied to clipboard!');
+                showToast('Copied to clipboard!');
             });
         }
 
@@ -4042,7 +4065,7 @@ Describe how the agent should behave.` })
                 const settings = await res.json();
 
                 if (!settings.operator_telegram_id || !settings.public_url) {
-                    alert('⚠️ Action Required\n\nPlease set both your "Operator Telegram ID" and "Public URL" in the Settings tab before spawning an agent. Telegram needs the Public URL to push messages to your bot.');
+                    showToast('⚠️ Action Required\n\nPlease set both your "Operator Telegram ID" and "Public URL" in the Settings tab before spawning an agent. Telegram needs the Public URL to push messages to your bot.');
                     showSection('settings');
                     return;
                 }
@@ -4050,7 +4073,7 @@ Describe how the agent should behave.` })
                 const provider = settings.default_provider || 'openrouter';
                 const apiKeyField = `${provider}_api_key`;
                 if (!settings[apiKeyField]) {
-                    alert(`⚠️ Missing API Key\n\nYou are using '${provider}' as your LLM provider, but its API key is missing.\n\nPlease go to Settings -> API Keys, enter your key, and click "Save All Settings".`);
+                    showToast(`⚠️ Missing API Key\n\nYou are using '${provider}' as your LLM provider, but its API key is missing.\n\nPlease go to Settings -> API Keys, enter your key, and click "Save All Settings".`);
                     showSection('settings');
                     return;
                 }
@@ -4163,8 +4186,8 @@ Describe how the agent should behave.` })
             if (wizardStep === 1) {
                 const name = document.getElementById('new-name').value.trim();
                 const token = document.getElementById('new-token').value.trim();
-                if (!name) return alert('Agent name is required');
-                if (!token) return alert('Telegram token is required');
+                if (!name) return showToast('Agent name is required');
+                if (!token) return showToast('Telegram token is required');
                 wizardStep = 2;
                 updateWizardUI();
             } else if (wizardStep === 2) {
@@ -4183,12 +4206,12 @@ Describe how the agent should behave.` })
                 const data = await res.json();
 
                 if (res.ok) {
-                    alert(`✅ Successfully synced ${data.count} of ${data.total} active bots with Telegram.`);
+                    showToast(`✅ Successfully synced ${data.count} of ${data.total} active bots with Telegram.`);
                 } else {
-                    alert('❌ Failed to sync webhooks: ' + (data.error || 'Unknown error'));
+                    showToast('❌ Failed to sync webhooks: ' + (data.error || 'Unknown error'));
                 }
             } catch (e) {
-                alert('❌ Network error: ' + e.message);
+                showToast('❌ Network error: ' + e.message);
             } finally {
                 icon.classList.remove('animate-spin');
             }
@@ -4224,7 +4247,7 @@ Describe how the agent should behave.` })
 
         async function sendVerificationCode() {
             const token = document.getElementById('new-token').value.trim();
-            if (!token) return alert('Please enter a Telegram token first');
+            if (!token) return showToast('Please enter a Telegram token first');
 
             document.getElementById('send-code-status').classList.remove('hidden');
             document.getElementById('send-code-loading').classList.remove('hidden');
@@ -4333,7 +4356,7 @@ Describe how the agent should behave.` })
             const code = Array.from(digits).map(d => d.value).join('');
 
             if (code.length !== 6) {
-                return alert('Please enter all 6 digits');
+                return showToast('Please enter all 6 digits');
             }
 
             const token = pendingVerificationToken || document.getElementById('new-token').value.trim();
@@ -4591,7 +4614,7 @@ Describe how the agent should behave.` })
 
         async function runSendFileTest() {
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
-            if (!activeLogsAgentId || !userId) return alert('Select an allowlisted user first.');
+            if (!activeLogsAgentId || !userId) return showToast('Select an allowlisted user first.');
             const out = document.getElementById('agent-logs-content');
             out.insertAdjacentHTML('afterbegin', '<div class="text-slate-300 text-xs">Running send file test...</div>');
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/send-file`, {
@@ -4610,9 +4633,9 @@ Describe how the agent should behave.` })
 
         async function runJsonContractTest() {
             const userId = Number(document.getElementById('agent-logs-user-id').value || 0);
-            if (!activeLogsAgentId || !userId) return alert('Select an allowlisted user first.');
+            if (!activeLogsAgentId || !userId) return showToast('Select an allowlisted user first.');
             const payload = document.getElementById('agent-json-test-input').value;
-            if (!payload?.trim()) return alert('JSON payload is required.');
+            if (!payload?.trim()) return showToast('JSON payload is required.');
             const out = document.getElementById('agent-logs-content');
             out.innerHTML = '<div class="text-slate-300">Running JSON contract test...</div>';
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/json-contract`, {
@@ -4710,7 +4733,7 @@ Describe how the agent should behave.` })
             const input = document.getElementById('new-memory-input');
             const content = input.value.trim();
 
-            if (!agentId) return alert('Please select an agent first.');
+            if (!agentId) return showToast('Please select an agent first.');
             if (!content) return;
 
             try {
@@ -4723,7 +4746,7 @@ Describe how the agent should behave.` })
                     input.value = '';
                     loadAgentMemories();
                 } else {
-                    alert('Failed to add memory: ' + (res.error || 'Unknown error'));
+                    showToast('Failed to add memory: ' + (res.error || 'Unknown error'));
                 }
             } catch (e) {
                 console.error(e);
@@ -4742,7 +4765,7 @@ Describe how the agent should behave.` })
                 if (res.success) {
                     loadAgentMemories();
                 } else {
-                    alert('Failed to clear memories: ' + (res.error || 'Unknown error'));
+                    showToast('Failed to clear memories: ' + (res.error || 'Unknown error'));
                 }
             } catch (e) {
                 console.error(e);
@@ -4761,7 +4784,7 @@ Describe how the agent should behave.` })
                 if (res.success) {
                     loadAgentMemories();
                 } else {
-                    alert('Failed to delete memory: ' + (res.error || 'Unknown error'));
+                    showToast('Failed to delete memory: ' + (res.error || 'Unknown error'));
                 }
             } catch (e) {
                 console.error(e);
@@ -4826,6 +4849,7 @@ Describe how the agent should behave.` })
 
         init();
     </script>
+    <div id="toast-container"></div>
 </body>
 
 </html>

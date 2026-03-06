@@ -22,7 +22,7 @@ HermitShell is a **Secure Agentic Operating System**. Each AI agent runs in a Do
 - **Per-Agent Budgeting**: Track and limit spending for each agent individually
 - **Per-Agent LLM Selection**: Choose provider/model per agent (or inherit global defaults)
 - **Persistent Chat Context**: Dashboard and Telegram keep context with explicit clear controls (`Clear` button and `/clear`)
-- **Human-in-the-Loop (HITL)**: Require approval before executing dangerous commands
+- **Human-in-the-Loop (HITL)**: Internet-only approval gate (e.g., `curl`, `wget`, package installs, `git clone`)
 - **Delegation HITL**: Agent collaboration requires operator approval
 - **Async Telegram Processing**: Instant responses with background processing and status updates
 - **Audit Logs**: Complete searchable history of all agent commands and responses
@@ -37,7 +37,7 @@ HermitShell is a **Secure Agentic Operating System**. Each AI agent runs in a Do
 - **Apps Dashboard**: View and manage web apps created by agents
 - **Site Preview Modal**: Preview sites in a modal with webview
 - **Tunnel Sharing**: Share temporary tunnel links for Telegram access
-- **Asset Procurement**: Request files from internet with user approval
+- **Asset Procurement**: Request files from internet with operator Yes/No approval
 - **App Thumbnails**: Scan apps and capture Playwright screenshots for card thumbnails
 
 ## Architecture
@@ -334,8 +334,8 @@ HermitShell uses a "Portal" architecture for file transfers. Instead of parsing 
 **Agent execution flow standard:**
 1. `ls -l /workspace/in`
 2. `cd /workspace/work` and execute task
-3. Move final files to `/workspace/out` and return JSON with `action: "GIVE:<file>"`
-4. For web apps, build under `/workspace/www/<unique_app_name>` and return `action: "APP:<unique_app_name>"`
+3. Move final files to `/workspace/out` and return `<action>GIVE:<file></action>`
+4. For web apps, build under `/workspace/www/<unique_app_name>` and return `<action>APP:<unique_app_name></action>`
 
 **Host Data Directory** (for database operations):
 - `calendar.db`: Stores scheduled events. When time arrives, your prompt triggers automatically.
@@ -397,26 +397,33 @@ Apps can have Playwright screenshots captured:
 - Screenshots are stored in `data/screenshots/`
 - Available for preview in the dashboard
 
-### Deterministic Agent JSON Contract
+### Deterministic Agent Tag Contract
 
-Agent replies are expected to be machine-readable JSON (no markdown) so the controller can deterministically route actions:
+Agent replies should use XML-style tags so the orchestrator can deterministically route execution:
 
-```json
-{
-  "userId": "123456789",
-  "message": "Done",
-  "action": "GIVE:report.pdf",
-  "terminal": "python3 /app/workspace/work/script.py"
-}
+```text
+<thought>
+Brief internal plan
+</thought>
+<message>
+Done
+</message>
+<terminal>
+python3 /app/workspace/work/script.py
+</terminal>
+<action>
+GIVE:report.pdf
+</action>
 ```
 
-- `message`: sent to Telegram chat bubble (plain text, minimal)
-- `action`: optional routing instruction. Use `GIVE:<filename>` for file delivery from `/app/workspace/out/`, or `APP:<app_name>` to publish a web app and share endpoint URL.
-- `terminal`: optional shell command for container execution
+- `<message>`: sent to Telegram chat bubble (plain text, minimal)
+- `<action>`: optional routing instruction. Use `GIVE:<filename>` for file delivery from `/app/workspace/out/`, or `APP:<app_name>` to publish a web app and share endpoint URL.
+- `<terminal>`: optional shell command for container execution
 
-**Legacy vs Current**
-- ✅ Current: `userId`, `message`, `action`, `terminal`
-- ⚠️ Legacy (do not use for new work): `panelActions`, text `ACTION: EXECUTE` formats
+**Compatibility**
+- ✅ Primary: XML tags (`thought`, `message`, `terminal`, `action`)
+- ⚠️ Fallback-only: JSON envelope and labeled `message:/terminal:/action:` formats
+- ❌ Deprecated for new behavior: `panelActions`, text `ACTION: EXECUTE` formats
 
 ### Long-Term RAG Memory
 
@@ -442,7 +449,7 @@ The Operator is the primary human controller:
 - **Configuration**: Set Operator Telegram ID in Settings
 - **Auto-Allowlist**: Setting Operator ID automatically adds you to the Allowlist
 - **Verification Codes**: Sent to Operator's Telegram for agent creation
-- **HITL Approvals**: All dangerous command approvals go to Operator
+- **HITL Approvals**: Internet-access approvals go to Operator (Yes/No reply flow)
 - **Delegation Control**: Agent collaboration requires Operator approval
 
 ### API Key Validation
@@ -467,19 +474,12 @@ Use **Sync Bots** when:
 
 ## Human-in-the-Loop (HITL)
 
-When enabled, dangerous commands require approval via Telegram:
+HITL is internet-only. Local workspace commands execute autonomously; internet egress commands pause for operator confirmation via Telegram:
 
-1. Agent attempts dangerous command (rm, curl, nmap, etc.)
-2. Shell sends approval request to Operator with Approve/Deny buttons
-3. Operator clicks button to approve or deny
-4. If approved, command executes; if denied, agent receives error
-
-**Dangerous commands detected:**
-- File manipulation: rm, chmod, chown
-- Network: curl, wget, nmap, nc, netcat
-- System: sudo, su, kill, shutdown
-- Docker: docker, podman
-- Agent spawning: spawn_agent
+1. Agent attempts internet command (`curl`, `wget`, `npm install`, `pip install`, `git clone`, `apt-get`, `apk add`)
+2. Shell logs an internet HITL event and sends an approval prompt to the Operator
+3. Operator replies **Yes** (allow) or **No** (block)
+4. If allowed, command executes; if blocked, execution is aborted and returned as an error
 
 ### Delegation HITL
 
@@ -493,7 +493,7 @@ TASK: Analyze the CSV file
 
 The Operator receives:
 - Delegation request with target role and task
-- Approve/Deny buttons
+- Operator approval prompt
 - On approval: New cubicle spawned for sub-task
 
 ## Built-in Telegram Commands
@@ -549,7 +549,7 @@ Requires operator approval before spawning sub-agent.
 Older versions used `panelActions` (calendar, asset requests, ClawMotion).
 
 These are now **legacy/deprecated** and should not be used for new implementations.
-For new work, rely on deterministic JSON contract fields plus explicit server-side APIs.
+For new work, rely on deterministic XML-tag contract fields plus explicit server-side APIs.
 
 ### Telegram Message Optimization
 Due to Telegram's message limit, agents should:
@@ -634,7 +634,7 @@ hermitshell.created_at: "2026-02-20T10:00:00Z"
 - **Operator-First Bootstrap**: Primary admin required during setup
 - **Agent Verification**: Telegram tokens verified before agent creation
 - **Webhook Secret**: All webhooks validated with secret token
-- **Human-in-the-Loop**: Dangerous commands require approval
+- **Human-in-the-Loop**: Internet-access commands require approval
 - **Budget Guards**: Per-agent spending limits prevent runaway costs
 - **Audit Trail**: Complete logging of all executed commands
 - **File Path Validation**: File downloads restricted to workspace directory

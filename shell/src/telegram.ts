@@ -37,6 +37,7 @@ const TELEGRAM_MAX_LENGTH = 4000;
 const WORKSPACE_DIR = path.join(__dirname, '../../data/workspaces');
 
 const pendingDelegations = new Map<string, { agentId: number; role: string; task: string; timestamp: number }>();
+const pendingInternetApprovals = new Map<number, { containerId: string; logId: number }>();
 let calendarSchedulerStarted = false;
 
 
@@ -206,6 +207,32 @@ To get access, follow these steps:
     const text = update.message.text;
     const chatId = update.message.chat.id;
 
+    if (text) {
+        const lowerText = text.trim().toLowerCase();
+        if (pendingInternetApprovals.has(userId) && (lowerText === 'yes' || lowerText === 'no')) {
+            const pending = pendingInternetApprovals.get(userId)!;
+            try {
+                const container = docker.getContainer(pending.containerId);
+                const marker = lowerText === 'yes' ? '/tmp/hermit_approval.lock' : '/tmp/hermit_deny.lock';
+                const exec = await container.exec({ Cmd: ['touch', marker], AttachStdout: true, AttachStderr: true });
+                await exec.start({});
+
+                if (lowerText === 'yes') {
+                    await updateAuditLog(pending.logId, 'Network Allowed', userId);
+                    await sendTelegramMessage(token, chatId, '✅ Access granted.');
+                } else {
+                    await updateAuditLog(pending.logId, 'Network Blocked', userId);
+                    await sendTelegramMessage(token, chatId, '🚫 Access blocked.');
+                }
+            } catch (err) {
+                await sendTelegramMessage(token, chatId, '❌ Failed to process approval decision.');
+            } finally {
+                pendingInternetApprovals.delete(userId);
+            }
+            return null;
+        }
+    }
+
     if (text === '/start') {
         const keyboard = {
             keyboard: [
@@ -287,7 +314,7 @@ To get access, follow these steps:
 • ID: ${agent.id}
 • Name: ${agent.name}
 • Role: ${agent.role || 'None'}
-• HITL: ${agent.require_approval ? '✅ Enabled' : '❌ Disabled'}
+• Network HITL: Internet-only approval
 
 *Cubicle:*
 • Status: ${status?.status || 'None'}
@@ -670,7 +697,7 @@ async function handleCallbackQuery(token: string, query: TelegramUpdate['callbac
     const logId = parseInt(logIdStr, 10);
 
     if (action === 'approve' || action === 'deny') {
-        const status = action === 'approve' ? 'approved' : 'denied';
+        const status = action === 'approve' ? 'Network Allowed' : 'Network Blocked';
 
         if (!isNaN(logId)) {
             await updateAuditLog(logId, status, query.from.id);
@@ -685,7 +712,7 @@ async function handleCallbackQuery(token: string, query: TelegramUpdate['callbac
                     AttachStderr: true
                 });
                 await exec.start({});
-                await editMessageText(token, chatId, messageId, `✅ *Approved!* Command execution started.`);
+                await editMessageText(token, chatId, messageId, `✅ *Approved!* Network command execution started.`);
             } catch (err) {
                 console.error('Failed to approve command:', err);
                 await editMessageText(token, chatId, messageId, `❌ Approval applied but container may not have received it.`);
@@ -753,12 +780,7 @@ export async function sendApprovalRequest(
     const tgToken = agent.telegram_token;
     if (!tgToken) return;
 
-    const keyboard = {
-        inline_keyboard: [[
-            { text: '✅ Approve', callback_data: `approve:${logId}:${containerId}` },
-            { text: '❌ Deny', callback_data: `deny:${logId}:${containerId}` }
-        ]]
-    };
+    pendingInternetApprovals.set(Number(adminChatId), { containerId, logId });
 
     const url = `https://api.telegram.org/bot${tgToken}/sendMessage`;
 
@@ -767,9 +789,13 @@ export async function sendApprovalRequest(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             chat_id: adminChatId,
-            text: `⚠️ *Human Approval Required*\n\nAgent *${agent.name}* wants to execute:\n\`\`\`\n${command}\n\`\`\``,
-            parse_mode: 'Markdown',
-            reply_markup: keyboard
+            text: `⚠️ *Network Access Requested*
+
+The agent wants to access the internet to run:
+\`${command}\`
+
+Reply with *Yes* to allow, or *No* to block.`,
+            parse_mode: 'Markdown'
         })
     });
 }
