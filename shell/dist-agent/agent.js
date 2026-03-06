@@ -117,12 +117,10 @@ Workspace structure:
 - /app/workspace/out/ - Files to deliver to user
 - /app/workspace/www/ - Web apps (each subfolder = separate app with index.html)
 
-Available actions (return JSON):
-{
-  "message": "short status response to user",
-  "terminal": "bash command",
-  "action": "GIVE:filename"
-}
+Available actions (return contract fields):
+message: short status response to user
+terminal: bash command
+action: GIVE:filename
 
 Rules:
 - If you create a file in /app/workspace/out, set action to GIVE:<filename>.
@@ -161,6 +159,19 @@ async function callLLM(messages) {
         return `Error calling LLM: ${e}`;
     }
 }
+function parseLabeledResponse(text) {
+    const messageMatch = text.match(/(?:^|\n)\s*message\s*:\s*([\s\S]*?)(?:\n\s*terminal\s*:|\n\s*action\s*:|$)/i);
+    if (!messageMatch)
+        return null;
+    const terminalMatch = text.match(/(?:^|\n)\s*terminal\s*:\s*([\s\S]*?)(?:\n\s*action\s*:|$)/i);
+    const actionMatch = text.match(/(?:^|\n)\s*action\s*:\s*([^\n]*)/i);
+    return {
+        message: (messageMatch[1] || '').trim(),
+        terminal: (terminalMatch?.[1] || '').trim(),
+        action: (actionMatch?.[1] || '').trim(),
+        panelActions: []
+    };
+}
 function parseResponse(text) {
     const objectMatches = text.match(/\{[\s\S]*?\}/g) || [];
     for (let i = objectMatches.length - 1; i >= 0; i--) {
@@ -179,6 +190,9 @@ function parseResponse(text) {
         }
         catch { }
     }
+    const labeled = parseLabeledResponse(text);
+    if (labeled)
+        return labeled;
     return { message: text };
 }
 function isDangerous(command) {

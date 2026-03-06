@@ -6,6 +6,22 @@ export type ParsedAgentResponse = {
     panelActions: string[];
 };
 
+function parseLabeledContract(rawOutput: string): ParsedAgentResponse | null {
+    const text = asString(rawOutput);
+    const match = text.match(/(?:^|\n)\s*message\s*:\s*([\s\S]*?)(?:\n\s*terminal\s*:|\n\s*action\s*:|$)/i);
+    if (!match) return null;
+
+    const terminalMatch = text.match(/(?:^|\n)\s*terminal\s*:\s*([\s\S]*?)(?:\n\s*action\s*:|$)/i);
+    const actionMatch = text.match(/(?:^|\n)\s*action\s*:\s*([^\n]*)/i);
+
+    return {
+        message: asString(match[1]).trim(),
+        terminal: asString(terminalMatch?.[1]).trim(),
+        action: asString(actionMatch?.[1]).trim(),
+        panelActions: []
+    };
+}
+
 function asString(value: unknown): string {
     if (typeof value === 'string') return value;
     if (value === null || value === undefined) return '';
@@ -53,7 +69,7 @@ export function hasStructuredContract(rawOutput: string): boolean {
         return !!tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
     }
 
-    return false;
+    return !!parseLabeledContract(output);
 }
 
 function extractInlineAction(text: string): string {
@@ -96,6 +112,9 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
         const parsed = tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
         if (parsed) return parsed;
     }
+
+    const labeled = parseLabeledContract(output);
+    if (labeled) return labeled;
 
     const inferredAction = extractInlineAction(output);
     if (inferredAction) {

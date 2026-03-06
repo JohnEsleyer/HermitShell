@@ -175,6 +175,15 @@
             border: 1px solid rgba(148, 163, 184, .2);
             border-radius: 18px 18px 18px 6px;
         }
+        .minimal-card { background: #0f172a; border: 1px solid rgba(148,163,184,.2); border-radius: 14px; }
+        .minimal-btn { border: 1px solid rgba(148,163,184,.3); background: #111827; color: #e2e8f0; padding: .45rem .75rem; border-radius: 10px; font-size: .78rem; display: inline-flex; align-items: center; gap: .35rem; }
+        .minimal-btn:hover { background: #1f2937; }
+        .minimal-btn-danger { border-color: rgba(239,68,68,.45); color: #fecaca; }
+        .minimal-btn-primary { border-color: rgba(59,130,246,.45); color: #bfdbfe; }
+        .list-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding: .9rem 1rem; border-bottom:1px solid rgba(148,163,184,.15); }
+        .list-row:last-child { border-bottom:none; }
+        .agent-action-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap:.5rem; }
+
 
 
         .dashboard-shell {
@@ -598,96 +607,46 @@
                         <div id="agent-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
 
 
-                        <div class="glass-card p-5 rounded-2xl mt-8">
+                        <div class="minimal-card p-5 mt-8">
                             <div class="flex items-center justify-between gap-3 mb-3">
-                                <h4 class="text-white font-bold">Agent Logs</h4>
-                                <span class="text-xs text-slate-400">Runtime log stream across all agents.</span>
+                                <h4 class="text-white font-bold">Universal Logs</h4>
+                                <button onclick="loadUniversalLogs()" class="minimal-btn">Refresh</button>
                             </div>
-                            <button onclick="loadRuntimeLogs()"
-                                class="bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-lg text-sm">Refresh
-                                Agent Logs</button>
-                            <div id="chat-output"
-                                class="mt-3 text-sm text-slate-300 whitespace-pre-wrap bg-slate-900/60 border border-slate-700 rounded-lg p-3 min-h-[72px]">
-                                No runtime logs yet.</div>
+                            <div id="universal-logs" class="text-xs text-slate-300 space-y-2 max-h-72 overflow-auto">
+                                No logs yet.
+                            </div>
                         </div>
                     </div>
                     <!-- Cubicle Section -->
                     <div id="section-cubicle" class="hidden">
                         <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                                <i data-lucide="box" class="w-5 h-5 text-orange-500"></i>
-                                Cubicle Dashboard
-                            </h3>
-                            <button onclick="loadCubicleDashboard()"
-                                class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-medium transition-all text-sm flex items-center gap-2 border border-slate-700">
-                                <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-                                Refresh
-                            </button>
+                            <h3 class="text-xl font-bold text-white flex items-center gap-2"><i data-lucide="box" class="w-5 h-5 text-slate-300"></i>Cubicles</h3>
+                            <button onclick="loadCubicleDashboard()" class="minimal-btn"><i data-lucide="refresh-cw" class="w-4 h-4"></i>Refresh</button>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-                            <div class="neo-panel neo-kpi rounded-2xl p-4">
-                                <div class="text-xs text-slate-400">ACTIVE CONTAINERS</div>
-                                <div id="cubicle-kpi-running" class="text-2xl font-bold text-cyan-300 mt-1">0</div>
-                                <div class="text-xs text-slate-400 mt-1">Across all agents</div>
-                            </div>
-                            <div class="neo-panel neo-kpi rounded-2xl p-4">
-                                <div class="text-xs text-slate-400">TOTAL CPU</div>
-                                <div id="cubicle-kpi-cpu" class="text-2xl font-bold text-emerald-300 mt-1">0.0%</div>
-                                <div class="text-xs text-slate-400 mt-1">Live container allocation</div>
-                            </div>
-                            <div class="neo-panel neo-kpi rounded-2xl p-4">
-                                <div class="text-xs text-slate-400">TOTAL MEMORY</div>
-                                <div id="cubicle-kpi-memory" class="text-2xl font-bold text-violet-300 mt-1">0 MB</div>
-                                <div class="text-xs text-slate-400 mt-1">Current usage snapshot</div>
-                            </div>
-                        </div>
-
-                        <div class="neo-panel p-5 rounded-2xl mb-5">
-                            <div class="flex items-center justify-between gap-3 mb-3">
-                                <h4 class="text-sm font-semibold text-white flex items-center gap-2"><i data-lucide="folder-open" class="w-4 h-4 text-orange-400"></i>Workspace Browser</h4>
-                                <span class="badge-chip"><i data-lucide="scan-search" class="w-3 h-3"></i>Unified with container view</span>
-                            </div>
-                            <div class="grid md:grid-cols-5 gap-3">
-                                <select id="files-agent"
-                                    class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"></select>
-                                <select id="files-user"
-                                    class="bg-slate-800 border border-slate-700 rounded-lg p-3 text-white"></select>
-                                <button onclick="loadWorkspaceFiles()"
-                                    class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-semibold">Load
-                                    Workspace</button>
-                                <button onclick="downloadWorkspaceArchive()"
-                                    class="bg-slate-800 border border-slate-700 text-white px-4 py-2 rounded-lg">Download
-                                    .tar.gz</button>
-                                <input type="file" id="workspace-upload"
-                                    class="text-xs text-slate-300 bg-slate-900/50 border border-slate-700 rounded-lg p-2"
-                                    onchange="uploadWorkspaceFile(event)">
-                            </div>
-                        </div>
-
-                        <div class="neo-panel rounded-2xl overflow-hidden">
-                            <table class="w-full text-sm">
-                                <thead class="bg-slate-800/50 text-slate-400">
-                                    <tr>
-                                        <th class="px-4 py-3 text-left font-mono">CONTAINER ID</th>
-                                        <th class="px-4 py-3 text-left font-mono">IMAGE</th>
-                                        <th class="px-4 py-3 text-left font-mono">STATUS</th>
-                                        <th class="px-4 py-3 text-left font-mono">CREATED</th>
-                                        <th class="px-4 py-3 text-left font-mono">RESOURCES</th>
-                                        <th class="px-4 py-3 text-left font-mono">ACTIONS</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="cubicles-tbody" class="divide-y divide-slate-800">
-                                </tbody>
-                            </table>
+                        <div class="minimal-card overflow-hidden">
+                            <div id="cubicles-list"></div>
                             <div id="cubicles-empty" class="p-8 text-center text-slate-500 hidden">
                                 <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-3 text-slate-600"></i>
                                 <p>No running cubicles. Spawn an agent to create a cubicle.</p>
                             </div>
                         </div>
+                    </div>
 
-                        <div id="files-browser" class="neo-panel rounded-2xl p-5 text-sm text-slate-300 mt-5">
-                            Select an agent and user, then click <strong>Load Workspace</strong>.
+                    <div id="workspace-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+                        <div class="minimal-card w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+                            <div class="p-4 border-b border-slate-700 flex items-center justify-between">
+                                <h3 id="workspace-modal-title" class="text-white font-semibold">Workspace Explorer</h3>
+                                <button onclick="closeWorkspaceModal()" class="minimal-btn">Close</button>
+                            </div>
+                            <div class="p-4 grid md:grid-cols-4 gap-3 border-b border-slate-700">
+                                <select id="files-agent" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-white"></select>
+                                <select id="files-user" class="bg-slate-800 border border-slate-700 rounded-lg p-2 text-white"></select>
+                                <button onclick="loadWorkspaceFiles()" class="minimal-btn minimal-btn-primary">Load</button>
+                                <button onclick="downloadWorkspaceArchive()" class="minimal-btn">Download .tar.gz</button>
+                                <input type="file" id="workspace-upload" class="text-xs text-slate-300 bg-slate-900 border border-slate-700 rounded-lg p-2 md:col-span-2" onchange="uploadWorkspaceFile(event)">
+                            </div>
+                            <div id="files-browser" class="p-4 text-sm text-slate-300 overflow-auto">Select an agent and user, then click <strong>Load</strong>.</div>
                         </div>
                     </div>
 
@@ -2195,9 +2154,11 @@
             loadStats();
             loadAgents();
             loadAuditLogs();
+            loadUniversalLogs();
             setInterval(() => {
                 loadStats();
                 loadAgents();
+                loadUniversalLogs();
             }, 10000);
         }
 
@@ -2593,68 +2554,58 @@
             await Promise.all([loadCubicles(), loadFilesSection()]);
         }
 
-        function updateCubicleKpis(containers) {
-            const running = containers.filter(c => c.State === 'running').length;
-            const totalCpu = containers.reduce((sum, c) => sum + Number(c?.resourceUsage?.cpuPercent || 0), 0);
-            const totalMemBytes = containers.reduce((sum, c) => sum + Number(c?.resourceUsage?.memoryUsageBytes || 0), 0);
+        function openWorkspaceModal(agentId) {
+            const modal = document.getElementById('workspace-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            if (agentId) document.getElementById('files-agent').value = String(agentId);
+            loadWorkspaceFiles();
+        }
 
-            const runningEl = document.getElementById('cubicle-kpi-running');
-            const cpuEl = document.getElementById('cubicle-kpi-cpu');
-            const memEl = document.getElementById('cubicle-kpi-memory');
-            if (runningEl) runningEl.innerText = String(running);
-            if (cpuEl) cpuEl.innerText = `${totalCpu.toFixed(1)}%`;
-            if (memEl) memEl.innerText = formatBytes(totalMemBytes);
+        function closeWorkspaceModal() {
+            const modal = document.getElementById('workspace-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
         }
 
         async function loadCubicles() {
             try {
-                const res = await fetch('/api/containers');
-                if (res.status === 401) return logout();
-                const containers = await res.json();
-                const tbody = document.getElementById('cubicles-tbody');
+                const [containersRes, agentsRes] = await Promise.all([fetch('/api/containers'), fetch('/api/agents')]);
+                if (containersRes.status === 401) return logout();
+                const containers = await containersRes.json();
+                const agents = await agentsRes.json();
+                const list = document.getElementById('cubicles-list');
                 const empty = document.getElementById('cubicles-empty');
 
-                const hermitContainers = containers;
-                updateCubicleKpis(hermitContainers);
-
-                if (hermitContainers.length === 0) {
-                    tbody.innerHTML = '';
+                if (!containers.length) {
+                    list.innerHTML = '';
                     empty.classList.remove('hidden');
                     lucide.createIcons();
                     return;
                 }
 
+                const byAgentId = new Map((agents || []).map(a => [String(a.id), a]));
                 empty.classList.add('hidden');
-                tbody.innerHTML = hermitContainers.map(c => {
-                    const statusColor = c.State === 'running' ? 'text-green-300 bg-green-500/15 border-green-500/30' : c.State === 'exited' ? 'text-red-300 bg-red-500/15 border-red-500/30' : 'text-yellow-300 bg-yellow-500/15 border-yellow-500/30';
-
-                    const name = c.Names && c.Names[0] ? c.Names[0].replace('/', '') : 'cubicle';
-
+                list.innerHTML = containers.map(c => {
+                    const labels = c.Labels || {};
+                    const agentId = String(labels['hermitshell.agent_id'] || labels['hermit.agent_id'] || '');
+                    const agent = byAgentId.get(agentId) || { name: labels['hermitshell.agent_name'] || 'Agent', profile_picture_url: '', id: agentId };
+                    const stateClass = c.State === 'running' ? 'text-emerald-300' : 'text-amber-300';
                     return `
-                        <tr class="hover:bg-white/5 transition-colors">
-                            <td class="px-4 py-3 font-mono text-slate-400">
-                                <div>${c.Id.substring(0, 12)}</div>
-                                <div class="text-[10px] text-slate-500">${name}</div>
-                            </td>
-                            <td class="px-4 py-3 text-slate-200">${c.Image}</td>
-                            <td class="px-4 py-3"><span class="inline-flex px-2 py-1 rounded-full text-[11px] font-mono border ${statusColor}">${c.State.toUpperCase()}</span></td>
-                            <td class="px-4 py-3 text-slate-400">${c.Status}</td>
-                            <td class="px-4 py-3 text-xs">
-                                ${c.resourceUsage ? `
-                                    <div class="text-green-300 font-mono">CPU ${c.resourceUsage.cpuPercent.toFixed(1)}%</div>
-                                    <div class="text-blue-300 font-mono">MEM ${c.resourceUsage.memoryPercent.toFixed(1)}%</div>
-                                    <div class="text-slate-500 font-mono">${formatBytes(c.resourceUsage.memoryUsageBytes)}</div>
-                                ` : '<div class="text-slate-500">N/A</div>'}
-                            </td>
-                            <td class="px-4 py-3 flex gap-2">
-                                <button onclick="viewContainer('${c.Id}')" class="text-orange-400 hover:text-orange-200 text-xs">Terminal</button>
-                                ${c.State === 'running'
-                            ? `<button onclick="stopContainer('${c.Id}')" class="text-yellow-400 hover:text-yellow-200 text-xs">Stop</button>`
-                            : `<button onclick="startContainer('${c.Id}')" class="text-green-400 hover:text-green-200 text-xs">Start</button>`}
-                                <button onclick="deleteContainer('${c.Id}')" class="text-red-400 hover:text-red-200 text-xs">Delete</button>
-                            </td>
-                        </tr>
-                    `;
+                        <div class="list-row">
+                            <div class="flex items-center gap-3 min-w-0">
+                                ${avatarImg(agent)}
+                                <div class="min-w-0">
+                                    <div class="text-white font-medium truncate">${agent.name}</div>
+                                    <div class="text-xs text-slate-400">#${agent.id || 'N/A'}</div>
+                                    <div class="text-[11px] ${stateClass}">${c.State} · ${c.Id.substring(0, 12)}</div>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="openWorkspaceModal('${agent.id || ''}')" class="minimal-btn minimal-btn-primary">Workspace</button>
+                                <button onclick="deleteContainer('${c.Id}')" class="minimal-btn minimal-btn-danger">Delete</button>
+                            </div>
+                        </div>`;
                 }).join('');
                 lucide.createIcons();
             } catch (e) {
@@ -2853,19 +2804,42 @@
             return `<img src="${getAgentAvatar(agent)}" class="${mini ? 'agent-avatar-mini' : 'agent-avatar'}" alt="${agent.name}"/>`;
         }
 
-        async function loadRuntimeLogs() {
-            const out = document.getElementById('chat-output');
+        async function loadUniversalLogs() {
+            const out = document.getElementById('universal-logs');
+            if (!out) return;
+            out.innerHTML = '<div class="text-slate-400">Loading logs...</div>';
             try {
-                const logs = await fetch('/api/runtime-logs?limit=20').then(r => r.json());
-                if (!Array.isArray(logs) || !logs.length) {
-                    out.innerText = 'No runtime logs yet.';
+                const [agents, users] = await Promise.all([
+                    fetch('/api/agents').then(r => r.json()),
+                    fetch('/api/allowlist').then(r => r.json())
+                ]);
+
+                const interactions = [];
+                for (const agent of (agents || [])) {
+                    for (const user of (users || []).slice(0, 5)) {
+                        const res = await fetch(`/api/agent-interactions/${agent.id}/${user.user_id}`);
+                        if (!res.ok) continue;
+                        const data = await res.json();
+                        interactions.push(...(data.interactions || []).map(it => ({ ...it, agentName: agent.name, userId: user.user_id })));
+                    }
+                }
+
+                if (!interactions.length) {
+                    out.innerHTML = '<div class="text-slate-400">No logs yet.</div>';
                     return;
                 }
-                out.innerText = logs.slice(0, 10).map(l => `[${l.level}] agent#${l.agent_id} ${l.source}: ${l.message}`).join('\n');
+
+                const lines = interactions.slice(0, 40).map(it => {
+                    const parsed = it.parsed || {};
+                    const act = parsed.action ? `<span class="text-amber-300">${parsed.action}</span>` : '<span class="text-slate-500">(none)</span>';
+                    return `<div class="border border-slate-800 rounded-lg p-2 bg-slate-900/60"><div class="text-slate-400">${it.source} · ${it.agentName} · user ${parsed.userId || it.userId}</div><div class="text-slate-200 mt-1">${(parsed.message || '').replace(/</g,'&lt;')}</div><div class="mt-1 text-[11px]">action: ${act}</div></div>`;
+                });
+                out.innerHTML = lines.join('');
             } catch (e) {
-                out.innerText = 'Failed to load runtime logs.';
+                out.innerHTML = '<div class="text-red-300">Failed to load universal logs.</div>';
             }
         }
+
 
 
         async function uploadProfilePicture(event) {
@@ -3097,14 +3071,14 @@
                                 <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div class="${color} h-full" style="width: ${Math.min(percent, 100)}%"></div></div>
                             </div>
 
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                                <button id="test-agent-btn-${agent.id}" onclick="testAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 py-2 rounded-lg border border-green-600/30">${renderTestAgentButtonContent(agent.id)}</button>
-                                <button onclick="openTerminal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="terminal" class="w-3 h-3"></i><span>Terminal</span></button>
-                                <button onclick="openAgentLogsModal(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 py-2 rounded-lg border border-blue-600/30"> <i data-lucide="file-text" class="w-3 h-3"></i><span>Logs</span></button>
-                                <button onclick="openAgentChat(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-cyan-600/20 hover:bg-cyan-600/30 text-cyan-300 py-2 rounded-lg border border-cyan-600/30"> <i data-lucide="message-circle" class="w-3 h-3"></i><span>Chat</span></button>
-                                <button onclick="openAgentSkills(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-fuchsia-600/20 hover:bg-fuchsia-600/30 text-fuchsia-300 py-2 rounded-lg border border-fuchsia-500/30"> <i data-lucide="sparkles" class="w-3 h-3"></i><span>Skills</span></button>
-                                <button onclick="editAgent(${agent.id}, this)" class="flex items-center justify-center gap-1 bg-slate-800 hover:bg-slate-700 text-white py-2 rounded-lg border border-slate-700"> <i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span></button>
-                                <button onclick="deleteAgent(${agent.id}, '${agent.name}')" class="flex items-center justify-center gap-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 py-2 rounded-lg border border-red-600/30"> <i data-lucide="trash-2" class="w-3 h-3"></i><span>Delete</span></button>
+                            <div class="agent-action-grid text-xs">
+                                <button id="test-agent-btn-${agent.id}" onclick="testAgent(${agent.id}, '${agent.name}')" class="minimal-btn">${renderTestAgentButtonContent(agent.id)}</button>
+                                <button onclick="openTerminal(${agent.id}, '${agent.name}')" class="minimal-btn"><i data-lucide="terminal" class="w-3 h-3"></i><span>Terminal</span></button>
+                                <button onclick="openAgentLogsModal(${agent.id}, '${agent.name}')" class="minimal-btn"><i data-lucide="file-text" class="w-3 h-3"></i><span>Logs</span></button>
+                                <button onclick="openAgentChat(${agent.id}, '${agent.name}')" class="minimal-btn"><i data-lucide="message-circle" class="w-3 h-3"></i><span>Chat</span></button>
+                                <button onclick="openAgentSkills(${agent.id}, '${agent.name}')" class="minimal-btn"><i data-lucide="sparkles" class="w-3 h-3"></i><span>Skills</span></button>
+                                <button onclick="editAgent(${agent.id}, this)" class="minimal-btn"><i data-lucide="settings" class="w-3 h-3"></i><span>Edit</span></button>
+                                <button onclick="deleteAgent(${agent.id}, '${agent.name}')" class="minimal-btn minimal-btn-danger"><i data-lucide="trash-2" class="w-3 h-3"></i><span>Delete</span></button>
                             </div>
                         </div>
                     `;
@@ -3491,14 +3465,27 @@ Describe how the agent should behave.` })
                     const indent = '&nbsp;'.repeat(item.depth * 4);
                     const icon = item.type === 'directory' ? '📁' : '📄';
                     const download = item.type === 'file'
-                        ? `<a href="/api/files/${agentId}/${userId}/download/${item.path}?token=${getStoredSessionToken()}" class="text-orange-400 hover:text-orange-300 text-xs ml-2">download</a>`
+                        ? `<a href="/api/files/${agentId}/${userId}/download/${item.path}?token=${getStoredSessionToken()}" class="text-blue-300 hover:text-blue-200 text-xs ml-2">download</a>`
                         : '';
-                    return `<div class="py-1 border-b border-slate-800/70 last:border-b-0 mono text-xs">${indent}${icon} ${item.path}${download}</div>`;
+                    const del = `<button onclick="deleteWorkspacePath(${agentId}, ${userId}, '${encodeURIComponent(item.path)}')" class="text-red-300 hover:text-red-200 text-xs ml-2">delete</button>`;
+                    return `<div class="py-1 border-b border-slate-800/70 last:border-b-0 mono text-xs">${indent}${icon} ${item.path}${download}${del}</div>`;
                 }).join('');
                 browser.innerHTML = `<div class="flex items-center gap-2 mb-3 text-xs text-slate-400">${avatarImg(selectedAgent, true)}<span>${selectedAgent.name} workspace</span></div>${listHtml}`;
             } catch (e) {
                 browser.innerHTML = '<span class="text-red-400">Failed to load workspace files.</span>';
             }
+        }
+
+
+        async function deleteWorkspacePath(agentId, userId, encodedPath) {
+            const relPath = decodeURIComponent(encodedPath);
+            if (!confirm(`Delete ${relPath}?`)) return;
+            const res = await fetch(`/api/files/${agentId}/${userId}/${relPath}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                return alert(err.error || 'Failed to delete path');
+            }
+            await loadWorkspaceFiles();
         }
 
         let calendarEventsCache = [];
