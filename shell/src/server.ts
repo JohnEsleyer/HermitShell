@@ -128,7 +128,7 @@ function buildAgentInteractionLogs(agentId: number, userId: number): AgentIntera
                 source,
                 raw: content,
                 parsed: {
-                    userId: parsed.userId,
+                    userId: parsed.userId || String(userId),
                     message: parsed.message,
                     terminal: parsed.terminal,
                     action: parsed.action,
@@ -1580,6 +1580,33 @@ export async function startServer() {
         const fullPath = path.join(workspacePath, safeName);
         fs.writeFileSync(fullPath, Buffer.from(contentBase64, 'base64'));
         return { success: true, path: safeName };
+    });
+
+
+    fastify.delete('/api/files/:agentId/:userId/*', async (request: any, reply: any) => {
+        const { agentId, userId } = request.params;
+        const targetPath = String(request.params['*'] || '');
+        if (!targetPath) return reply.code(400).send({ error: 'Path is required' });
+
+        const workspacePath = path.join(WORKSPACE_ROOT, `${agentId}_${userId}`);
+        const fullPath = path.join(workspacePath, targetPath);
+
+        if (!fullPath.startsWith(workspacePath)) {
+            return reply.code(403).send({ error: 'Access denied' });
+        }
+
+        if (!fs.existsSync(fullPath)) {
+            return reply.code(404).send({ error: 'File not found' });
+        }
+
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) {
+            fs.rmSync(fullPath, { recursive: true, force: true });
+        } else {
+            fs.unlinkSync(fullPath);
+        }
+
+        return { success: true };
     });
 
     fastify.get('/api/agents/:id/runtime-logs/:userId', async (request: any, reply: any) => {

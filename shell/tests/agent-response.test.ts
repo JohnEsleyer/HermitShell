@@ -51,6 +51,14 @@ describe('parseAgentResponse', () => {
     expect(result.action).toBe('APP:todo-ui');
   });
 
+
+  it('parses labeled contract fields without JSON envelope', () => {
+    const result = parseAgentResponse(`message: Created file\nterminal: echo hi > /app/workspace/out/a.txt\naction: GIVE:a.txt`);
+    expect(result.message).toBe('Created file');
+    expect(result.terminal).toBe('echo hi > /app/workspace/out/a.txt');
+    expect(result.action).toBe('GIVE:a.txt');
+  });
+
   it('uses the latest valid JSON object in output', () => {
     const output = [
       '{"message":"first","action":"","terminal":""}',
