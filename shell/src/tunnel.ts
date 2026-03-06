@@ -273,12 +273,11 @@ export function startTunnelHealthCheck(port: number, intervalMs = 60000): void {
         }
 
         const reachable = await isTunnelEndpointReachable(url);
-        if (!reachable && lastHealthCheckStatus) {
-            console.log('[Tunnel] Health check: Tunnel unhealthy, restarting...');
+        if (!reachable) {
+            console.log('[Tunnel] Health check: Tunnel unhealthy (530), restarting...');
             await setSetting('public_url', '');
             stopTunnel();
             await startTunnel(port);
-        } else if (!reachable) {
             lastHealthCheckStatus = false;
         } else {
             lastHealthCheckStatus = true;
