@@ -504,10 +504,6 @@
                                     class="text-green-400">SECURE</span></p>
                         </div>
                         <div class="flex items-center space-x-3">
-                            <button onclick="openSkillsModal()"
-                                class="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg font-bold transition-all border border-slate-700 flex items-center gap-2"
-                                title="Open Skills Manager"><i data-lucide="sparkles" class="w-4 h-4"></i><span
-                                    class="hidden sm:inline">Skills</span></button>
                             <button onclick="syncWebhooks(event)"
                                 class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold transition-all shadow-lg shadow-blue-900/20 flex items-center gap-2"
                                 title="Reconnect bots to Telegram"><i data-lucide="refresh-cw" class="w-4 h-4"></i><span
@@ -609,11 +605,12 @@
 
                         <div class="minimal-card p-5 mt-8">
                             <div class="flex items-center justify-between gap-3 mb-3">
-                                <h4 class="text-white font-bold">Universal Logs</h4>
+                                <h4 class="text-white font-bold flex items-center gap-2"><i data-lucide="shield-check" class="w-4 h-4 text-orange-400"></i>Latest Audit Activity</h4>
                                 <button onclick="loadUniversalLogs()" class="minimal-btn">Refresh</button>
                             </div>
-                            <div id="universal-logs" class="text-xs text-slate-300 space-y-2 max-h-72 overflow-auto">
-                                No logs yet.
+                            <p class="text-xs text-slate-400 mb-3">Unified operator stream from the audit trail, sorted by most recent events.</p>
+                            <div id="universal-logs" class="text-xs text-slate-300 space-y-2 max-h-80 overflow-auto pr-1">
+                                No audit logs yet.
                             </div>
                         </div>
                     </div>
@@ -633,7 +630,7 @@
                         </div>
                     </div>
 
-                    <div id="workspace-modal" class="fixed inset-0 bg-black/70 z-50 hidden items-center justify-center p-4">
+                    <div id="workspace-modal" class="fixed inset-0 bg-black/70 z-[80] hidden items-center justify-center p-4">
                         <div class="minimal-card w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                             <div class="p-4 border-b border-slate-700 flex items-center justify-between">
                                 <h3 id="workspace-modal-title" class="text-white font-semibold">Workspace Explorer</h3>
@@ -804,24 +801,30 @@
                             </div>
                         </div>
 
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                            <div class="glass-card p-4 rounded-2xl">
+                                <div class="text-xs text-slate-400">Total</div>
+                                <div id="audit-total" class="text-2xl font-bold text-white">0</div>
+                            </div>
+                            <div class="glass-card p-4 rounded-2xl">
+                                <div class="text-xs text-slate-400">Approved</div>
+                                <div id="audit-approved" class="text-2xl font-bold text-green-400">0</div>
+                            </div>
+                            <div class="glass-card p-4 rounded-2xl">
+                                <div class="text-xs text-slate-400">Pending</div>
+                                <div id="audit-pending" class="text-2xl font-bold text-yellow-400">0</div>
+                            </div>
+                            <div class="glass-card p-4 rounded-2xl">
+                                <div class="text-xs text-slate-400">Denied / Error</div>
+                                <div id="audit-risk" class="text-2xl font-bold text-red-400">0</div>
+                            </div>
+                        </div>
+
                         <div class="glass-card rounded-2xl overflow-hidden">
-                            <table class="w-full text-sm">
-                                <thead class="bg-slate-800/50 text-slate-400">
-                                    <tr>
-                                        <th class="px-4 py-3 text-left font-mono">TIMESTAMP</th>
-                                        <th class="px-4 py-3 text-left font-mono">AGENT</th>
-                                        <th class="px-4 py-3 text-left font-mono">ACTION TYPE</th>
-                                        <th class="px-4 py-3 text-left font-mono">COMMAND</th>
-                                        <th class="px-4 py-3 text-left font-mono">STATUS</th>
-                                        <th class="px-4 py-3 text-left font-mono">RESPONSE</th>
-                                        <th class="px-4 py-3 text-left font-mono">ACTIONS</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="audit-tbody" class="divide-y divide-slate-800">
-                                </tbody>
-                            </table>
+                            <div id="audit-tbody" class="divide-y divide-slate-800">
+                            </div>
                             <div id="audit-empty" class="p-8 text-center text-slate-500 hidden">
-                                No audit logs yet. Commands requiring approval will appear here.
+                                No audit logs yet.
                             </div>
                         </div>
                     </div>
@@ -2591,6 +2594,12 @@
                     const agentId = String(labels['hermitshell.agent_id'] || labels['hermit.agent_id'] || '');
                     const agent = byAgentId.get(agentId) || { name: labels['hermitshell.agent_name'] || 'Agent', profile_picture_url: '', id: agentId };
                     const stateClass = c.State === 'running' ? 'text-emerald-300' : 'text-amber-300';
+                    const memoryUsage = c.resourceUsage?.memoryUsageBytes ?? 0;
+                    const memoryLimit = c.resourceUsage?.memoryLimitBytes ?? 0;
+                    const memoryPercent = Number(c.resourceUsage?.memoryPercent || 0);
+                    const memoryLabel = memoryLimit > 0
+                        ? `${formatBytes(memoryUsage)} / ${formatBytes(memoryLimit)} (${memoryPercent.toFixed(1)}%)`
+                        : `${formatBytes(memoryUsage)} used`;
                     return `
                         <div class="list-row">
                             <div class="flex items-center gap-3 min-w-0">
@@ -2599,6 +2608,7 @@
                                     <div class="text-white font-medium truncate">${agent.name}</div>
                                     <div class="text-xs text-slate-400">#${agent.id || 'N/A'}</div>
                                     <div class="text-[11px] ${stateClass}">${c.State} · ${c.Id.substring(0, 12)}</div>
+                                    <div class="text-[11px] text-slate-300 mt-1">Memory: <span class="text-cyan-300">${memoryLabel}</span></div>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
@@ -2804,39 +2814,63 @@
             return `<img src="${getAgentAvatar(agent)}" class="${mini ? 'agent-avatar-mini' : 'agent-avatar'}" alt="${agent.name}"/>`;
         }
 
+        function badgeClassForAuditStatus(status) {
+            const classes = {
+                approved: 'text-green-300 bg-green-500/15 border border-green-500/30',
+                denied: 'text-red-300 bg-red-500/15 border border-red-500/30',
+                pending: 'text-yellow-300 bg-yellow-500/15 border border-yellow-500/30',
+                error: 'text-red-300 bg-red-500/15 border border-red-500/30'
+            };
+            return classes[status] || 'text-slate-300 bg-slate-700/40 border border-slate-600';
+        }
+
         async function loadUniversalLogs() {
             const out = document.getElementById('universal-logs');
             if (!out) return;
-            out.innerHTML = '<div class="text-slate-400">Loading logs...</div>';
+            out.innerHTML = '<div class="text-slate-400">Loading audit activity...</div>';
+
             try {
-                const [agents, users] = await Promise.all([
-                    fetch('/api/agents').then(r => r.json()),
-                    fetch('/api/allowlist').then(r => r.json())
+                const [logsRes, agentsRes] = await Promise.all([
+                    fetch('/api/audit?limit=25'),
+                    fetch('/api/agents')
                 ]);
 
-                const interactions = [];
-                for (const agent of (agents || [])) {
-                    for (const user of (users || []).slice(0, 5)) {
-                        const res = await fetch(`/api/agent-interactions/${agent.id}/${user.user_id}`);
-                        if (!res.ok) continue;
-                        const data = await res.json();
-                        interactions.push(...(data.interactions || []).map(it => ({ ...it, agentName: agent.name, userId: user.user_id })));
-                    }
-                }
+                if (logsRes.status === 401 || agentsRes.status === 401) return logout();
 
-                if (!interactions.length) {
-                    out.innerHTML = '<div class="text-slate-400">No logs yet.</div>';
+                const logs = await logsRes.json();
+                const agents = await agentsRes.json();
+                const agentMap = {};
+                (agents || []).forEach(a => agentMap[a.id] = a.name);
+
+                if (!logs.length) {
+                    out.innerHTML = '<div class="text-slate-400">No audit logs yet.</div>';
                     return;
                 }
 
-                const lines = interactions.slice(0, 40).map(it => {
-                    const parsed = it.parsed || {};
-                    const act = parsed.action ? `<span class="text-amber-300">${parsed.action}</span>` : '<span class="text-slate-500">(none)</span>';
-                    return `<div class="border border-slate-800 rounded-lg p-2 bg-slate-900/60"><div class="text-slate-400">${it.source} · ${it.agentName} · user ${parsed.userId || it.userId}</div><div class="text-slate-200 mt-1">${(parsed.message || '').replace(/</g,'&lt;')}</div><div class="mt-1 text-[11px]">action: ${act}</div></div>`;
+                const cards = logs.map(log => {
+                    const status = String(log.status || 'unknown').toLowerCase();
+                    const responseText = log.response_text || log.output_snippet || '';
+                    const actionType = log.action_type || 'command';
+                    const summary = responseText || log.command || 'No command logged';
+                    const safeSummary = escapeHtml(summary.length > 220 ? `${summary.slice(0, 220)}…` : summary);
+                    return `
+                        <div class="rounded-lg border border-slate-800 bg-slate-900/70 p-3 space-y-2">
+                            <div class="flex items-center justify-between gap-2 text-[11px]">
+                                <div class="text-slate-400">${new Date(log.created_at).toLocaleString()}</div>
+                                <span class="px-2 py-0.5 rounded-full uppercase tracking-wide ${badgeClassForAuditStatus(status)}">${escapeHtml(status)}</span>
+                            </div>
+                            <div class="flex flex-wrap gap-2 text-[11px] text-slate-300">
+                                <span class="px-2 py-0.5 rounded bg-slate-700/60">${escapeHtml(agentMap[log.agent_id] || 'Unknown Agent')}</span>
+                                <span class="px-2 py-0.5 rounded bg-slate-700/60">${escapeHtml(actionType)}</span>
+                            </div>
+                            <div class="text-slate-200 leading-relaxed break-words">${safeSummary}</div>
+                        </div>
+                    `;
                 });
-                out.innerHTML = lines.join('');
+
+                out.innerHTML = cards.join('');
             } catch (e) {
-                out.innerHTML = '<div class="text-red-300">Failed to load universal logs.</div>';
+                out.innerHTML = '<div class="text-red-300">Failed to load audit activity.</div>';
             }
         }
 
@@ -3754,69 +3788,83 @@ Describe how the agent should behave.` })
                 const agentFilter = document.getElementById('audit-agent-filter')?.value || '';
                 const statusFilter = document.getElementById('audit-status-filter')?.value || '';
                 const searchFilter = document.getElementById('audit-search')?.value || '';
-                
+
                 let url = '/api/audit?limit=100';
                 if (agentFilter) url += `&agentId=${agentFilter}`;
                 if (statusFilter) url += `&status=${statusFilter}`;
-                
+
                 const res = await fetch(url);
                 if (res.status === 401) return logout();
                 let logs = await res.json();
-                
+
                 if (searchFilter) {
                     const search = searchFilter.toLowerCase();
-                    logs = logs.filter(log => 
+                    logs = logs.filter(log =>
                         (log.command || '').toLowerCase().includes(search) ||
                         (log.response_text || '').toLowerCase().includes(search) ||
                         (log.output_snippet || '').toLowerCase().includes(search)
                     );
                 }
-                
+
                 const agents = await fetch('/api/agents').then(r => r.json());
                 const agentMap = {};
                 agents.forEach(a => agentMap[a.id] = a.name);
 
                 const tbody = document.getElementById('audit-tbody');
                 const emptyEl = document.getElementById('audit-empty');
-                
+
+                const approvedCount = logs.filter(log => log.status === 'approved').length;
+                const pendingCount = logs.filter(log => log.status === 'pending').length;
+                const riskCount = logs.filter(log => log.status === 'denied' || log.status === 'error').length;
+                document.getElementById('audit-total').innerText = String(logs.length);
+                document.getElementById('audit-approved').innerText = String(approvedCount);
+                document.getElementById('audit-pending').innerText = String(pendingCount);
+                document.getElementById('audit-risk').innerText = String(riskCount);
+
                 if (!logs.length) {
                     tbody.innerHTML = '';
                     if (emptyEl) emptyEl.classList.remove('hidden');
                     return;
                 }
-                
+
                 if (emptyEl) emptyEl.classList.add('hidden');
 
-                logs.forEach(log => {
-                    const statusColors = {
-                        'approved': 'text-green-400 bg-green-500/10',
-                        'denied': 'text-red-400 bg-red-500/10',
-                        'pending': 'text-yellow-400 bg-yellow-500/10',
-                        'error': 'text-red-400 bg-red-500/10'
-                    };
-                    const statusColor = statusColors[log.status] || 'text-slate-400 bg-slate-500/10';
+                tbody.innerHTML = logs.map(log => {
+                    const status = String(log.status || 'unknown').toLowerCase();
                     const actionType = log.action_type || 'command';
-                    const responseText = log.response_text || log.output_snippet || '-';
-                    
-                    const row = `
-                        <tr class="hover:bg-white/5">
-                            <td class="px-4 py-3 font-mono text-slate-400 text-xs">${new Date(log.created_at).toLocaleString()}</td>
-                            <td class="px-4 py-3">${agentMap[log.agent_id] || 'Unknown'}</td>
-                            <td class="px-4 py-3"><span class="px-2 py-1 rounded text-xs bg-slate-700 text-slate-300">${actionType}</span></td>
-                            <td class="px-4 py-3 font-mono text-xs truncate max-w-xs" title="${log.command}">${log.command || '-'}</td>
-                            <td class="px-4 py-3"><span class="px-2 py-1 rounded text-xs ${statusColor}">${log.status.toUpperCase()}</span></td>
-                            <td class="px-4 py-3 text-xs text-slate-400 max-w-xs truncate" title="${responseText}">${responseText}</td>
-                            <td class="px-4 py-3">
-                                <button onclick="viewContainer('${log.container_id}')" class="text-orange-500 hover:text-white text-xs">View</button>
-                            </td>
-                        </tr>
+                    const responseText = log.response_text || log.output_snippet || 'No response recorded';
+                    const commandText = log.command || 'No command recorded';
+                    const safeContainerId = escapeHtml(log.container_id || 'n/a');
+                    return `
+                        <div class="p-4 lg:p-5 hover:bg-white/5 transition-colors">
+                            <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+                                <div class="space-y-2 min-w-0">
+                                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                                        <span class="text-slate-400">${new Date(log.created_at).toLocaleString()}</span>
+                                        <span class="px-2 py-0.5 rounded-full uppercase tracking-wide ${badgeClassForAuditStatus(status)}">${escapeHtml(status)}</span>
+                                        <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-300">${escapeHtml(actionType)}</span>
+                                    </div>
+                                    <div class="text-sm text-slate-300">Agent: <span class="text-white">${escapeHtml(agentMap[log.agent_id] || 'Unknown')}</span></div>
+                                    <div class="bg-slate-900/70 border border-slate-700 rounded-lg p-3">
+                                        <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Command</div>
+                                        <div class="font-mono text-xs text-slate-200 whitespace-pre-wrap break-words">${escapeHtml(commandText)}</div>
+                                    </div>
+                                    <div class="bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+                                        <div class="text-[11px] uppercase tracking-wide text-slate-500 mb-1">Response</div>
+                                        <div class="text-xs text-slate-300 whitespace-pre-wrap break-words max-h-40 overflow-auto">${escapeHtml(responseText)}</div>
+                                    </div>
+                                </div>
+                                <div class="flex flex-row lg:flex-col items-start gap-2 shrink-0">
+                                    <button onclick="viewContainer('${safeContainerId}')" class="minimal-btn text-xs">View Container</button>
+                                </div>
+                            </div>
+                        </div>
                     `;
-                    tbody.innerHTML += row;
-                });
-                
+                }).join('');
+
                 const agentSelect = document.getElementById('audit-agent-filter');
                 if (agentSelect && agentSelect.children.length <= 1) {
-                    agentSelect.innerHTML = '<option value="">All Agents</option>' + 
+                    agentSelect.innerHTML = '<option value="">All Agents</option>' +
                         agents.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
                 }
             } catch (e) {
