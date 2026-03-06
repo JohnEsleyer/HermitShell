@@ -22,8 +22,8 @@ The agent follows a standard Loop:
     - **No Action**: Returns the LLM's text response to the user.
     - **EXECUTE Action**:
         - Extracts the bash command.
-        - Checks for dangerous keywords (`rm`, `sudo`, `docker`).
-        - If dangerous, enters **HITL (Human-in-the-Loop)** mode and waits for user approval.
+        - Checks whether the command requests internet egress (`curl`, `wget`, package install, clone, etc.).
+        - If internet access is requested, enters **HITL (Human-in-the-Loop)** and waits for operator Yes/No approval.
         - Executes the command natively in the shell.
         - Captures the command's stdout and stderr.
         - Appends the output to the conversation history.
@@ -40,10 +40,10 @@ The agent follows a standard Loop:
   - Web app creation (vanilla HTML/CSS/JS, index.html required)
   - ClawMotion for video creation
 - `call_llm()`: Uses Python's `urllib.request` to securely call the Orchestrator proxy. Since the container is air-gapped, this is the **only** way the agent can communicate with the outside world.
-- `extract_command()`: Prioritizes JSON `terminal` command; legacy `ACTION: EXECUTE` remains as fallback compatibility.
-- `extract_panel_actions()`: Parses JSON output for control panel actions.
-- `is_dangerous()`: A list of restricted commands that trigger a Human-in-the-Loop check.
-- `wait_for_approval()`: Creates and monitors lock files (`/tmp/hermit_approval.lock`) that the Orchestrator writes when a user clicks an "Approve" button in Telegram or the Dashboard.
+- `extract_command()`: Prioritizes tagged `<terminal>` command; JSON and legacy `ACTION: EXECUTE` are fallback compatibility paths.
+- `extract_panel_actions()`: Legacy parser for deprecated control panel actions.
+- `isInternetRequest()`: A list of network egress commands that trigger Human-in-the-Loop checks.
+- `wait_for_approval()`: Monitors lock files (`/tmp/hermit_approval.lock`, `/tmp/hermit_deny.lock`) that the Orchestrator writes after operator Yes/No Telegram replies.
 
 ## 📂 File Delivery via the Agent
 
@@ -59,15 +59,13 @@ Workspace structure:
 
 ## 📝 Panel Actions
 
-Agents are expected to return deterministic JSON:
+Agents are expected to return deterministic tagged output:
 
-```json
-{
-  "userId": "123456789",
-  "message": "Task completed",
-  "action": "GIVE:report.pdf",
-  "terminal": ""
-}
+```text
+<thought>Plan</thought>
+<message>Task completed</message>
+<terminal></terminal>
+<action>GIVE:report.pdf</action>
 ```
 
 > Legacy compatibility: `panelActions` may appear in older logs/docs but should not be used for new implementations.
@@ -80,7 +78,7 @@ Agents are expected to return deterministic JSON:
 ## ⚠️ Legacy Compatibility
 
 - `panelActions` is deprecated and should not be used for new execution paths.
-- Legacy `ACTION: EXECUTE` text parsing exists only for backward compatibility; JSON `terminal` + `action` is the canonical contract.
+- Legacy `ACTION: EXECUTE` and JSON parsing exist only for backward compatibility; tagged `<terminal>` + `<action>` is the canonical contract.
 
 ## 🌐 Web App Creation
 
@@ -89,7 +87,7 @@ Agents create web apps in `/app/workspace/www/[app_name]/`:
 - **Required**: Each web app MUST have an `index.html` file
 - Use **vanilla** HTML, CSS, and JavaScript only (no frameworks like React/Vue)
 - Images go in `assets/` subfolder
-- Return `action: "APP:<app_name>"` after creating `index.html` so the panel publishes and shares URL
+- Return `<action>APP:<app_name></action>` after creating `index.html` so the panel publishes and shares URL
 
 ## 📝 Logging & Auditing
 

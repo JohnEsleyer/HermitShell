@@ -18,15 +18,15 @@ The Python agent uses `is_dangerous()` to scan every command for keywords:
 - `rm`, `sudo`, `su`, `shutdown`, `reboot`, `nmap`, `kill`, `docker`, `spawn_agent`.
 
 ### ⏸️ Interception
-If a dangerous command is detected:
+If an internet-access command is detected:
 1.  **Agent Pauses**: The Python agent script enters a sleep-wait loop.
-2.  **Notification**: The Orchestrator sends an **interactive Telegram message** to the operator.
-3.  **Audit**: The command is logged in the `audit_logs` table with status `pending`.
+2.  **Notification**: The Orchestrator sends a Telegram prompt to the operator asking for **Yes/No** approval.
+3.  **Audit**: Standard commands are logged as `Executed`; network-gated commands are logged as `Pending Network`.
 
 ### 🔘 Decision
-The operator has two buttons:
-- **✅ Approve**: The Orchestrator writes `/tmp/hermit_approval.lock` inside the container. The agent detects it and executes.
-- **❌ Deny**: The Orchestrator writes `/tmp/hermit_deny.lock`. The agent skips the command and notifies the LLM.
+The operator has two reply options:
+- **✅ Yes / Allow**: The Orchestrator writes `/tmp/hermit_approval.lock` inside the container. The agent detects it and executes.
+- **❌ No / Block**: The Orchestrator writes `/tmp/hermit_deny.lock`. The agent skips the command and notifies the LLM.
 
 ## 🔐 Layer 3: Authentication & API Security
 
@@ -45,4 +45,4 @@ The operator has two buttons:
 - New users are given a setup instruction to contact their administrator for inclusion.
 
 ### 4. Admin Chat ID
-- The `admin_chat_id` and `operator_telegram_id` settings ensure that HITL requests only go to authorized administrators, even if the bot is in a group or public settings.
+- The `admin_chat_id` and `operator_telegram_id` settings ensure internet HITL requests only go to authorized administrators, even if the bot is in a group or public settings.

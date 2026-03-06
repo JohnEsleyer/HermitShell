@@ -34,7 +34,7 @@ A dedicated **Debian-based container** for each agent.
 ### 3. The Agent (Crab)
 A **Python-based daemon** (formerly Rust `crab`) that lives inside the container.
 - **LLM-Driven Execution**: Receives messages, calls the orchestrator proxy, extracts commands, and executes them.
-- **HITL Verification**: Pauses execution and asks for approval via Telegram for dangerous commands (e.g., `rm`, `kill`).
+- **HITL Verification**: Pauses execution only for internet-access commands and asks operator approval via Telegram Yes/No reply flow.
 - **Audit Logging**: Streams all stdout/stderr to a `.hermit.log` file monitored by the orchestrator.
 
 ## 🔄 Interaction Flow

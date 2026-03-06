@@ -13,7 +13,7 @@ Stores the configuration for each AI persona.
 - `role`: System role (e.g., "DevOps Expert").
 - `telegram_token`: Unique bot token.
 - `docker_image`: The base image (default: `hermit/base`).
-- `require_approval`: Boolean for HITL mode.
+- `require_approval`: Legacy per-agent field; internet HITL is now enforced universally for network egress patterns.
 - `llm_provider` / `llm_model`: Provider-specific overrides.
 - `status`: Agent status - `idle` or `active`.
 - `last_active_at`: Timestamp of last activity.
@@ -30,8 +30,8 @@ A permanent record of every command executed by every agent.
 - `output_snippet`: Truncated output (first 500 chars).
 - `response_text`: Full agent response.
 - `action_type`: Type of action (e.g., "command", "calendar", "asset_request").
-- `status`: `pending`, `approved`, `denied`, or `error`.
-- `approved_by`: Telegram ID of the admin who authorized it.
+- `status`: `Executed`, `Pending Network`, `Network Allowed`, `Network Blocked`, or `Error`.
+- `approved_by`: Telegram ID of the operator/admin who allowed or blocked network access.
 
 ### 4. `calendar_events`
 CRON-based scheduling for future agent tasks.
