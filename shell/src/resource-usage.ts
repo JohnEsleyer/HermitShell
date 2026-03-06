@@ -49,15 +49,20 @@ export interface HostResourceSnapshot {
 export interface SystemResourcesSummary {
   hostMemoryTotalBytes: number;
   hostMemoryUsedBytes: number;
+  hostMemoryFreeBytes: number;
   hostMemoryPercent: number;
   loadAverage: [number, number, number];
   cpuCount: number;
   uptimeSeconds: number;
   containersCpuPercent: number;
+  containersCpuOfHostPercent: number;
   containersMemoryUsageBytes: number;
   containersMemoryLimitBytes: number;
   containersMemoryPercent: number;
   containerMemoryOfHostPercent: number;
+  remainingMemoryBytes: number;
+  hostCpuLoadPercent: number;
+  hostCpuRemainingPercent: number;
 }
 
 export function calculateCpuPercent(stats: DockerStatsSnapshot): number {
@@ -102,22 +107,35 @@ export function summarizeContainerResources(containers: ContainerResourceUsage[]
 
 export function summarizeSystemResources(host: HostResourceSnapshot, containers: ContainerResourcesSummary): SystemResourcesSummary {
   const hostMemoryUsedBytes = Math.max(0, host.totalMemoryBytes - host.freeMemoryBytes);
+  const hostMemoryFreeBytes = Math.max(0, host.freeMemoryBytes);
   const hostMemoryPercent = host.totalMemoryBytes > 0 ? (hostMemoryUsedBytes / host.totalMemoryBytes) * 100 : 0;
   const containerMemoryOfHostPercent = host.totalMemoryBytes > 0
     ? (containers.totalMemoryUsageBytes / host.totalMemoryBytes) * 100
+    : 0;
+  const remainingMemoryBytes = Math.max(0, host.totalMemoryBytes - containers.totalMemoryUsageBytes);
+  const normalizedLoad = host.cpuCount > 0 ? ((host.loadAverage?.[0] || 0) / host.cpuCount) * 100 : 0;
+  const hostCpuLoadPercent = Math.min(100, Math.max(0, normalizedLoad));
+  const hostCpuRemainingPercent = Math.max(0, 100 - hostCpuLoadPercent);
+  const containersCpuOfHostPercent = host.cpuCount > 0
+    ? Math.min(100, Math.max(0, containers.totalCpuPercent / host.cpuCount))
     : 0;
 
   return {
     hostMemoryTotalBytes: host.totalMemoryBytes,
     hostMemoryUsedBytes,
+    hostMemoryFreeBytes,
     hostMemoryPercent,
     loadAverage: host.loadAverage,
     cpuCount: host.cpuCount,
     uptimeSeconds: host.uptimeSeconds,
     containersCpuPercent: containers.totalCpuPercent,
+    containersCpuOfHostPercent,
     containersMemoryUsageBytes: containers.totalMemoryUsageBytes,
     containersMemoryLimitBytes: containers.totalMemoryLimitBytes,
     containersMemoryPercent: containers.totalMemoryPercent,
-    containerMemoryOfHostPercent
+    containerMemoryOfHostPercent,
+    remainingMemoryBytes,
+    hostCpuLoadPercent,
+    hostCpuRemainingPercent
   };
 }

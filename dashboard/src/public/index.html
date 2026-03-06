@@ -238,6 +238,32 @@
             border: 1px solid transparent;
         }
 
+        .metric-ring-track {
+            stroke: rgba(148, 163, 184, 0.2);
+        }
+
+        .metric-ring-value {
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.35s ease;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+        }
+
+        .resource-bar {
+            position: relative;
+            overflow: hidden;
+            border-radius: 9999px;
+            background: rgba(30, 41, 59, 0.8);
+            height: 10px;
+        }
+
+        .resource-bar>span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            transition: width 0.35s ease;
+        }
+
         @media (max-width: 1100px) {
             .dashboard-shell {
                 grid-template-columns: 1fr;
@@ -818,22 +844,74 @@
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                            <div class="glass-card p-4 rounded-xl">
-                                <div class="text-xs text-slate-400">Host Memory</div>
-                                <div id="metric-host-memory" class="text-xl font-bold text-cyan-400">0%</div>
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+                            <div class="glass-card p-5 rounded-2xl">
+                                <div class="flex items-center justify-between mb-5">
+                                    <h4 class="text-white font-semibold">Application Memory Footprint</h4>
+                                    <span class="text-xs text-slate-400 mono">LIVE</span>
+                                </div>
+                                <div class="flex flex-col md:flex-row gap-6 items-center md:items-start">
+                                    <div class="relative w-36 h-36">
+                                        <svg viewBox="0 0 120 120" class="w-36 h-36">
+                                            <circle class="metric-ring-track" cx="60" cy="60" r="50" stroke-width="10" fill="transparent"></circle>
+                                            <circle id="metric-app-memory-ring" class="metric-ring-value" cx="60" cy="60" r="50" stroke-width="10" stroke="#22d3ee" fill="transparent" stroke-dasharray="314" stroke-dashoffset="314"></circle>
+                                        </svg>
+                                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                            <div id="metric-host-memory" class="text-2xl font-bold text-cyan-300">0%</div>
+                                            <div class="text-[11px] text-slate-400">host used</div>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 w-full space-y-4">
+                                        <div>
+                                            <div class="flex justify-between text-xs mb-1"><span class="text-slate-400">App usage (containers)</span><span id="metric-app-memory-used" class="text-orange-300 mono">0 B</span></div>
+                                            <div class="resource-bar"><span id="metric-app-memory-bar" class="bg-gradient-to-r from-orange-500 to-amber-400" style="width:0%"></span></div>
+                                        </div>
+                                        <div class="grid grid-cols-2 gap-3 text-sm">
+                                            <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800">
+                                                <div class="text-slate-400 text-xs">Remaining host memory</div>
+                                                <div id="metric-host-memory-remaining" class="text-emerald-300 font-semibold">0 B</div>
+                                            </div>
+                                            <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800">
+                                                <div class="text-slate-400 text-xs">App headroom</div>
+                                                <div id="metric-app-memory-remaining" class="text-cyan-300 font-semibold">0 B</div>
+                                            </div>
+                                        </div>
+                                        <div class="text-xs text-slate-500">Container memory usage: <span id="metric-container-memory" class="text-orange-300">0%</span> of allocated limits.</div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="glass-card p-4 rounded-xl">
-                                <div class="text-xs text-slate-400">Container Memory</div>
-                                <div id="metric-container-memory" class="text-xl font-bold text-orange-400">0%</div>
-                            </div>
-                            <div class="glass-card p-4 rounded-xl">
-                                <div class="text-xs text-slate-400">Container CPU</div>
-                                <div id="metric-container-cpu" class="text-xl font-bold text-green-400">0%</div>
-                            </div>
-                            <div class="glass-card p-4 rounded-xl">
-                                <div class="text-xs text-slate-400">Load Avg (1m)</div>
-                                <div id="metric-load-avg" class="text-xl font-bold text-purple-400">0.00</div>
+
+                            <div class="glass-card p-5 rounded-2xl">
+                                <div class="flex items-center justify-between mb-5">
+                                    <h4 class="text-white font-semibold">CPU Capacity & Remaining Headroom</h4>
+                                    <span id="metric-load-avg" class="text-xs text-purple-300 mono">Load 0.00</span>
+                                </div>
+                                <div class="space-y-4">
+                                    <div>
+                                        <div class="flex justify-between text-xs mb-1">
+                                            <span class="text-slate-400">Application CPU (containers)</span>
+                                            <span id="metric-container-cpu" class="text-green-300 mono">0%</span>
+                                        </div>
+                                        <div class="resource-bar"><span id="metric-app-cpu-bar" class="bg-gradient-to-r from-green-500 to-lime-400" style="width:0%"></span></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-xs mb-1">
+                                            <span class="text-slate-400">Host CPU load (1m normalized)</span>
+                                            <span id="metric-cpu-used" class="text-orange-300 mono">0%</span>
+                                        </div>
+                                        <div class="resource-bar"><span id="metric-host-cpu-bar" class="bg-gradient-to-r from-orange-500 to-red-500" style="width:0%"></span></div>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3 text-sm">
+                                        <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800">
+                                            <div class="text-slate-400 text-xs">Remaining CPU</div>
+                                            <div id="metric-cpu-remaining" class="text-emerald-300 font-semibold">0%</div>
+                                        </div>
+                                        <div class="bg-slate-900/70 rounded-xl p-3 border border-slate-800">
+                                            <div class="text-slate-400 text-xs">Load per core</div>
+                                            <div id="metric-load-per-core" class="text-cyan-300 font-semibold">0 / 0 cores</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -2362,6 +2440,26 @@
             return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unitIdx]}`;
         }
 
+        function clampPercent(value) {
+            const numeric = Number(value);
+            if (!Number.isFinite(numeric)) return 0;
+            return Math.max(0, Math.min(100, numeric));
+        }
+
+        function setMetricBar(id, percent) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.style.width = `${clampPercent(percent).toFixed(1)}%`;
+        }
+
+        function setMetricRing(id, percent) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const circumference = 314;
+            const normalized = clampPercent(percent);
+            el.setAttribute('stroke-dashoffset', String(circumference - (normalized / 100) * circumference));
+        }
+
         async function loadStats() {
             try {
                 const res = await fetch('/api/stats');
@@ -2495,7 +2593,37 @@
                 document.getElementById('metric-host-memory').innerText = resources ? `${resources.hostMemoryPercent.toFixed(1)}%` : 'N/A';
                 document.getElementById('metric-container-memory').innerText = resources ? `${resources.containersMemoryPercent.toFixed(1)}%` : 'N/A';
                 document.getElementById('metric-container-cpu').innerText = resources ? `${resources.containersCpuPercent.toFixed(1)}%` : 'N/A';
-                document.getElementById('metric-load-avg').innerText = resources ? `${(resources.loadAverage?.[0] || 0).toFixed(2)}` : 'N/A';
+                document.getElementById('metric-load-avg').innerText = resources ? `Load ${(resources.loadAverage?.[0] || 0).toFixed(2)}` : 'Load N/A';
+
+                if (resources) {
+                    const hostUsedPercent = clampPercent(resources.hostMemoryPercent);
+                    const appMemoryOfHostPercent = clampPercent(resources.containerMemoryOfHostPercent);
+                    const appCpuOfHostPercent = clampPercent(resources.containersCpuOfHostPercent);
+                    const hostCpuPercent = clampPercent(resources.hostCpuLoadPercent);
+
+                    document.getElementById('metric-app-memory-used').innerText = formatBytes(resources.containersMemoryUsageBytes);
+                    document.getElementById('metric-host-memory-remaining').innerText = formatBytes(resources.hostMemoryFreeBytes);
+                    document.getElementById('metric-app-memory-remaining').innerText = formatBytes(resources.remainingMemoryBytes);
+                    document.getElementById('metric-cpu-used').innerText = `${hostCpuPercent.toFixed(1)}%`;
+                    document.getElementById('metric-cpu-remaining').innerText = `${clampPercent(resources.hostCpuRemainingPercent).toFixed(1)}%`;
+                    document.getElementById('metric-load-per-core').innerText = `${(resources.loadAverage?.[0] || 0).toFixed(2)} / ${resources.cpuCount || 0} cores`;
+
+                    setMetricRing('metric-app-memory-ring', hostUsedPercent);
+                    setMetricBar('metric-app-memory-bar', appMemoryOfHostPercent);
+                    setMetricBar('metric-app-cpu-bar', appCpuOfHostPercent);
+                    setMetricBar('metric-host-cpu-bar', hostCpuPercent);
+                } else {
+                    document.getElementById('metric-app-memory-used').innerText = 'N/A';
+                    document.getElementById('metric-host-memory-remaining').innerText = 'N/A';
+                    document.getElementById('metric-app-memory-remaining').innerText = 'N/A';
+                    document.getElementById('metric-cpu-used').innerText = 'N/A';
+                    document.getElementById('metric-cpu-remaining').innerText = 'N/A';
+                    document.getElementById('metric-load-per-core').innerText = 'N/A';
+                    setMetricRing('metric-app-memory-ring', 0);
+                    setMetricBar('metric-app-memory-bar', 0);
+                    setMetricBar('metric-app-cpu-bar', 0);
+                    setMetricBar('metric-host-cpu-bar', 0);
+                }
 
                 const openaiStatus = document.getElementById('metric-openai');
                 const openrouterStatus = document.getElementById('metric-openrouter');
