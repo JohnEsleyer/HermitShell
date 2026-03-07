@@ -36,7 +36,7 @@ Even when agent output is XML-tagged, orchestrator persistence/history is intent
 {"message":"Done","terminal":"","action":"GIVE:file.txt","userId":"123"}
 ```
 
-This keeps dashboard rendering and downstream tooling deterministic while retaining XML as the agent emission contract.
+This keeps dashboard rendering and downstream tooling deterministic while retaining XML as the agent emission contract. Agent Test dashboard includes a help (`?`) control explaining this dual-format flow.
 
 ## Rule of Thumb
 

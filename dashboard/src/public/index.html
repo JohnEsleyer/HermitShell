@@ -1998,9 +1998,17 @@
             <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
                 <div>
                     <h3 id="agent-logs-title" class="text-lg font-bold text-white">Agent Test</h3>
-                    <p class="text-xs text-slate-400">Review agent contract logs, test payloads, and action effects.</p>
+                    <p class="text-xs text-slate-400">Agents emit XML. HermitShell parses tags and stores normalized JSON logs.</p>
                 </div>
-                <button onclick="closeAgentLogsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleAgentContractHelp()" class="text-slate-300 hover:text-white border border-slate-600 rounded-full w-7 h-7 inline-flex items-center justify-center" title="How XML + JSON works">?</button>
+                    <button onclick="closeAgentLogsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+            <div id="agent-contract-help" class="hidden px-4 py-3 border-b border-slate-700 bg-slate-950/60 text-xs text-slate-200 space-y-1">
+                <div><strong>Agent output format:</strong> XML tags (for example: <code>&lt;message&gt;...&lt;/message&gt;</code>, <code>&lt;action&gt;GIVE:file.txt&lt;/action&gt;</code>).</div>
+                <div><strong>System log format:</strong> JSON objects (for example: <code>{"message":"...","terminal":"...","action":"...","userId":"..."}</code>).</div>
+                <div>This keeps agent prompting deterministic while making logs easier to search/render.</div>
             </div>
             <div class="p-4 border-b border-slate-700 bg-slate-900/40 grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
                 <div class="md:col-span-2">
@@ -4569,7 +4577,15 @@ Describe how the agent should behave.` })
         function closeAgentLogsModal() {
             document.getElementById('agent-logs-modal').classList.add('hidden');
             document.getElementById('agent-logs-modal').classList.remove('flex');
+            const help = document.getElementById('agent-contract-help');
+            if (help) help.classList.add('hidden');
             activeLogsAgentId = null;
+        }
+
+        function toggleAgentContractHelp() {
+            const help = document.getElementById('agent-contract-help');
+            if (!help) return;
+            help.classList.toggle('hidden');
         }
 
         async function populateAgentLogsUserDropdown() {

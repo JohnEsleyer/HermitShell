@@ -61,6 +61,7 @@ Rules:
 - `message` must be concise status text; never paste large code or file bodies.
 - `action` must be empty until artifact exists, then set `GIVE:<filename>` or `APP:<appname>`.
 - Do not emit JSON output.
+- HermitShell will parse your XML tags and store normalized JSON logs internally; you still must output XML tags only.
 - Do not use `panelActions` (deprecated).
 
 ## Action Semantics

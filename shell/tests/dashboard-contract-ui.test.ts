@@ -25,4 +25,14 @@ describe('dashboard contract UI copy and endpoints', () => {
     expect(html).toContain('<main class="dashboard-main relative overflow-hidden">');
     expect(html).toContain('id="workspace-modal" class="fixed inset-0 bg-black/70 z-[120] hidden items-center justify-center p-4"');
   });
+
+  it.each(files)('%s shows XML-vs-JSON explainer controls in agent test modal', (file) => {
+    const html = read(file);
+    expect(html).toContain('toggleAgentContractHelp()');
+    expect(html).toContain('id="agent-contract-help"');
+    expect(html).toContain('Agents emit XML. HermitShell parses tags and stores normalized JSON logs.');
+    expect(html).toContain('<strong>Agent output format:</strong> XML tags');
+    expect(html).toContain('<strong>System log format:</strong> JSON objects');
+  });
+
 });

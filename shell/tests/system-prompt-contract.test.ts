@@ -13,5 +13,6 @@ describe('system_prompt contract examples', () => {
     expect(prompt).toContain('<terminal>');
     expect(prompt).toContain('<action>');
     expect(prompt).toContain('Do not emit JSON output.');
+    expect(prompt).toContain('parse your XML tags and store normalized JSON logs');
   });
 });

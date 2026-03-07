@@ -397,7 +397,7 @@ Apps can have Playwright screenshots captured:
 - Screenshots are stored in `data/screenshots/`
 - Available for preview in the dashboard
 
-### Deterministic Agent Tag Contract
+### Deterministic Agent XML Contract + JSON Logs
 
 Agent replies should use XML-style tags. The orchestrator parses those tags, executes actions, and then normalizes structured history/runtime logs as JSON objects for stable downstream processing:
 
@@ -425,6 +425,7 @@ GIVE:report.pdf
 - ✅ Orchestrator internal log contract: normalized JSON (`{"message":"...","terminal":"...","action":"...","userId":"..."}`)
 - ⚠️ Compatibility input parsing: legacy JSON envelope and labeled `message:/terminal:/action:` formats
 - ❌ Deprecated for new behavior: `panelActions`, text `ACTION: EXECUTE` formats
+- ℹ️ Agent Test modal includes a help (`?`) explainer describing XML agent output vs JSON log normalization.
 
 ### Long-Term RAG Memory
 
