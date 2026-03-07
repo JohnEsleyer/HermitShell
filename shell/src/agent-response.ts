@@ -79,20 +79,27 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
     }
 }
 
-export function hasStructuredContract(rawOutput: string): boolean {
+export function detectContractFormat(rawOutput: string): 'xml' | 'json' | 'labeled' | 'none' {
     const output = asString(rawOutput);
+
     const objectMatches = output.match(/\{[\s\S]*?\}/g) || [];
     for (let i = objectMatches.length - 1; i >= 0; i--) {
-        if (tryParseContractJson(objectMatches[i])) return true;
+        if (tryParseContractJson(objectMatches[i])) return 'json';
     }
 
     const firstBrace = output.indexOf('{');
     const lastBrace = output.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        return !!tryParseContractJson(output.substring(firstBrace, lastBrace + 1));
+        if (tryParseContractJson(output.substring(firstBrace, lastBrace + 1))) return 'json';
     }
 
-    return !!parseLabeledContract(output);
+    if (parseTaggedContract(output)) return 'xml';
+    if (parseLabeledContract(output)) return 'labeled';
+    return 'none';
+}
+
+export function hasStructuredContract(rawOutput: string): boolean {
+    return detectContractFormat(rawOutput) !== 'none';
 }
 
 function extractInlineAction(text: string): string {
