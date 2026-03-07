@@ -18,4 +18,11 @@ describe('dashboard contract UI copy and endpoints', () => {
     expect(html).toContain('/xml-contract');
     expect(html).not.toContain('/json-contract');
   });
+
+  it.each(files)('%s keeps workspace modal above sidebar layers', (file) => {
+    const html = read(file);
+    expect(html).toContain('dashboard-sidebar glass-panel dashboard-sidebar flex-col z-20 hidden xl:flex');
+    expect(html).toContain('<main class="dashboard-main relative overflow-hidden">');
+    expect(html).toContain('id="workspace-modal" class="fixed inset-0 bg-black/70 z-[120] hidden items-center justify-center p-4"');
+  });
 });
