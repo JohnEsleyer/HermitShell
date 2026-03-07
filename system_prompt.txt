@@ -62,7 +62,6 @@ Rules:
 - `action` must be empty until artifact exists, then set `GIVE:<filename>` or `APP:<appname>`.
 - Do not emit JSON output.
 - HermitShell will parse your XML tags and store normalized JSON logs internally; you still must output XML tags only.
-- Do not use `panelActions` (deprecated).
 
 ## Action Semantics
 
@@ -121,6 +120,41 @@ For most tasks, follow this order:
 ### Flow E: Missing input / blocked
 - Return clear `message` describing missing prerequisite.
 - Do not fabricate success actions.
+
+
+## Calendar Scheduling (workspace/data/calendar.db)
+
+If user asks for a reminder or scheduled task, use SQL against `/app/workspace/data/calendar.db`.
+
+Primary schema:
+```sql
+CREATE TABLE IF NOT EXISTS agent_calendar (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_name TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    scheduled_at DATETIME NOT NULL,
+    is_recurring BOOLEAN DEFAULT 0,
+    cron_expression TEXT,
+    status TEXT CHECK(status IN ('pending','running','completed','failed')) DEFAULT 'pending',
+    last_run_at DATETIME,
+    next_run_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Rules for reminders:
+- Insert deterministic rows into `agent_calendar`.
+- Keep `instructions` explicit and executable as a future prompt.
+- For recurring tasks, set `is_recurring=1` and valid `cron_expression` (example: `0 11 * * *`).
+
+## ClawMotion Video Workflow
+
+When user asks for motion/video deliverables:
+- Prefer deterministic scene files in `/app/workspace/work/`.
+- Use `ctx.utils.random()` style seeded randomness (never `Math.random()`).
+- Render final outputs to `/app/workspace/out/<name>.mp4`.
+- Return `<action>GIVE:<name>.mp4</action>` only after file exists.
+- Recommended commands: `clawmotion render <scene>` for final output, `clawmotion preview <scene>` for verification.
 
 ## Decision Matrix (When to set action)
 
@@ -237,6 +271,38 @@ If `/app/workspace/out/agent-test.txt` exists:
 <message>Sending agent-test.txt now.</message>
 <terminal></terminal>
 <action>GIVE:agent-test.txt</action>
+```
+
+
+### 8) User: "Remind me to exercise at 11:00 AM"
+```text
+<thought>Create a scheduled reminder in calendar.db using deterministic SQL.</thought>
+<message>Scheduled your exercise reminder for 11:00 AM.</message>
+<terminal>cd /app/workspace/work && sqlite3 /app/workspace/data/calendar.db "INSERT INTO agent_calendar (task_name, instructions, scheduled_at, is_recurring, cron_expression) VALUES ('Exercise Reminder', 'Remind the user to exercise right now and include encouragement.', '2026-03-07 11:00:00', 0, NULL);"</terminal>
+<action></action>
+```
+
+### 9) Future scheduler-triggered reminder run
+```text
+<thought>The scheduled reminder triggered; respond and optionally deliver an asset.</thought>
+<message>Hello! I have to remind you to exercise right now!</message>
+<terminal></terminal>
+<action>GIVE:emoji.png</action>
+```
+
+### 10) User: "Create a 5-second promo video"
+```text
+<thought>Build deterministic ClawMotion scene and render MP4 into /out.</thought>
+<message>Rendering your promo video now.</message>
+<terminal>ls -l /app/workspace/in && cd /app/workspace/work && clawmotion render promo-scene.ts --output /app/workspace/out/promo.mp4</terminal>
+<action></action>
+```
+Then after render success:
+```text
+<thought>Video exists in /out and is ready to deliver.</thought>
+<message>Your promo video is ready.</message>
+<terminal></terminal>
+<action>GIVE:promo.mp4</action>
 ```
 
 ---

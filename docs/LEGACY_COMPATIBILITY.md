@@ -21,7 +21,6 @@ Canonical fields:
 
 ## Legacy (Do Not Use for New Features)
 
-- `panelActions`
 - JSON envelope contract (still parsed but no longer primary)
 - Textual `ACTION: EXECUTE` contracts
 
@@ -40,4 +39,4 @@ This keeps dashboard rendering and downstream tooling deterministic while retain
 
 ## Rule of Thumb
 
-If you're adding new behavior, wire it through deterministic `action` values and explicit server-side handlers. Do not add new `panelActions` pathways.
+If you're adding new behavior, wire it through deterministic `action` values and explicit server-side handlers. Do not add new ad-hoc panel action pathways.

@@ -534,8 +534,7 @@ export async function startServer() {
                     ? `Send file test delivered ${safeFileName} to Telegram.`
                     : `Send file test failed to deliver ${safeFileName} to Telegram.`,
                 terminal: '',
-                action: `GIVE:${safeFileName}`,
-                panelActions: []
+                action: `GIVE:${safeFileName}`
             }, targetUserId)
         });
         saveHistory(historyKey, history.slice(-80));
@@ -561,23 +560,47 @@ export async function startServer() {
 
         const rawPayload = typeof payload === 'string' ? payload : JSON.stringify(payload || {});
         const parsed = parseAgentResponse(rawPayload);
+
+        let delivered = false;
+        const selectedFile = parseFileAction(parsed.action);
+        if (selectedFile) {
+            const outPath = path.join(WORKSPACE_ROOT, `${agent.id}_${targetUserId}`, 'out');
+            const filePath = path.join(outPath, selectedFile);
+            if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+                delivered = await sendFileViaTelegram(agent.telegram_token, targetUserId, filePath, `🧪 XML contract test from ${agent.name}`);
+            }
+        }
+
+        const normalizedJson = toContractJson(parsed, targetUserId);
+        const historyKey = `dashboard_${agent.id}_${targetUserId}`;
+        const history = loadHistory(historyKey);
+        history.push({ role: 'user', content: 'Run XML Contract Test button clicked' });
+        history.push({ role: 'assistant', content: normalizedJson });
+        saveHistory(historyKey, history.slice(-80));
+
         const effects = summarizeActionEffects(agent.id, targetUserId, parsed.action);
+        if (delivered) effects.unshift('Telegram file delivery succeeded');
+        if (selectedFile && !delivered) effects.unshift('Telegram file delivery skipped/failed');
 
         await createAgentRuntimeLog(agent.id, 'info', 'agent-test', 'XML contract test executed', {
             userId: targetUserId,
             structuredContract: hasStructuredContract(rawPayload),
-            contractFormat: detectContractFormat(rawPayload),
+            inputContractFormat: detectContractFormat(rawPayload),
+            storedContractFormat: 'json',
             action: parsed.action,
-            actionEffects: effects
+            actionEffects: effects,
+            delivered
         });
 
         return {
             raw: rawPayload,
-            parsed,
-            structuredContract: hasStructuredContract(rawPayload),
-            contractFormat: detectContractFormat(rawPayload),
+            parsed: JSON.parse(normalizedJson),
+            structuredContract: true,
+            contractFormat: 'json',
+            inputContractFormat: detectContractFormat(rawPayload),
             responseTo: 'Manual XML contract test',
-            actionEffects: effects
+            actionEffects: effects,
+            delivered
         };
     });
 

@@ -45,7 +45,7 @@ vi.mock('../src/workspace-db', () => ({
 
 global.fetch = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true }) })) as any;
 
-describe('Legacy panelActions are ignored', () => {
+describe('Non-contract payloads are ignored', () => {
   const workspaceRoot = path.join(__dirname, '../../data/workspaces');
   const mockToken = 'test-token';
   const mockChatId = 12345;
@@ -68,16 +68,16 @@ describe('Legacy panelActions are ignored', () => {
     fs.rmSync(path.join(workspaceRoot, '1_12345'), { recursive: true, force: true });
   });
 
-  it('ignores panelActions-only payload', async () => {
+  it('ignores non-contract JSON payload', async () => {
     (docker.spawnAgent as any).mockResolvedValue({
       containerId: 'cont-123',
-      output: JSON.stringify({ panelActions: ['CALENDAR_LIST'] })
+      output: JSON.stringify({ foo: 'bar' })
     });
 
     const result = await processAgentMessage(mockToken, mockChatId, mockUserId, 'Hi');
 
     expect(workspaceDb.getCalendarEvents).not.toHaveBeenCalled();
-    expect(result.output).toContain('panelActions');
+    expect(result.output).toContain('{"foo":"bar"}');
   });
 
 

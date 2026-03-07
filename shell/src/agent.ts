@@ -31,7 +31,6 @@ interface PanelAction {
 interface AgentResponse {
     message?: string;
     terminal?: string;
-    panelActions?: string[];
     action?: string;
 }
 
@@ -115,7 +114,6 @@ Rules:
 - If you build/update /app/workspace/www/<appname>/index.html, set action to APP:<appname>.
 - Do not paste full code into message responses. Message must be status-only.
 - Do not emit JSON output.
-- Do not use panelActions (deprecated).
 
 Security: Never expose secrets, validate inputs, don't exfiltrate data. Always check /app/workspace/in using ls -l /app/workspace/in before starting work and start commands from /app/workspace/work.`;
 }
@@ -164,7 +162,6 @@ function parseLabeledResponse(text: string): AgentResponse | null {
         message: (messageMatch[1] || '').trim(),
         terminal: (terminalMatch?.[1] || '').trim(),
         action: (actionMatch?.[1] || '').trim(),
-        panelActions: []
     };
 }
 
@@ -187,7 +184,6 @@ function parseTaggedResponse(text: string): AgentResponse | null {
         message: message || text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim(),
         terminal,
         action,
-        panelActions: []
     };
 }
 
@@ -202,7 +198,6 @@ function parseResponse(text: string): AgentResponse {
             return {
                 message: parsed.message || parsed.text || '',
                 terminal: parsed.terminal || parsed.command || '',
-                panelActions: parsed.panelActions || parsed.actions || [],
                 action: parsed.action || parsed.file || ''
             };
         } catch {}
@@ -266,71 +261,6 @@ async function executeCommand(command: string): Promise<string> {
             resolve(output);
         });
     });
-}
-
-function parsePanelAction(action: string): { type: string; value: string } | null {
-    const parts = action.split(':');
-    if (parts.length >= 2) {
-        return { type: parts[0], value: parts.slice(1).join(':') };
-    }
-    return null;
-}
-
-async function handleCalendarAction(action: string): Promise<string> {
-    const parsed = parsePanelAction(action);
-    if (!parsed) return '';
-
-    const parts = parsed.value.split('|');
-    const calendarDbPath = path.join(WORKSPACE_DIR, 'work', 'calendar.db');
-
-    try {
-        let createClient: any;
-        try {
-            ({ createClient } = await import('@libsql/client'));
-        } catch {
-            log('Calendar action skipped: @libsql/client not installed in runtime');
-            return 'Calendar actions are unavailable in this runtime.';
-        }
-
-        const db = createClient({ url: `file:${calendarDbPath}` });
-        
-        await db.execute(`
-            CREATE TABLE IF NOT EXISTS calendar_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                prompt TEXT NOT NULL,
-                start_time TEXT NOT NULL,
-                end_time TEXT,
-                target_user_id INTEGER,
-                status TEXT DEFAULT 'scheduled'
-            )
-        `);
-
-        switch (parsed.type) {
-            case 'CALENDAR_CREATE': {
-                const [title, prompt, startTime, endTime] = parts;
-                await db.execute({
-                    sql: `INSERT INTO calendar_events (title, prompt, start_time, end_time, status) VALUES (?, ?, ?, ?, 'scheduled')`,
-                    args: [title, prompt, startTime || '', endTime || '']
-                });
-                return `Calendar event "${title}" scheduled for ${startTime}`;
-            }
-            case 'CALENDAR_LIST': {
-                const rs = await db.execute({ sql: 'SELECT * FROM calendar_events ORDER BY start_time ASC', args: [] });
-                return `Calendar events: ${JSON.stringify(rs.rows)}`;
-            }
-            case 'CALENDAR_DELETE': {
-                const eventId = parts[0];
-                await db.execute({ sql: 'DELETE FROM calendar_events WHERE id = ?', args: [eventId] });
-                return `Calendar event ${eventId} deleted`;
-            }
-            default:
-                return `Unknown calendar action: ${parsed.type}`;
-        }
-    } catch (e) {
-        log(`Calendar action error: ${e}`);
-        return `Calendar action failed: ${e}`;
-    }
 }
 
 async function handleFileAction(action: string): Promise<string> {
@@ -398,16 +328,6 @@ async function run(): Promise<void> {
 
         if (response.message) {
             log(`RESPONSE: ${response.message}`);
-        }
-
-        if (response.panelActions) {
-            for (const action of response.panelActions) {
-                log(`ACTION: ${action}`);
-                if (action.startsWith('CALENDAR_')) {
-                    const result = await handleCalendarAction(action);
-                    history.push({ role: 'assistant', content: result });
-                }
-            }
         }
 
         if (response.action) {

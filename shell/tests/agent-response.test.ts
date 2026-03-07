@@ -32,11 +32,11 @@ describe('parseAgentResponse', () => {
   });
 
 
-  it('does not treat panelActions-only payloads as contract output', () => {
-    const raw = '{"panelActions":["CALENDAR_LIST"]}';
+  it('does not treat non-contract JSON payloads as contract output', () => {
+    const raw = '{"foo":"bar"}';
     const result = parseAgentResponse(raw);
     expect(result.message).toBe(raw);
-    expect(result.panelActions).toEqual([]);
+    expect(result.action).toBe('');
   });
 
 
@@ -116,7 +116,6 @@ describe('JSON normalization helpers', () => {
       message: 'Done',
       terminal: '',
       action: 'APP:todo',
-      panelActions: []
     });
     expect(payload).toBe('{"message":"Done","terminal":"","action":"APP:todo","userId":"123"}');
   });

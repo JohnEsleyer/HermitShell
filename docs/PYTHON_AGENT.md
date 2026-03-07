@@ -57,7 +57,7 @@ Workspace structure:
 - `/app/workspace/out/`: Files auto-delivered to user via Telegram
 - `/app/workspace/www/`: Web apps (each subfolder = separate app with index.html)
 
-## 📝 Panel Actions
+## 📝 Contract Actions
 
 Agents are expected to return deterministic tagged output:
 
@@ -68,16 +68,17 @@ Agents are expected to return deterministic tagged output:
 <action>GIVE:report.pdf</action>
 ```
 
-> Legacy compatibility: `panelActions` may appear in older logs/docs but should not be used for new implementations.
+> Legacy compatibility: old ad-hoc action channels may appear in historical logs/docs but should not be used for new implementations.
 
 ### Available Actions:
-- **Calendar**: `CALENDAR_CREATE`, `CALENDAR_UPDATE`, `CALENDAR_DELETE`, `CALENDAR_LIST`
-- **Assets**: `ASSET_REQUEST:description|url|file_type`
-- **ClawMotion**: `CLAWMOTION:prompt|duration|output_file`
+- **File Delivery**: `GIVE:<filename>`
+- **Web App Publish**: `APP:<app_name>`
+
+Calendar scheduling should be performed via SQL writes to `/app/workspace/data/calendar.db` (`agent_calendar`), not legacy ad-hoc action strings.
 
 ## ⚠️ Legacy Compatibility
 
-- `panelActions` is deprecated and should not be used for new execution paths.
+- Legacy ad-hoc action channels are removed from new execution paths.
 - Legacy `ACTION: EXECUTE` and JSON parsing exist only for backward compatibility; tagged `<terminal>` + `<action>` is the canonical contract.
 
 ## 🌐 Web App Creation

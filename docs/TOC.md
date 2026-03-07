@@ -29,8 +29,10 @@ Welcome to the official documentation for **HermitShell**, the autonomous AI age
 ## 📝 Notes
 
 - The dashboard terminology uses **Apps** (formerly "Sites").
-- Agent/controller interaction is hybrid by design: agents emit XML-tag contracts (`<thought>`, `<message>`, `<terminal>`, `<action>`), while orchestrator histories/logs are normalized JSON for deterministic UI/search. JSON/labeled input parsing remains compatibility-only, and `panelActions` is legacy-only.
+- Agent/controller interaction is hybrid by design: agents emit XML-tag contracts (`<thought>`, `<message>`, `<terminal>`, `<action>`), while orchestrator histories/logs are normalized JSON for deterministic UI/search. JSON/labeled input parsing remains compatibility-only, and legacy ad-hoc panel action channels are removed.
 
 
 7.  **[Legacy Compatibility Guide](./LEGACY_COMPATIBILITY.md)**
     *   Defines current contract vs deprecated compatibility pathways for maintainers.
+
+- Calendar scheduling uses workspace `calendar.db` with `agent_calendar` + `task_history` as the primary self-CRON schema.

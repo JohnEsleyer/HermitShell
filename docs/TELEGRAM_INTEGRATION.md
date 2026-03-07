@@ -23,6 +23,7 @@ Any file dropped into a Telegram chat with the bot (e.g., a `.csv`, `.py`, or `.
 When an agent creates a file it wants the user to see:
 - It writes the file to `/app/workspace/out/`.
 - It emits deterministic XML contract output with `<action>GIVE:<filename></action>`. Orchestrator then normalizes parsed fields into JSON when persisting history/logs (JSON/labeled fallback inputs still parsed for compatibility).
+- Agent histories and runtime logs are persisted as normalized JSON objects for consistent search/rendering.
 - The Orchestrator's **Chokidar-based File Watcher** detects the add/write event.
 - It triggers `sendFileViaTelegram()`, which uploads the file back to the original Telegram chat as a document.
 

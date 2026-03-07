@@ -14,7 +14,6 @@ describe('dashboard contract UI copy and endpoints', () => {
     expect(html).toContain('Respond with your status and current capabilities using XML tags');
     expect(html).not.toContain('current capabilities in JSON');
     expect(html).toContain('✅ ${String(entry.parsed?.contractFormat || \'structured\').toUpperCase()} parsed');
-    expect(html).not.toContain('✅ JSON parsed');
     expect(html).toContain('/xml-contract');
     expect(html).not.toContain('/json-contract');
   });
@@ -33,6 +32,14 @@ describe('dashboard contract UI copy and endpoints', () => {
     expect(html).toContain('Agents emit XML. HermitShell parses tags and stores normalized JSON logs.');
     expect(html).toContain('<strong>Agent output format:</strong> XML tags');
     expect(html).toContain('<strong>System log format:</strong> JSON objects');
+  });
+
+  it.each(files)('%s keeps left logs JSON and right input XML in Agent Test modal', (file) => {
+    const html = read(file);
+    expect(html).toContain("✅ ${String(entry.parsed?.contractFormat || 'structured').toUpperCase()} parsed");
+    expect(html).toContain('XML Contract Input');
+    expect(html).toContain('Run XML Contract Test');
+    expect(html).toContain('✅ JSON parsed');
   });
 
 });

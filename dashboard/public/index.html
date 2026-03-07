@@ -354,7 +354,16 @@
         .toast.error { border-left: 4px solid #ef4444; }
         .toast.success { border-left: 4px solid #10b981; }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-</style>
+
+        @keyframes agentLogInsertFade {
+            from { opacity: 0; transform: translateY(-8px) scale(0.99); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .agent-log-insert {
+            animation: agentLogInsertFade 220ms ease-out;
+        }
+
+    </style>
 </head>
 
 <body class="h-screen flex text-slate-200">
@@ -4671,7 +4680,7 @@ Describe how the agent should behave.` })
             const payload = document.getElementById('agent-xml-test-input').value;
             if (!payload?.trim()) return showToast('XML payload is required.');
             const out = document.getElementById('agent-logs-content');
-            out.innerHTML = '<div class="text-slate-300">Running XML contract test...</div>';
+            out.insertAdjacentHTML('afterbegin', '<div class="text-slate-300 text-xs">Running XML contract test...</div>');
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/xml-contract`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -4679,10 +4688,21 @@ Describe how the agent should behave.` })
             });
             const data = await res.json();
             if (data.error) {
-                out.innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
-            } else {
-                out.innerHTML = `<div class="bg-purple-950/30 border border-purple-700/70 rounded-lg p-3"><div class="text-xs text-purple-300 mb-2">XML Contract Agent Test</div><pre class="text-xs text-purple-200 whitespace-pre-wrap">${escapeHtml(JSON.stringify(data, null, 2))}</pre></div>`;
+                out.insertAdjacentHTML('afterbegin', `<div class="text-red-400 text-xs">XML Contract Test failed: ${escapeHtml(data.error)}</div>`);
+                return;
             }
+
+            const parsed = data?.parsed || {};
+            const effects = (data?.actionEffects || []).map((e) => `<li>${escapeHtml(String(e))}</li>`).join('');
+            const inserted = `<div class="bg-slate-800/70 border border-purple-700/60 rounded-lg p-3 space-y-2 agent-log-insert">
+                <div class="flex justify-between text-xs text-slate-400"><span>New response</span><span>✅ JSON parsed</span></div>
+                <div class="text-[10px] inline-flex px-2 py-1 rounded border bg-slate-700/60 text-slate-200 border-slate-600">dashboard</div>
+                <pre class="text-xs text-green-300 whitespace-pre-wrap">${escapeHtml(JSON.stringify(parsed, null, 2))}</pre>
+                <div><span class="text-slate-400 text-xs">Responding to:</span> <span class="text-slate-200">Run XML Contract Test button clicked</span></div>
+                <div><span class="text-slate-400 text-xs">Detected system actions:</span><ul class="list-disc ml-5 text-slate-200">${effects || '<li>None</li>'}</ul></div>
+            </div>`;
+            out.insertAdjacentHTML('afterbegin', inserted);
+            setTimeout(() => loadAgentInteractions(), 260);
         }
 
         async function fetchAPI(endpoint, options = {}) {
