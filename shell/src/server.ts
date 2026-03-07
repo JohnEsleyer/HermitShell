@@ -26,6 +26,7 @@ import { loadHistory, saveHistory, clearHistory } from './history';
 import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
 import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract, detectContractFormat } from './agent-response';
+import { buildXmlContract } from './xml-contract';
 import { listSkills, getSkill, createSkill, updateSkill, deleteSkill } from './skills';
 
 const PORT = process.env.PORT || 3000;
@@ -529,8 +530,7 @@ export async function startServer() {
         history.push({ role: 'user', content: 'Send File Test button clicked' });
         history.push({
             role: 'assistant',
-            content: JSON.stringify({
-                userId: String(targetUserId),
+            content: buildXmlContract({
                 message: delivered
                     ? `Send file test delivered ${safeFileName} to Telegram.`
                     : `Send file test failed to deliver ${safeFileName} to Telegram.`,
@@ -545,7 +545,7 @@ export async function startServer() {
             fileName: safeFileName,
             action: `GIVE:${safeFileName}`,
             structuredContract: true,
-            contractFormat: "json",
+            contractFormat: "xml",
             actionEffects: [delivered ? 'Telegram file delivery succeeded' : 'Telegram file delivery failed']
         };
     });
