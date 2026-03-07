@@ -4022,7 +4022,7 @@ Describe how the agent should behave.` })
         }
 
         async function testAgent_DEPRECATED(id, name) {
-            const message = `Test prompt from dashboard for ${name}. Respond with your status and current capabilities in JSON.`;
+            const message = `Test prompt from dashboard for ${name}. Respond with your status and current capabilities using XML tags (<message>, <terminal>, <action>).`;
             setTestAgentState(id, 'loading');
 
             document.getElementById('test-modal').classList.remove('hidden');
