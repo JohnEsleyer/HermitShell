@@ -25,8 +25,7 @@ import cookie from '@fastify/cookie';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
-import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract, detectContractFormat } from './agent-response';
-import { buildXmlContract } from './xml-contract';
+import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract, detectContractFormat, normalizeAgentOutputToJson, toContractJson } from './agent-response';
 import { listSkills, getSkill, createSkill, updateSkill, deleteSkill } from './skills';
 
 const PORT = process.env.PORT || 3000;
@@ -530,13 +529,14 @@ export async function startServer() {
         history.push({ role: 'user', content: 'Send File Test button clicked' });
         history.push({
             role: 'assistant',
-            content: buildXmlContract({
+            content: toContractJson({
                 message: delivered
                     ? `Send file test delivered ${safeFileName} to Telegram.`
                     : `Send file test failed to deliver ${safeFileName} to Telegram.`,
                 terminal: '',
-                action: `GIVE:${safeFileName}`
-            })
+                action: `GIVE:${safeFileName}`,
+                panelActions: []
+            }, targetUserId)
         });
         saveHistory(historyKey, history.slice(-80));
 
@@ -545,7 +545,7 @@ export async function startServer() {
             fileName: safeFileName,
             action: `GIVE:${safeFileName}`,
             structuredContract: true,
-            contractFormat: "xml",
+            contractFormat: "json",
             actionEffects: [delivered ? 'Telegram file delivery succeeded' : 'Telegram file delivery failed']
         };
     });
@@ -933,7 +933,7 @@ export async function startServer() {
             });
 
             history.push({ role: 'user', content: message });
-            history.push({ role: 'assistant', content: result.output });
+            history.push({ role: 'assistant', content: normalizeAgentOutputToJson(result.output, scopedUserId) });
             saveHistory(historyKey, history.slice(-40));
 
             const estimatedCost = result.output.length * 0.00001;

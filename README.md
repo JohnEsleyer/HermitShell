@@ -399,7 +399,7 @@ Apps can have Playwright screenshots captured:
 
 ### Deterministic Agent Tag Contract
 
-Agent replies should use XML-style tags so the orchestrator can deterministically route execution:
+Agent replies should use XML-style tags. The orchestrator parses those tags, executes actions, and then normalizes structured history/runtime logs as JSON objects for stable downstream processing:
 
 ```text
 <thought>
@@ -421,8 +421,9 @@ GIVE:report.pdf
 - `<terminal>`: optional shell command for container execution
 
 **Compatibility**
-- ✅ Primary: XML tags (`thought`, `message`, `terminal`, `action`)
-- ⚠️ Fallback-only: JSON envelope and labeled `message:/terminal:/action:` formats
+- ✅ Agent emission contract: XML tags (`thought`, `message`, `terminal`, `action`)
+- ✅ Orchestrator internal log contract: normalized JSON (`{"message":"...","terminal":"...","action":"...","userId":"..."}`)
+- ⚠️ Compatibility input parsing: legacy JSON envelope and labeled `message:/terminal:/action:` formats
 - ❌ Deprecated for new behavior: `panelActions`, text `ACTION: EXECUTE` formats
 
 ### Long-Term RAG Memory

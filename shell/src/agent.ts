@@ -353,6 +353,21 @@ async function handleFileAction(action: string): Promise<string> {
     return `File ${requestedName} not found in /app/workspace/out/`;
 }
 
+
+function buildTaggedContract(response: AgentResponse): string {
+    const message = (response.message || '').trim();
+    const terminal = (response.terminal || '').trim();
+    const action = (response.action || '').trim();
+    const thought = '';
+
+    return [
+        `<thought>${thought}</thought>`,
+        `<message>${message}</message>`,
+        `<terminal>${terminal}</terminal>`,
+        `<action>${action}</action>`
+    ].join('\n');
+}
+
 async function run(): Promise<void> {
     log('HermitShell Agent starting...');
 
@@ -402,13 +417,11 @@ async function run(): Promise<void> {
         }
 
         if (!response.terminal) {
-            const finalPayload = {
-                userId: process.env.USER_ID || '',
+            console.log(buildTaggedContract({
                 message: response.message || '',
                 terminal: '',
                 action: response.action || ''
-            };
-            console.log(JSON.stringify(finalPayload));
+            }));
             break;
         }
 

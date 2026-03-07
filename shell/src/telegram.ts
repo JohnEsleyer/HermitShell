@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 import * as chokidar from 'chokidar';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { setPreviewPassword } from './server';
-import { parseAgentResponse, parseFileAction, parseAppAction } from './agent-response';
+import { parseAgentResponse, parseFileAction, parseAppAction, normalizeAgentOutputToJson } from './agent-response';
 import { buildPublicAppEndpoint } from './sites';
 import { startAppServer } from './app-server';
 import { getTunnelUrl } from './tunnel';
@@ -480,7 +480,7 @@ export async function processAgentMessage(
         }
 
         history.push({ role: 'user', content: text });
-        history.push({ role: 'assistant', content: result.output });
+        history.push({ role: 'assistant', content: normalizeAgentOutputToJson(result.output, userId) });
         saveHistory(historyKey, history.slice(-40));
 
         const previewInfo = detectWebServer(result.output, agent.id);

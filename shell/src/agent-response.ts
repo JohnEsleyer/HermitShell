@@ -160,6 +160,30 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     return fallback;
 }
 
+
+export function toContractJson(parsed: ParsedAgentResponse, userId?: string | number): string {
+    const payload: Record<string, string> = {
+        message: asString(parsed.message).trim(),
+        terminal: asString(parsed.terminal).trim(),
+        action: asString(parsed.action).trim()
+    };
+
+    const resolvedUserId = userId !== undefined && userId !== null
+        ? asString(userId).trim()
+        : asString(parsed.userId).trim();
+
+    if (resolvedUserId) {
+        payload.userId = resolvedUserId;
+    }
+
+    return JSON.stringify(payload);
+}
+
+export function normalizeAgentOutputToJson(rawOutput: string, userId?: string | number): string {
+    const parsed = parseAgentResponse(rawOutput);
+    return toContractJson(parsed, userId);
+}
+
 export function parseFileAction(action: string): string | null {
     const normalized = asString(action).trim();
     const upper = normalized.toUpperCase();

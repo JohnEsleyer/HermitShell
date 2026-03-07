@@ -29,7 +29,7 @@ Welcome to the official documentation for **HermitShell**, the autonomous AI age
 ## 📝 Notes
 
 - The dashboard terminology uses **Apps** (formerly "Sites").
-- Agent/controller interaction prefers a deterministic XML-tag contract (`<thought>`, `<message>`, `<terminal>`, `<action>`). JSON/labeled parsing remains for compatibility, and `panelActions` is legacy-only.
+- Agent/controller interaction expects agent XML-tag contracts (`<thought>`, `<message>`, `<terminal>`, `<action>`), then normalizes parsed structured fields into JSON for history/log rendering. JSON/labeled input parsing remains compatibility-only, and `panelActions` is legacy-only.
 
 
 7.  **[Legacy Compatibility Guide](./LEGACY_COMPATIBILITY.md)**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectContractFormat, hasStructuredContract, parseAgentResponse, parseFileAction } from '../src/agent-response';
+import { detectContractFormat, hasStructuredContract, normalizeAgentOutputToJson, parseAgentResponse, parseFileAction, toContractJson } from '../src/agent-response';
 
 describe('parseAgentResponse', () => {
   it('parses deterministic json payload', () => {
@@ -99,5 +99,25 @@ describe('parseFileAction', () => {
     expect(parseFileAction('FILE:invoice.txt')).toBe('invoice.txt');
     expect(parseFileAction('FILE:../secrets.txt')).toBeNull();
     expect(parseFileAction('')).toBeNull();
+  });
+});
+
+
+describe('JSON normalization helpers', () => {
+  it('normalizes XML contract output into canonical JSON log payload', () => {
+    const raw = '<message>I created a file for you</message> this text is ignored <action>GIVE:filename.txt</action>';
+    const normalized = normalizeAgentOutputToJson(raw, 6585507149);
+    expect(normalized).toBe('{"message":"I created a file for you","terminal":"","action":"GIVE:filename.txt","userId":"6585507149"}');
+  });
+
+  it('serializes parsed contracts with stable JSON keys', () => {
+    const payload = toContractJson({
+      userId: '123',
+      message: 'Done',
+      terminal: '',
+      action: 'APP:todo',
+      panelActions: []
+    });
+    expect(payload).toBe('{"message":"Done","terminal":"","action":"APP:todo","userId":"123"}');
   });
 });
