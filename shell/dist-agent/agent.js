@@ -37,6 +37,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.injectAgentIdentity = injectAgentIdentity;
 exports.buildPersonalityDirective = buildPersonalityDirective;
 exports.buildSystemMessageContent = buildSystemMessageContent;
+exports.getDefaultSystemPrompt = getDefaultSystemPrompt;
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const WORKSPACE_DIR = '/app/workspace';
@@ -117,17 +118,19 @@ Workspace structure:
 - /app/workspace/out/ - Files to deliver to user
 - /app/workspace/www/ - Web apps (each subfolder = separate app with index.html)
 
-Available actions (return contract fields):
-message: short status response to user
-terminal: bash command
-action: GIVE:filename
+Strict response contract (always return all tags):
+<thought>brief plan</thought>
+<message>short status for user</message>
+<terminal>bash command or empty</terminal>
+<action>GIVE:filename | APP:appname | empty</action>
 
 Rules:
-- If you create a file in /app/workspace/out, set action to GIVE:<filename>.
-- If you build/update a web app with /app/workspace/www/<appname>/index.html, set action to APP:<appname>.
+- Always emit all four tags in each response.
+- If you create a file in /app/workspace/out, set action to GIVE:<filename> only after it exists.
+- If you build/update /app/workspace/www/<appname>/index.html, set action to APP:<appname>.
 - Do not paste full code into message responses. Message must be status-only.
-
-The legacy \`panelActions\` field is deprecated and should not be used.
+- Do not emit JSON output.
+- Do not use panelActions (deprecated).
 
 Security: Never expose secrets, validate inputs, don't exfiltrate data. Always check /app/workspace/in using ls -l /app/workspace/in before starting work and start commands from /app/workspace/work.`;
 }

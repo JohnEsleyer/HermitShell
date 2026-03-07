@@ -7,6 +7,7 @@ import { createAuditLog, getAgentById, getAllSettings, getSetting, getActiveMeet
 import { sendApprovalRequest } from './telegram';
 import { searchRagMemories, initWorkspaceDatabases, workspaceDataExists } from './workspace-db';
 import { buildSkillsPromptContext } from './skills';
+import { ensureWorkspaceRuntimeAssets } from './runtime-assets';
 
 import {
     calculateCpuPercent,
@@ -57,19 +58,7 @@ const CACHE_DIR = path.join(__dirname, '../../data/cache');
 
 
 function ensureWorkspaceAgentRuntime(workspacePath: string): void {
-    const sourceAgentPath = path.join(__dirname, '../dist-agent/agent.js');
-    const targetAgentPath = path.join(workspacePath, 'agent.js');
-
-    if (!fs.existsSync(sourceAgentPath)) {
-        throw new Error(`Missing runtime agent bundle at ${sourceAgentPath}. Run 'npm run build:agent' in shell/.`);
-    }
-
-    const shouldCopy = !fs.existsSync(targetAgentPath)
-        || fs.statSync(sourceAgentPath).mtimeMs > fs.statSync(targetAgentPath).mtimeMs;
-
-    if (shouldCopy) {
-        fs.copyFileSync(sourceAgentPath, targetAgentPath);
-    }
+    ensureWorkspaceRuntimeAssets(workspacePath, __dirname);
 }
 
 const LABEL_PREFIX = 'hermitshell.';
