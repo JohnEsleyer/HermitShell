@@ -32,7 +32,7 @@ A lightweight **libSQL (SQLite compatibility)** implementation using `@libsql/cl
 ### 4. Telegram Bridge (`telegram.ts`)
 - `handleTelegramUpdate()`: Routes message, documents, and callback queries to the appropriate agent.
 - `startFileWatcher()`: Uses **Chokidar** to monitor each agent's `/out/` directory.
-- `processAgentMessage()`: Parses tagged contract output (`<message>`, `<terminal>`, `<action>`) and routes explicit `GIVE:<name>` actions from `/out/`. JSON and labeled formats are retained as compatibility fallbacks. Legacy `panelActions` should not be used for new behavior.
+- `processAgentMessage()`: Parses tagged contract output (`<message>`, `<terminal>`, `<action>`), routes explicit `GIVE:<name>` actions from `/out/`, then stores normalized JSON contract records for dashboard/telegram history (`message`, `terminal`, `action`, `userId`). Agent Test UI includes a `?` explainer for this XML→JSON flow. JSON and labeled inputs remain compatibility fallbacks. Legacy ad-hoc panel action channels should not be used for new behavior.
 - `sendApprovalRequest()`: Sends an internet-access prompt to the operator for HITL verification; operator replies with plain-text **Yes**/**No**.
 - `startCalendarScheduler()`: CRON-based scheduler that triggers calendar events at specified times.
 
@@ -57,14 +57,14 @@ The Orchestrator:
 2.  Bypasses normal auth check for this internal route.
 3.  Retrieves the provider-specific API key (OpenAI/Anthropic/etc.) from the `settings` table.
 4.  Constructs the request and forwards it to the actual LLM provider.
-5.  Returns the raw LLM response (tag contract preferred) back to the container.
+5.  Returns LLM output to the container, where agent flow emits XML tags; orchestrator then normalizes parsed fields to JSON for persisted logs/history.
 
 This ensures **API keys never leave the host** and agents cannot be used as proxies for arbitrary internet traffic.
 
 ## 🔧 Additional Features
 
 ### Asset Procurement
-- Agents request files from the internet via `ASSET_REQUEST` panel action
+- Agents request files from the internet through explicit structured action instructions handled by the orchestrator
 - Users approve/decline internet requests via Telegram Yes/No replies
 - Approved assets are downloaded to `/workspace/in/`
 
@@ -72,6 +72,11 @@ This ensures **API keys never leave the host** and agents cannot be used as prox
 - CRON-based scheduling system
 - Events stored in database with status tracking
 - Automatically triggers agent at specified times
+
+### Agent Test Modal
+- Agent Test modal accepts XML input and persists parsed JSON logs.
+- Left column shows JSON log cards; right column simulates agent XML responses.
+- `?` help explains XML emission vs JSON persistence contract.
 
 ### Site Tunnel Sharing
 - Temporary tunnel links (30 min expiry)

@@ -32,4 +32,16 @@ describe('agent system prompt identity injection', () => {
     expect(output).toContain('You are Rain');
     expect(output).toContain('Act like Hu Tao');
   });
+
+
+  it('default prompt enforces XML-tag contract (not JSON)', async () => {
+    const { getDefaultSystemPrompt } = await loadAgentModule();
+    const output = getDefaultSystemPrompt();
+    expect(output).toContain('<thought>');
+    expect(output).toContain('<message>');
+    expect(output).toContain('<terminal>');
+    expect(output).toContain('<action>');
+    expect(output).toContain('Do not emit JSON output.');
+  });
+
 });

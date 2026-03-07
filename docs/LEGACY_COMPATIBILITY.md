@@ -21,12 +21,22 @@ Canonical fields:
 
 ## Legacy (Do Not Use for New Features)
 
-- `panelActions`
 - JSON envelope contract (still parsed but no longer primary)
 - Textual `ACTION: EXECUTE` contracts
 
 These may appear in older logs, tests, or historical docs for migration context.
 
+
+## Runtime Logging Shape
+
+Even when agent output is XML-tagged, orchestrator persistence/history is intentionally normalized to JSON objects:
+
+```json
+{"message":"Done","terminal":"","action":"GIVE:file.txt","userId":"123"}
+```
+
+This keeps dashboard rendering and downstream tooling deterministic while retaining XML as the agent emission contract. Agent Test dashboard includes a help (`?`) control explaining this dual-format flow.
+
 ## Rule of Thumb
 
-If you're adding new behavior, wire it through deterministic `action` values and explicit server-side handlers. Do not add new `panelActions` pathways.
+If you're adding new behavior, wire it through deterministic `action` values and explicit server-side handlers. Do not add new ad-hoc panel action pathways.

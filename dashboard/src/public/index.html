@@ -354,7 +354,16 @@
         .toast.error { border-left: 4px solid #ef4444; }
         .toast.success { border-left: 4px solid #10b981; }
         @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-</style>
+
+        @keyframes agentLogInsertFade {
+            from { opacity: 0; transform: translateY(-8px) scale(0.99); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .agent-log-insert {
+            animation: agentLogInsertFade 220ms ease-out;
+        }
+
+    </style>
 </head>
 
 <body class="h-screen flex text-slate-200">
@@ -488,7 +497,7 @@
             </div>
         </aside>
 
-        <main class="dashboard-main relative z-10 overflow-hidden">
+        <main class="dashboard-main relative overflow-hidden">
             <div id="default-creds-warning"
                 class="hidden bg-red-900/40 border-b border-red-500/50 text-red-200 px-6 py-3 flex justify-between items-center text-sm shadow-md">
                 <div class="flex items-center gap-3">
@@ -636,7 +645,7 @@
                         </div>
                     </div>
 
-                    <div id="workspace-modal" class="fixed inset-0 bg-black/70 z-[80] hidden items-center justify-center p-4">
+                    <div id="workspace-modal" class="fixed inset-0 bg-black/70 z-[120] hidden items-center justify-center p-4">
                         <div class="minimal-card w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
                             <div class="p-4 border-b border-slate-700 flex items-center justify-between">
                                 <h3 id="workspace-modal-title" class="text-white font-semibold">Workspace Explorer</h3>
@@ -1998,9 +2007,17 @@
             <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
                 <div>
                     <h3 id="agent-logs-title" class="text-lg font-bold text-white">Agent Test</h3>
-                    <p class="text-xs text-slate-400">Review agent contract logs, test payloads, and action effects.</p>
+                    <p class="text-xs text-slate-400">Agents emit XML. HermitShell parses tags and stores normalized JSON logs.</p>
                 </div>
-                <button onclick="closeAgentLogsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleAgentContractHelp()" class="text-slate-300 hover:text-white border border-slate-600 rounded-full w-7 h-7 inline-flex items-center justify-center" title="How XML + JSON works">?</button>
+                    <button onclick="closeAgentLogsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+            <div id="agent-contract-help" class="hidden px-4 py-3 border-b border-slate-700 bg-slate-950/60 text-xs text-slate-200 space-y-1">
+                <div><strong>Agent output format:</strong> XML tags (for example: <code>&lt;message&gt;...&lt;/message&gt;</code>, <code>&lt;action&gt;GIVE:file.txt&lt;/action&gt;</code>).</div>
+                <div><strong>System log format:</strong> JSON objects (for example: <code>{"message":"...","terminal":"...","action":"...","userId":"..."}</code>).</div>
+                <div>This keeps agent prompting deterministic while making logs easier to search/render.</div>
             </div>
             <div class="p-4 border-b border-slate-700 bg-slate-900/40 grid grid-cols-1 md:grid-cols-6 gap-2 items-end">
                 <div class="md:col-span-2">
@@ -4022,7 +4039,7 @@ Describe how the agent should behave.` })
         }
 
         async function testAgent_DEPRECATED(id, name) {
-            const message = `Test prompt from dashboard for ${name}. Respond with your status and current capabilities in JSON.`;
+            const message = `Test prompt from dashboard for ${name}. Respond with your status and current capabilities using XML tags (<message>, <terminal>, <action>).`;
             setTestAgentState(id, 'loading');
 
             document.getElementById('test-modal').classList.remove('hidden');
@@ -4569,7 +4586,15 @@ Describe how the agent should behave.` })
         function closeAgentLogsModal() {
             document.getElementById('agent-logs-modal').classList.add('hidden');
             document.getElementById('agent-logs-modal').classList.remove('flex');
+            const help = document.getElementById('agent-contract-help');
+            if (help) help.classList.add('hidden');
             activeLogsAgentId = null;
+        }
+
+        function toggleAgentContractHelp() {
+            const help = document.getElementById('agent-contract-help');
+            if (!help) return;
+            help.classList.toggle('hidden');
         }
 
         async function populateAgentLogsUserDropdown() {
@@ -4655,7 +4680,7 @@ Describe how the agent should behave.` })
             const payload = document.getElementById('agent-xml-test-input').value;
             if (!payload?.trim()) return showToast('XML payload is required.');
             const out = document.getElementById('agent-logs-content');
-            out.innerHTML = '<div class="text-slate-300">Running XML contract test...</div>';
+            out.insertAdjacentHTML('afterbegin', '<div class="text-slate-300 text-xs">Running XML contract test...</div>');
             const res = await fetch(`/api/agent-tests/${activeLogsAgentId}/xml-contract`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -4663,10 +4688,21 @@ Describe how the agent should behave.` })
             });
             const data = await res.json();
             if (data.error) {
-                out.innerHTML = `<div class="text-red-400">${escapeHtml(data.error)}</div>`;
-            } else {
-                out.innerHTML = `<div class="bg-purple-950/30 border border-purple-700/70 rounded-lg p-3"><div class="text-xs text-purple-300 mb-2">XML Contract Agent Test</div><pre class="text-xs text-purple-200 whitespace-pre-wrap">${escapeHtml(JSON.stringify(data, null, 2))}</pre></div>`;
+                out.insertAdjacentHTML('afterbegin', `<div class="text-red-400 text-xs">XML Contract Test failed: ${escapeHtml(data.error)}</div>`);
+                return;
             }
+
+            const parsed = data?.parsed || {};
+            const effects = (data?.actionEffects || []).map((e) => `<li>${escapeHtml(String(e))}</li>`).join('');
+            const inserted = `<div class="bg-slate-800/70 border border-purple-700/60 rounded-lg p-3 space-y-2 agent-log-insert">
+                <div class="flex justify-between text-xs text-slate-400"><span>New response</span><span>✅ JSON parsed</span></div>
+                <div class="text-[10px] inline-flex px-2 py-1 rounded border bg-slate-700/60 text-slate-200 border-slate-600">dashboard</div>
+                <pre class="text-xs text-green-300 whitespace-pre-wrap">${escapeHtml(JSON.stringify(parsed, null, 2))}</pre>
+                <div><span class="text-slate-400 text-xs">Responding to:</span> <span class="text-slate-200">Run XML Contract Test button clicked</span></div>
+                <div><span class="text-slate-400 text-xs">Detected system actions:</span><ul class="list-disc ml-5 text-slate-200">${effects || '<li>None</li>'}</ul></div>
+            </div>`;
+            out.insertAdjacentHTML('afterbegin', inserted);
+            setTimeout(() => loadAgentInteractions(), 260);
         }
 
         async function fetchAPI(endpoint, options = {}) {

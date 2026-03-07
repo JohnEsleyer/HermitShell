@@ -102,16 +102,20 @@ Persistent data that doesn't fit in the DB is stored in the `data/` directory:
 
 ## 📅 Calendar Events (calendar.db)
 
-The calendar system allows agents to schedule future tasks that trigger automatically:
+The calendar system allows agents to schedule future tasks that trigger automatically.
 
-- Agents create events using `CALENDAR_CREATE` panel action
-- Events store: title, prompt, start_time, end_time, target_user_id, color/symbol, optional recurrence_cron
-- `calendar_event_runs` stores execution history (run status + result message) for UI timeline rendering
-- When the scheduled time arrives, the system triggers the agent with the stored prompt
-- **Recurring tasks**: The agent must schedule the NEXT event in its response
-- This creates a cron-like self-prompting loop without actual cron jobs
-- Shown in the Calendar Dashboard in the control panel
-- User can manually manage events through the dashboard
+Primary tables in each workspace `calendar.db`:
+- `agent_calendar`: source of scheduled tasks (`task_name`, `instructions`, `scheduled_at`, recurrence fields, status)
+- `task_history`: execution records (`calendar_id`, `executed_at`, `agent_response`, `success`)
+
+HermitShell also keeps compatibility tables (`calendar_events`, `calendar_event_runs`) for existing dashboard APIs.
+
+Behavior:
+- Agent inserts/upserts rows in `agent_calendar` using SQL (from XML contract command flow).
+- Scheduler claims due rows (`status='pending'` and `scheduled_at <= now`) and runs `instructions` as the prompt.
+- Run output is normalized to JSON logs/history and persisted.
+- For recurring tasks (`is_recurring=1` + `cron_expression`), scheduler computes and stores next run, then resets status to `pending`.
+- Calendar dashboard reads scheduled tasks and current state.
 
 ## 🧠 RAG Memory (rag.db)
 

@@ -1,13 +1,13 @@
 import { getAgentByToken, isAllowed, getBudget, updateSpend, canSpend, updateAuditLog, getAgentById, getSetting, getOperator, getActiveMeetings, createMeeting, updateMeetingTranscript, closeMeeting, getAllAgents, createAgentRuntimeLog } from './db';
 import { spawnAgent, docker, getCubicleStatus, stopCubicle, removeCubicle, listContainers } from './docker';
-import { claimDueCalendarEvents as wsClaimDueCalendarEvents, updateCalendarEvent as wsUpdateCalendarEvent, getCalendarEvents as wsGetCalendarEvents, createCalendarEvent as wsCreateCalendarEvent, deleteCalendarEvent as wsDeleteCalendarEvent, initWorkspaceDatabases } from './workspace-db';
+import { claimDueCalendarEvents as wsClaimDueCalendarEvents, updateCalendarEvent as wsUpdateCalendarEvent, getCalendarEvents as wsGetCalendarEvents, createCalendarEvent as wsCreateCalendarEvent, deleteCalendarEvent as wsDeleteCalendarEvent, initWorkspaceDatabases, completeCalendarTaskHistory as wsCompleteCalendarTaskHistory } from './workspace-db';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as chokidar from 'chokidar';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { setPreviewPassword } from './server';
-import { parseAgentResponse, parseFileAction, parseAppAction } from './agent-response';
+import { parseAgentResponse, parseFileAction, parseAppAction, normalizeAgentOutputToJson } from './agent-response';
 import { buildPublicAppEndpoint } from './sites';
 import { startAppServer } from './app-server';
 import { getTunnelUrl } from './tunnel';
@@ -480,7 +480,7 @@ export async function processAgentMessage(
         }
 
         history.push({ role: 'user', content: text });
-        history.push({ role: 'assistant', content: result.output });
+        history.push({ role: 'assistant', content: normalizeAgentOutputToJson(result.output, userId) });
         saveHistory(historyKey, history.slice(-40));
 
         const previewInfo = detectWebServer(result.output, agent.id);
@@ -883,17 +883,9 @@ export function startCalendarScheduler(): void {
                             await smartReply(agent.telegram_token, event.target_user_id, result.output);
                         }
 
-                        await wsUpdateCalendarEvent(event.id, agentId, {
-                            status: 'completed',
-                            completed_at: new Date().toISOString(),
-                            last_error: null
-                        }, userId);
+                        await wsCompleteCalendarTaskHistory(event as any, agentId, userId, true, result.output || 'ok');
                     } catch (e: any) {
-                        await wsUpdateCalendarEvent(event.id, agentId, {
-                            status: 'failed',
-                            completed_at: new Date().toISOString(),
-                            last_error: String(e?.message || e).slice(0, 500)
-                        }, userId);
+                        await wsCompleteCalendarTaskHistory(event as any, agentId, userId, false, String(e?.message || e));
                     }
                 }
             }
@@ -987,114 +979,6 @@ export async function sendFileViaTelegram(token: string, chatId: number, filePat
         console.error(`[File] Error sending: ${err}`);
         return false;
     }
-}
-
-async function executePanelActions(agentId: number, userId: number, actions: string[]): Promise<string[]> {
-    const results: string[] = [];
-    for (const actionStr of actions) {
-        try {
-            const [action, ...params] = actionStr.split(':');
-            const paramStr = params.join(':');
-
-            switch (action.trim()) {
-                case 'CALENDAR_CREATE': {
-                    const parts = paramStr.split('|');
-                    if (parts.length < 3) {
-                        results.push(`❌ Error: CALENDAR_CREATE requires at least title, prompt, and start_time.`);
-                        break;
-                    }
-
-                    let title, prompt, start, end;
-                    if (parts.length === 3) {
-                        // Exactly 3 parts: title|prompt|start
-                        title = parts[0].trim();
-                        prompt = parts[1].trim();
-                        start = parts[2].trim();
-                        end = null;
-                    } else {
-                        // 4 or more parts: title|prompt...|start|end
-                        title = parts[0].trim();
-                        end = parts[parts.length - 1]?.trim() || null;
-                        start = parts[parts.length - 2]?.trim();
-                        prompt = parts.slice(1, parts.length - 2).join('|').trim();
-                    }
-
-                    await initWorkspaceDatabases(agentId, userId);
-                    const id = await wsCreateCalendarEvent({
-                        agent_id: agentId,
-                        title: title || 'Untitled Event',
-                        prompt: prompt || 'Event triggered',
-                        start_time: start || new Date().toISOString(),
-                        end_time: end,
-                        target_user_id: userId
-                    }, userId);
-                    results.push(`✅ Created event #${id}: ${title}`);
-                    break;
-                }
-                case 'CALENDAR_UPDATE': {
-                    const parts = paramStr.split('|');
-                    const id = parseInt(parts[0]?.trim() || '');
-                    if (isNaN(id)) {
-                        results.push(`❌ Error: CALENDAR_UPDATE requires a valid event ID.`);
-                        break;
-                    }
-
-                    let title, prompt, start, end;
-                    if (parts.length === 2) {
-                        // id|title
-                        title = parts[1].trim();
-                    } else if (parts.length === 3) {
-                        // id|title|prompt
-                        title = parts[1].trim();
-                        prompt = parts[2].trim();
-                    } else if (parts.length === 4) {
-                        // id|title|prompt|start
-                        title = parts[1].trim();
-                        prompt = parts[2].trim();
-                        start = parts[3].trim();
-                    } else if (parts.length >= 5) {
-                        // id|title|prompt...|start|end
-                        title = parts[1].trim();
-                        end = parts[parts.length - 1]?.trim();
-                        start = parts[parts.length - 2]?.trim();
-                        prompt = parts.slice(2, parts.length - 2).join('|').trim();
-                    }
-
-                    await wsUpdateCalendarEvent(id, agentId, {
-                        title: title || undefined,
-                        prompt: prompt || undefined,
-                        start_time: start || undefined,
-                        end_time: end || undefined
-                    }, userId);
-                    results.push(`✅ Updated event #${id}`);
-                    break;
-                }
-                case 'CALENDAR_DELETE': {
-                    const id = parseInt(paramStr.trim());
-                    if (!isNaN(id)) {
-                        await wsDeleteCalendarEvent(id, agentId, userId);
-                        results.push(`✅ Deleted event #${id}`);
-                    }
-                    break;
-                }
-                case 'CALENDAR_LIST': {
-                    const events = await wsGetCalendarEvents(agentId, userId);
-                    if (events.length === 0) {
-                        results.push(`📅 No scheduled events.`);
-                    } else {
-                        const lines = events.map((e: any) => `• [#${e.id}] ${e.title} (${e.start_time}) - ${e.status}`);
-                        results.push(`📅 *Your Events:*\n${lines.join('\n')}`);
-                    }
-                    break;
-                }
-                default:
-                    results.push(`⚠️ Unknown action: ${action}`);
-            }
-        } catch (err: any) {
-            results.push(`❌ Error in action ${actionStr}: ${err.message}`);
-        }
-    }
-    return results;
 }
 
 let fileWatcher: chokidar.FSWatcher | null = null;

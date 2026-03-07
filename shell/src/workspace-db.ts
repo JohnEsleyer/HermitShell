@@ -35,6 +35,73 @@ interface CalendarEvent {
     updated_at: string;
 }
 
+
+interface AgentCalendarRow {
+    id: number;
+    task_name: string;
+    instructions: string;
+    scheduled_at: string;
+    is_recurring: number;
+    cron_expression: string | null;
+    status: string;
+    last_run_at: string | null;
+    next_run_at: string | null;
+    created_at: string;
+}
+
+function mapAgentCalendarToCalendarEvent(row: AgentCalendarRow, agentId: number, userId: number): CalendarEvent {
+    return {
+        id: Number(row.id),
+        agent_id: agentId,
+        title: String(row.task_name || 'Scheduled Task'),
+        prompt: String(row.instructions || ''),
+        start_time: String(row.scheduled_at || ''),
+        end_time: null,
+        target_user_id: userId,
+        color: null,
+        symbol: '⏰',
+        recurrence_cron: row.cron_expression || null,
+        status: row.status === 'pending' ? 'scheduled' : row.status,
+        last_error: null,
+        started_at: null,
+        completed_at: row.last_run_at || null,
+        created_at: String(row.created_at || new Date().toISOString()),
+        updated_at: String(row.next_run_at || row.last_run_at || row.created_at || new Date().toISOString())
+    };
+}
+
+function computeNextRunAt(cronExpression: string, fromDate: Date = new Date()): string | null {
+    const parts = String(cronExpression || '').trim().split(/\s+/);
+    if (parts.length !== 5) return null;
+
+    const [minRaw, hourRaw, dayRaw, monthRaw, weekRaw] = parts;
+    if (dayRaw !== '*' || monthRaw !== '*') return null;
+
+    const minute = Number(minRaw);
+    const hour = Number(hourRaw);
+    if (Number.isNaN(minute) || Number.isNaN(hour)) return null;
+
+    const base = new Date(fromDate.getTime());
+    base.setSeconds(0, 0);
+
+    const candidate = new Date(base.getTime());
+    candidate.setMinutes(minute);
+    candidate.setHours(hour);
+
+    if (weekRaw === '*') {
+        if (candidate <= base) candidate.setDate(candidate.getDate() + 1);
+        return candidate.toISOString();
+    }
+
+    const targetWeekday = Number(weekRaw);
+    if (Number.isNaN(targetWeekday) || targetWeekday < 0 || targetWeekday > 6) return null;
+
+    let daysAhead = (targetWeekday - candidate.getDay() + 7) % 7;
+    if (daysAhead === 0 && candidate <= base) daysAhead = 7;
+    candidate.setDate(candidate.getDate() + daysAhead);
+    return candidate.toISOString();
+}
+
 interface RagMemory {
     id: number;
     agent_id: number;
@@ -104,6 +171,36 @@ export async function initWorkspaceDatabases(agentId: number, userId: number = 0
         )
     `);
 
+    await calendarClient.execute(`
+        CREATE TABLE IF NOT EXISTS agent_calendar (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_name TEXT NOT NULL,
+            instructions TEXT NOT NULL,
+            scheduled_at DATETIME NOT NULL,
+            is_recurring BOOLEAN DEFAULT 0,
+            cron_expression TEXT,
+            status TEXT CHECK(status IN ('pending', 'running', 'completed', 'failed')) DEFAULT 'pending',
+            last_run_at DATETIME,
+            next_run_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    await calendarClient.execute(`
+        CREATE TABLE IF NOT EXISTS task_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            calendar_id INTEGER,
+            executed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            agent_response TEXT,
+            success BOOLEAN,
+            FOREIGN KEY (calendar_id) REFERENCES agent_calendar(id)
+        )
+    `);
+
+    await calendarClient.execute(`
+        CREATE INDEX IF NOT EXISTS idx_pending_tasks ON agent_calendar (scheduled_at, status)
+    `);
+
     await ragClient.execute(`
         CREATE TABLE IF NOT EXISTS rag_memories (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,7 +239,21 @@ export async function getCalendarEvents(agentId: number, userId: number = 0): Pr
         sql: 'SELECT * FROM calendar_events ORDER BY start_time ASC',
         args: []
     });
-    return rs.rows as unknown as CalendarEvent[];
+
+    const out = rs.rows as unknown as CalendarEvent[];
+    try {
+        const agentCalendar = await client.execute({
+            sql: `SELECT * FROM agent_calendar ORDER BY scheduled_at ASC`,
+            args: []
+        });
+        for (const row of agentCalendar.rows as unknown as AgentCalendarRow[]) {
+            out.push(mapAgentCalendarToCalendarEvent(row, agentId, userId));
+        }
+    } catch {
+        // agent_calendar may not exist yet in older workspaces
+    }
+
+    return out.sort((a, b) => String(a.start_time).localeCompare(String(b.start_time)));
 }
 
 export async function getUpcomingCalendarEvents(agentId: number, userId: number = 0, limit: number = 10): Promise<CalendarEvent[]> {
@@ -231,6 +342,31 @@ export async function claimDueCalendarEvents(agentId: number, userId: number = 0
         }
     }
 
+    try {
+        const dueAgent = await client.execute({
+            sql: `SELECT * FROM agent_calendar
+                  WHERE status = 'pending'
+                    AND scheduled_at <= ?
+                  ORDER BY scheduled_at ASC`,
+            args: [now]
+        });
+
+        for (const row of dueAgent.rows as unknown as AgentCalendarRow[]) {
+            const update = await client.execute({
+                sql: `UPDATE agent_calendar SET status = 'running', last_run_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'`,
+                args: [row.id]
+            });
+            if (Number(update.rowsAffected || 0) <= 0) continue;
+
+            claimed.push({
+                ...mapAgentCalendarToCalendarEvent(row, agentId, userId),
+                status: 'running'
+            });
+        }
+    } catch {
+        // agent_calendar may not exist yet
+    }
+
     return claimed;
 }
 
@@ -285,4 +421,50 @@ export function getWorkspaceDataDir(agentId: number, userId: number): string {
 export function workspaceDataExists(agentId: number, userId: number): boolean {
     const dataDir = getWorkspacePath(agentId, userId);
     return fs.existsSync(dataDir);
+}
+
+
+export async function completeCalendarTaskHistory(event: CalendarEvent, agentId: number, userId: number, success: boolean, agentResponse: string): Promise<void> {
+    const client = getCalendarClient(agentId, userId);
+
+    try {
+        const agentCalendar = await client.execute({ sql: 'SELECT * FROM agent_calendar WHERE id = ?', args: [event.id] });
+        if (agentCalendar.rows.length > 0) {
+            await client.execute({
+                sql: 'INSERT INTO task_history (calendar_id, agent_response, success) VALUES (?, ?, ?)',
+                args: [event.id, String(agentResponse || '').slice(0, 2000), success ? 1 : 0]
+            });
+
+            if (success) {
+                const row = agentCalendar.rows[0] as unknown as AgentCalendarRow;
+                const recurring = Number(row.is_recurring || 0) === 1 && !!row.cron_expression;
+                if (recurring) {
+                    const nextRunAt = computeNextRunAt(String(row.cron_expression || ''), new Date());
+                    await client.execute({
+                        sql: 'UPDATE agent_calendar SET status = ?, next_run_at = ?, scheduled_at = ? WHERE id = ?',
+                        args: ['pending', nextRunAt, nextRunAt || row.scheduled_at, event.id]
+                    });
+                } else {
+                    await client.execute({
+                        sql: 'UPDATE agent_calendar SET status = ? WHERE id = ?',
+                        args: ['completed', event.id]
+                    });
+                }
+            } else {
+                await client.execute({
+                    sql: 'UPDATE agent_calendar SET status = ? WHERE id = ?',
+                    args: ['failed', event.id]
+                });
+            }
+            return;
+        }
+    } catch {
+        // legacy table flow below
+    }
+
+    await updateCalendarEvent(event.id, agentId, {
+        status: success ? 'completed' : 'failed',
+        completed_at: new Date().toISOString(),
+        last_error: success ? null : String(agentResponse || '').slice(0, 500)
+    }, userId);
 }

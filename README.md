@@ -350,20 +350,20 @@ Each agent displays a status indicator:
 
 The status is automatically updated based on agent activity.
 
-### Calendar Events (CRON-based Scheduling)
+### Calendar Events (Self-CRON Scheduling)
 
-Agents can schedule future tasks using calendar events:
+HermitShell supports scheduled and recurring tasks through `workspace/data/calendar.db`.
 
-- **How it works**: Agent uses `CALENDAR_CREATE` panel action to schedule events
-- **CRON-like behavior**: Events trigger at specified times automatically
-- **Future prompts**: The prompt becomes the new user message when the event fires
-- **Recurring tasks**: Schedule the NEXT event in your response to create loops
-- **Display**: Upcoming events shown in Calendar Dashboard in the control panel
-- **Management**: User can manually manage events through the dashboard
+- **Schema (agent_calendar/task_history)**: standard tables are created automatically in each workspace DB.
+- **How it works**: agent writes SQL to `calendar.db` (for example `INSERT INTO agent_calendar (...) VALUES (...)`).
+- **Triggering**: scheduler claims due tasks and runs the stored `instructions` as the next agent prompt.
+- **Recurring tasks**: when `is_recurring = 1` and `cron_expression` is set, HermitShell computes `next_run_at`, updates `scheduled_at`, and returns task to `pending`.
+- **Auditability**: each run is recorded in `task_history` plus runtime logs.
+- **Display**: Calendar dashboard reads scheduled tasks and execution state.
 
-```
-Example: User says "Tomorrow at 9AM, analyze the data"
-Agent creates: CALENDAR_CREATE:Data Analysis|Analyze the CSV file|2026-02-28T09:00:00Z|
+```sql
+INSERT INTO agent_calendar (task_name, instructions, scheduled_at, is_recurring, cron_expression)
+VALUES ('Exercise Reminder', 'Remind the user to exercise now', '2026-03-07 11:00:00', 0, NULL);
 ```
 
 ### Apps Dashboard (Web Apps)
@@ -385,7 +385,7 @@ The Apps dashboard shows web apps created by agents:
 
 Since agents are air-gapped, they can request assets from the internet:
 
-1. Agent sends `ASSET_REQUEST` panel action with URL and description
+1. Agent asks for an approved asset download through explicit instruction in its XML contract message/action flow
 2. User receives notification to approve/decline
 3. Approved assets are downloaded to `/workspace/in/`
 
@@ -397,9 +397,9 @@ Apps can have Playwright screenshots captured:
 - Screenshots are stored in `data/screenshots/`
 - Available for preview in the dashboard
 
-### Deterministic Agent Tag Contract
+### Deterministic Agent XML Contract + JSON Logs
 
-Agent replies should use XML-style tags so the orchestrator can deterministically route execution:
+Agent replies should use XML-style tags. The orchestrator parses those tags, executes actions, and then normalizes structured history/runtime logs as JSON objects for stable downstream processing:
 
 ```text
 <thought>
@@ -421,9 +421,20 @@ GIVE:report.pdf
 - `<terminal>`: optional shell command for container execution
 
 **Compatibility**
-- ✅ Primary: XML tags (`thought`, `message`, `terminal`, `action`)
-- ⚠️ Fallback-only: JSON envelope and labeled `message:/terminal:/action:` formats
-- ❌ Deprecated for new behavior: `panelActions`, text `ACTION: EXECUTE` formats
+- ✅ Agent emission contract: XML tags (`thought`, `message`, `terminal`, `action`)
+- ✅ Orchestrator internal log contract: normalized JSON (`{"message":"...","terminal":"...","action":"...","userId":"..."}`)
+- ⚠️ Compatibility input parsing: legacy JSON envelope and labeled `message:/terminal:/action:` formats
+- ❌ Deprecated for new behavior: text `ACTION: EXECUTE` formats
+- ℹ️ Agent Test modal includes a help (`?`) explainer describing XML agent output vs JSON log normalization.
+
+### Agent Test Modal (XML Input → JSON Logs)
+
+The Agent Test modal is intentionally split:
+
+- **Left panel**: scrollable normalized JSON logs (`message`, `terminal`, `action`, `userId`).
+- **Right panel**: XML Contract Input used to simulate agent output.
+- **Run XML Contract Test**: parses XML, inserts a JSON log card at the top with a smooth transition, and executes action effects (for `GIVE:<file>`, file must exist in `/workspace/out/` to deliver via Telegram).
+- **`?` button**: explains why HermitShell uses XML for agent emission but JSON for persisted logs.
 
 ### Long-Term RAG Memory
 
@@ -546,7 +557,7 @@ TASK: Analyze the data file
 Requires operator approval before spawning sub-agent.
 
 ### Legacy Controls (for migration context only)
-Older versions used `panelActions` (calendar, asset requests, ClawMotion).
+Older versions used legacy ad-hoc action channels (calendar, asset requests, ClawMotion).
 
 These are now **legacy/deprecated** and should not be used for new implementations.
 For new work, rely on deterministic XML-tag contract fields plus explicit server-side APIs.

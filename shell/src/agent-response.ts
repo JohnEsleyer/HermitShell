@@ -3,7 +3,6 @@ export type ParsedAgentResponse = {
     message: string;
     action: string;
     terminal: string;
-    panelActions: string[];
 };
 
 function parseLabeledContract(rawOutput: string): ParsedAgentResponse | null {
@@ -18,7 +17,6 @@ function parseLabeledContract(rawOutput: string): ParsedAgentResponse | null {
         message: asString(match[1]).trim(),
         terminal: asString(terminalMatch?.[1]).trim(),
         action: asString(actionMatch?.[1]).trim(),
-        panelActions: []
     };
 }
 
@@ -41,7 +39,6 @@ function parseTaggedContract(rawOutput: string): ParsedAgentResponse | null {
         message: message || text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim(),
         terminal,
         action,
-        panelActions: []
     };
 }
 
@@ -65,14 +62,11 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
 
         if (!hasContractField) return null;
 
-        const panelActions: string[] = [];
-
         return {
             userId: (parsed as any).userId !== undefined ? asString((parsed as any).userId) : undefined,
             message: asString((parsed as any).message).trim(),
             action: asString((parsed as any).action).trim(),
-            terminal: asString((parsed as any).terminal).trim(),
-            panelActions
+            terminal: asString((parsed as any).terminal).trim()
         };
     } catch {
         return null;
@@ -125,7 +119,6 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
         message: asString(rawOutput).trim(),
         action: '',
         terminal: '',
-        panelActions: []
     };
 
     const output = asString(rawOutput);
@@ -158,6 +151,30 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     }
 
     return fallback;
+}
+
+
+export function toContractJson(parsed: ParsedAgentResponse, userId?: string | number): string {
+    const payload: Record<string, string> = {
+        message: asString(parsed.message).trim(),
+        terminal: asString(parsed.terminal).trim(),
+        action: asString(parsed.action).trim()
+    };
+
+    const resolvedUserId = userId !== undefined && userId !== null
+        ? asString(userId).trim()
+        : asString(parsed.userId).trim();
+
+    if (resolvedUserId) {
+        payload.userId = resolvedUserId;
+    }
+
+    return JSON.stringify(payload);
+}
+
+export function normalizeAgentOutputToJson(rawOutput: string, userId?: string | number): string {
+    const parsed = parseAgentResponse(rawOutput);
+    return toContractJson(parsed, userId);
 }
 
 export function parseFileAction(action: string): string | null {
