@@ -25,7 +25,7 @@ import cookie from '@fastify/cookie';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
-import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract } from './agent-response';
+import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract, detectContractFormat } from './agent-response';
 import { listSkills, getSkill, createSkill, updateSkill, deleteSkill } from './skills';
 
 const PORT = process.env.PORT || 3000;
@@ -76,7 +76,8 @@ type AgentInteractionLog = {
         message: string;
         terminal: string;
         action: string;
-        jsonContractParsed: boolean;
+        structuredContract: boolean;
+        contractFormat: "xml" | "json" | "labeled" | "none";
     };
     responseTo?: string;
     actionEffects: string[];
@@ -132,7 +133,8 @@ function buildAgentInteractionLogs(agentId: number, userId: number): AgentIntera
                     message: parsed.message,
                     terminal: parsed.terminal,
                     action: parsed.action,
-                    jsonContractParsed: hasStructuredContract(content)
+                    structuredContract: hasStructuredContract(content),
+                    contractFormat: detectContractFormat(content)
                 },
                 responseTo: latestUserMessage || undefined,
                 actionEffects: summarizeActionEffects(agentId, userId, parsed.action)
@@ -209,6 +211,21 @@ export async function startServer() {
             await initWorkspaceDatabases(agentId, userId);
             await wsClearRagMemories(agentId, userId);
             return { success: true };
+        } catch (e: any) {
+            return reply.code(500).send({ error: e.message });
+        }
+    });
+
+    fastify.get('/api/agents/:id/memory/search', async (request: any, reply: any) => {
+        try {
+            const agentId = Number(request.params.id);
+            const userId = Number(request.query.userId) || 0;
+            const q = String(request.query.q || '').trim();
+            if (!q) return { memories: [] };
+
+            await initWorkspaceDatabases(agentId, userId);
+            const memories = await wsSearchRagMemories(agentId, userId, q, 25);
+            return { memories };
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
         }
@@ -443,7 +460,30 @@ export async function startServer() {
     fastify.get('/api/audit', async (request: any) => {
         const agentId = request.query.agentId ? Number(request.query.agentId) : undefined;
         const limit = request.query.limit ? Number(request.query.limit) : 50;
-        return await getAuditLogs(agentId, limit);
+        const status = String(request.query.status || '').trim().toLowerCase();
+        const search = String(request.query.search || '').trim().toLowerCase();
+
+        let logs = await getAuditLogs(agentId, limit);
+        if (status) {
+            logs = logs.filter((log) => String(log.status || '').toLowerCase().includes(status));
+        }
+        if (search) {
+            logs = logs.filter((log) => {
+                const haystack = [log.command, log.response_text, log.output_snippet, log.action_type]
+                    .map((v) => String(v || '').toLowerCase())
+                    .join(' ');
+                return haystack.includes(search);
+            });
+        }
+
+        return logs.map((log) => {
+            const contractSource = String(log.response_text || log.output_snippet || log.command || '');
+            return {
+                ...log,
+                structured_contract: hasStructuredContract(contractSource),
+                contract_format: detectContractFormat(contractSource)
+            };
+        });
     });
 
     fastify.get('/api/runtime-logs', async (request: any) => {
@@ -504,12 +544,13 @@ export async function startServer() {
             success: delivered,
             fileName: safeFileName,
             action: `GIVE:${safeFileName}`,
-            jsonContractParsed: true,
+            structuredContract: true,
+            contractFormat: "json",
             actionEffects: [delivered ? 'Telegram file delivery succeeded' : 'Telegram file delivery failed']
         };
     });
 
-    fastify.post('/api/agent-tests/:id/json-contract', async (request: any, reply: any) => {
+    fastify.post('/api/agent-tests/:id/xml-contract', async (request: any, reply: any) => {
         const agentId = Number(request.params.id);
         const { userId, payload } = request.body || {};
         const targetUserId = Number(userId || 0);
@@ -522,9 +563,10 @@ export async function startServer() {
         const parsed = parseAgentResponse(rawPayload);
         const effects = summarizeActionEffects(agent.id, targetUserId, parsed.action);
 
-        await createAgentRuntimeLog(agent.id, 'info', 'agent-test', 'JSON contract test executed', {
+        await createAgentRuntimeLog(agent.id, 'info', 'agent-test', 'XML contract test executed', {
             userId: targetUserId,
-            jsonContractParsed: hasStructuredContract(rawPayload),
+            structuredContract: hasStructuredContract(rawPayload),
+            contractFormat: detectContractFormat(rawPayload),
             action: parsed.action,
             actionEffects: effects
         });
@@ -532,8 +574,9 @@ export async function startServer() {
         return {
             raw: rawPayload,
             parsed,
-            jsonContractParsed: hasStructuredContract(rawPayload),
-            responseTo: 'Manual JSON contract test',
+            structuredContract: hasStructuredContract(rawPayload),
+            contractFormat: detectContractFormat(rawPayload),
+            responseTo: 'Manual XML contract test',
             actionEffects: effects
         };
     });

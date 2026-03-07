@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAgentResponse, parseFileAction } from '../src/agent-response';
+import { detectContractFormat, hasStructuredContract, parseAgentResponse, parseFileAction } from '../src/agent-response';
 
 describe('parseAgentResponse', () => {
   it('parses deterministic json payload', () => {
@@ -61,6 +61,17 @@ describe('parseAgentResponse', () => {
     expect(result.message).toBe('Created file');
     expect(result.terminal).toBe('echo hi > /app/workspace/out/a.txt');
     expect(result.action).toBe('GIVE:a.txt');
+  });
+
+  it('marks tagged XML contracts as structured', () => {
+    const payload = `<message>Done</message><terminal></terminal><action>GIVE:file.txt</action>`;
+    expect(hasStructuredContract(payload)).toBe(true);
+    expect(detectContractFormat(payload)).toBe('xml');
+  });
+
+  it('detects JSON contract format', () => {
+    const payload = '{"message":"Done","terminal":"","action":""}';
+    expect(detectContractFormat(payload)).toBe('json');
   });
 
   it('parses labeled contract fields without JSON envelope', () => {
