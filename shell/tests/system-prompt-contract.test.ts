@@ -10,11 +10,10 @@ describe('system_prompt contract examples', () => {
     expect(prompt).not.toContain('```json');
     expect(prompt).toContain('<thought>');
     expect(prompt).toContain('<message>');
-    expect(prompt).toContain('<terminal>');
+    expect(prompt).toContain('TERMINAL:');
     expect(prompt).toContain('<action>');
     expect(prompt).toContain('Do not emit JSON output.');
-    expect(prompt).toContain('parse your XML tags and store normalized JSON logs');
-    expect(prompt).toContain('agent_calendar');
-    expect(prompt).toContain('ClawMotion Video Workflow');
+    expect(prompt).toContain('<calendar>');
+    expect(prompt).toContain('Current System Time (UTC):');
   });
 });

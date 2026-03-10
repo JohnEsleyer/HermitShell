@@ -2,22 +2,31 @@ export type ParsedAgentResponse = {
     userId?: string;
     message: string;
     action: string;
-    terminal: string;
 };
 
-function parseLabeledContract(rawOutput: string): ParsedAgentResponse | null {
-    const text = asString(rawOutput);
-    const match = text.match(/(?:^|\n)\s*message\s*:\s*([\s\S]*?)(?:\n\s*terminal\s*:|\n\s*action\s*:|$)/i);
-    if (!match) return null;
+export interface CalendarItem {
+    datetime: string;
+    prompt: string;
+}
 
-    const terminalMatch = text.match(/(?:^|\n)\s*terminal\s*:\s*([\s\S]*?)(?:\n\s*action\s*:|$)/i);
-    const actionMatch = text.match(/(?:^|\n)\s*action\s*:\s*([^\n]*)/i);
+function asString(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (value === null || value === undefined) return '';
+    return String(value);
+}
 
-    return {
-        message: asString(match[1]).trim(),
-        terminal: asString(terminalMatch?.[1]).trim(),
-        action: asString(actionMatch?.[1]).trim(),
-    };
+export function extractCalendars(text: string): CalendarItem[] {
+    const results: CalendarItem[] = [];
+    const textStr = asString(text);
+    const regex = /<calendar>\s*<datetime>(.*?)<\/datetime>\s*<prompt>([\s\S]*?)<\/prompt>\s*<\/calendar>/gi;
+    let match;
+    while ((match = regex.exec(textStr)) !== null) {
+        results.push({
+            datetime: match[1].trim(),
+            prompt: match[2].trim()
+        });
+    }
+    return results;
 }
 
 function parseTaggedContract(rawOutput: string): ParsedAgentResponse | null {
@@ -29,23 +38,28 @@ function parseTaggedContract(rawOutput: string): ParsedAgentResponse | null {
     };
 
     const message = extract('message');
-    const terminal = extract('terminal');
     const action = extract('action');
     const thought = extract('thought');
-    const hasAnyTag = Boolean(message || terminal || action || thought || text.match(/<\/?(thought|message|terminal|action)>/i));
+    const hasAnyTag = Boolean(message || action || thought || text.match(/<\/?(thought|message|action)>/i));
     if (!hasAnyTag) return null;
 
     return {
         message: message || text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim(),
-        terminal,
         action,
     };
 }
 
-function asString(value: unknown): string {
-    if (typeof value === 'string') return value;
-    if (value === null || value === undefined) return '';
-    return String(value);
+function parseLabeledContract(rawOutput: string): ParsedAgentResponse | null {
+    const text = asString(rawOutput);
+    const match = text.match(/(?:^|\n)\s*message\s*:\s*([\s\S]*?)(?:\n\s*action\s*:|$)/i);
+    if (!match) return null;
+
+    const actionMatch = text.match(/(?:^|\n)\s*action\s*:\s*([^\n]*)/i);
+
+    return {
+        message: asString(match[1]).trim(),
+        action: asString(actionMatch?.[1]).trim(),
+    };
 }
 
 function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
@@ -55,7 +69,6 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
 
         const hasContractField = (
             Object.prototype.hasOwnProperty.call(parsed, 'message') ||
-            Object.prototype.hasOwnProperty.call(parsed, 'terminal') ||
             Object.prototype.hasOwnProperty.call(parsed, 'action') ||
             Object.prototype.hasOwnProperty.call(parsed, 'userId')
         );
@@ -66,7 +79,6 @@ function tryParseContractJson(candidate: string): ParsedAgentResponse | null {
             userId: (parsed as any).userId !== undefined ? asString((parsed as any).userId) : undefined,
             message: asString((parsed as any).message).trim(),
             action: asString((parsed as any).action).trim(),
-            terminal: asString((parsed as any).terminal).trim()
         };
     } catch {
         return null;
@@ -101,12 +113,12 @@ function extractInlineAction(text: string): string {
     if (!content.trim()) return '';
 
     const lines = content.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    const lineMatch = [...lines].reverse().find((line) => /^(GIVE|FILE|APP)\s*:/i.test(line));
+    const lineMatch = [...lines].reverse().find((line) => /^(GIVE|FILE|APP|TERMINAL|SKILL)\s*:/i.test(line));
     if (lineMatch) {
         return lineMatch.replace(/^['"`]|['"`]$/g, '').trim();
     }
 
-    const inline = content.match(/\b(GIVE|FILE|APP)\s*:\s*([^\s'"`]+)/i);
+    const inline = content.match(/\b(GIVE|FILE|APP|TERMINAL|SKILL)\s*:\s*([^\s'"`]+)/i);
     if (inline) {
         return `${inline[1].toUpperCase()}:${inline[2].trim()}`;
     }
@@ -118,7 +130,6 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
     const fallback: ParsedAgentResponse = {
         message: asString(rawOutput).trim(),
         action: '',
-        terminal: '',
     };
 
     const output = asString(rawOutput);
@@ -157,7 +168,6 @@ export function parseAgentResponse(rawOutput: string): ParsedAgentResponse {
 export function toContractJson(parsed: ParsedAgentResponse, userId?: string | number): string {
     const payload: Record<string, string> = {
         message: asString(parsed.message).trim(),
-        terminal: asString(parsed.terminal).trim(),
         action: asString(parsed.action).trim()
     };
 
@@ -211,4 +221,14 @@ export function parseSkillAction(action: string): string | null {
         return null;
     }
     return skillName;
+}
+
+export function parseTerminalAction(action: string): string | null {
+    const normalized = asString(action).trim();
+    if (!normalized.toUpperCase().startsWith('TERMINAL:')) return null;
+    let cmd = normalized.slice(9).trim();
+    if ((cmd.startsWith('"') && cmd.endsWith('"')) || (cmd.startsWith("'") && cmd.endsWith("'"))) {
+        cmd = cmd.slice(1, -1);
+    }
+    return cmd;
 }

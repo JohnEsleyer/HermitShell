@@ -106,6 +106,18 @@ Persistent data that doesn't fit in the DB is stored in the `data/` directory:
 
 The calendar system allows agents to schedule future tasks that trigger automatically.
 
+**Recommended Approach (new):** Use `<calendar>` tags in agent output:
+
+```text
+<calendar>
+<datetime>2026-03-10T08:00:00Z</datetime>
+<prompt>Remind user to drink water</prompt>
+</calendar>
+```
+
+The system automatically extracts these tags and inserts them into the database.
+
+**Legacy SQL Approach (still supported):**
 Primary tables in each workspace `calendar.db`:
 - `agent_calendar`: source of scheduled tasks (`task_name`, `instructions`, `scheduled_at`, recurrence fields, status)
 - `task_history`: execution records (`calendar_id`, `executed_at`, `agent_response`, `success`)
@@ -113,7 +125,7 @@ Primary tables in each workspace `calendar.db`:
 HermitShell also keeps compatibility tables (`calendar_events`, `calendar_event_runs`) for existing dashboard APIs.
 
 Behavior:
-- Agent inserts/upserts rows in `agent_calendar` using SQL (from XML contract command flow).
+- Agent outputs `<calendar>` tags (recommended) or inserts/upserts rows in `agent_calendar` using SQL.
 - Scheduler claims due rows (`status='pending'` and `scheduled_at <= now`) and runs `instructions` as the prompt.
 - Run output is normalized to JSON logs/history and persisted.
 - For recurring tasks (`is_recurring=1` + `cron_expression`), scheduler computes and stores next run, then resets status to `pending`.

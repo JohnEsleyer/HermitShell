@@ -26,6 +26,7 @@ A dedicated **Debian-based container** for each agent.
 | `/app/workspace/out/` | Files auto-delivered to user via Telegram |
 | `/app/workspace/www/` | Web apps (each subfolder = separate app with index.html) |
 | `/app/workspace/data/` | Workspace databases (`calendar.db`, future libsql files) |
+| `/app/workspace/work/terminal_logs.txt` | Log of all TERMINAL actions executed by the agent |
 
 **Workspace databases** (accessible via `/app/workspace/data/`):
 - `calendar.db`: Scheduled events that trigger agent prompts

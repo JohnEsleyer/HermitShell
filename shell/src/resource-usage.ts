@@ -51,6 +51,7 @@ export interface SystemResourcesSummary {
   hostMemoryUsedBytes: number;
   hostMemoryFreeBytes: number;
   hostMemoryPercent: number;
+  nodeProcessMemoryBytes: number;
   loadAverage: [number, number, number];
   cpuCount: number;
   uptimeSeconds: number;
@@ -120,11 +121,14 @@ export function summarizeSystemResources(host: HostResourceSnapshot, containers:
     ? Math.min(100, Math.max(0, containers.totalCpuPercent / host.cpuCount))
     : 0;
 
+  const nodeMemory = require('process').memoryUsage();
+
   return {
     hostMemoryTotalBytes: host.totalMemoryBytes,
     hostMemoryUsedBytes,
     hostMemoryFreeBytes,
     hostMemoryPercent,
+    nodeProcessMemoryBytes: nodeMemory.rss,
     loadAverage: host.loadAverage,
     cpuCount: host.cpuCount,
     uptimeSeconds: host.uptimeSeconds,

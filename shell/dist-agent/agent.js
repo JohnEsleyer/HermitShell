@@ -88,13 +88,15 @@ function loadSystemPrompt() {
 }
 function injectAgentIdentity(prompt) {
     const personality = PERSONALITY || 'Calm, precise, security-first, concise';
+    const currentUtc = new Date().toISOString();
     return prompt
         .split('{{AGENT_NAME|HermitShell Agent}}').join(AGENT_NAME)
         .split('{{AGENT_NAME}}').join(AGENT_NAME)
         .split('{{AGENT_ROLE|Autonomous execution specialist}}').join(AGENT_ROLE)
         .split('{{AGENT_ROLE}}').join(AGENT_ROLE)
         .split('{{AGENT_PERSONALITY|Calm, precise, security-first, concise}}').join(personality)
-        .split('{{AGENT_PERSONALITY}}').join(personality);
+        .split('{{AGENT_PERSONALITY}}').join(personality)
+        .split('{{CURRENT_UTC_TIME}}').join(currentUtc);
 }
 function buildPersonalityDirective() {
     if (!PERSONALITY.trim())
@@ -121,11 +123,11 @@ Workspace structure:
 Strict response contract (always return all tags):
 <thought>brief plan</thought>
 <message>short status for user</message>
-<terminal>bash command or empty</terminal>
-<action>GIVE:filename | APP:appname | empty</action>
+<action>TERMINAL:bash command | GIVE:filename | APP:appname | empty</action>
 
 Rules:
-- Always emit all four tags in each response.
+- Always emit all three tags in each response.
+- Use TERMINAL:command to execute bash commands.
 - If you create a file in /app/workspace/out, set action to GIVE:<filename> only after it exists.
 - If you build/update /app/workspace/www/<appname>/index.html, set action to APP:<appname>.
 - Do not paste full code into message responses. Message must be status-only.
@@ -162,14 +164,12 @@ async function callLLM(messages) {
     }
 }
 function parseLabeledResponse(text) {
-    const messageMatch = text.match(/(?:^|\n)\s*message\s*:\s*([\s\S]*?)(?:\n\s*terminal\s*:|\n\s*action\s*:|$)/i);
+    const messageMatch = text.match(/(?:^|\n)\s*message\s*:\s*([\s\S]*?)(?:\n\s*action\s*:|$)/i);
     if (!messageMatch)
         return null;
-    const terminalMatch = text.match(/(?:^|\n)\s*terminal\s*:\s*([\s\S]*?)(?:\n\s*action\s*:|$)/i);
     const actionMatch = text.match(/(?:^|\n)\s*action\s*:\s*([^\n]*)/i);
     return {
         message: (messageMatch[1] || '').trim(),
-        terminal: (terminalMatch?.[1] || '').trim(),
         action: (actionMatch?.[1] || '').trim(),
     };
 }
@@ -180,15 +180,13 @@ function parseTaggedResponse(text) {
         return match ? match[1].trim() : '';
     };
     const message = extract('message');
-    const terminal = extract('terminal');
     const action = extract('action');
     const thought = extract('thought');
-    const hasAnyTag = Boolean(message || terminal || action || thought || text.match(/<\/?(thought|message|terminal|action)>/i));
+    const hasAnyTag = Boolean(message || action || thought || text.match(/<\/?(thought|message|action)>/i));
     if (!hasAnyTag)
         return null;
     return {
         message: message || text.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim(),
-        terminal,
         action,
     };
 }
@@ -199,11 +197,10 @@ function parseResponse(text) {
             const parsed = JSON.parse(objectMatches[i]);
             if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
                 continue;
-            if (!('message' in parsed) && !('terminal' in parsed) && !('action' in parsed) && !('userId' in parsed))
+            if (!('message' in parsed) && !('action' in parsed) && !('userId' in parsed))
                 continue;
             return {
                 message: parsed.message || parsed.text || '',
-                terminal: parsed.terminal || parsed.command || '',
                 action: parsed.action || parsed.file || ''
             };
         }
@@ -294,13 +291,11 @@ async function handleSkillAction(action) {
 }
 function buildTaggedContract(response) {
     const message = (response.message || '').trim();
-    const terminal = (response.terminal || '').trim();
     const action = (response.action || '').trim();
     const thought = '';
     return [
         `<thought>${thought}</thought>`,
         `<message>${message}</message>`,
-        `<terminal>${terminal}</terminal>`,
         `<action>${action}</action>`
     ].join('\n');
 }
@@ -328,11 +323,25 @@ async function run() {
             log(`RESPONSE: ${response.message}`);
         }
         if (response.action) {
-            if (response.action.startsWith('SKILL:')) {
+            if (response.action.toUpperCase().startsWith('SKILL:')) {
                 log(`SKILL_ACTION: ${response.action}`);
                 const result = await handleSkillAction(response.action);
                 history.push({ role: 'assistant', content: buildTaggedContract(response) });
                 history.push({ role: 'system', content: result });
+                continue;
+            }
+            else if (response.action.toUpperCase().startsWith('TERMINAL:')) {
+                let cmd = response.action.slice(9).trim();
+                if ((cmd.startsWith('"') && cmd.endsWith('"')) || (cmd.startsWith("'") && cmd.endsWith("'"))) {
+                    cmd = cmd.slice(1, -1);
+                }
+                log(`TERMINAL_ACTION: ${cmd}`);
+                const output = await executeCommand(cmd);
+                const termLogPath = path.join(WORKSPACE_DIR, 'work', 'terminal_logs.txt');
+                const ts = new Date().toISOString();
+                fs.appendFileSync(termLogPath, `\n[${ts}] $ ${cmd}\n${output}\n`);
+                history.push({ role: 'assistant', content: buildTaggedContract(response) });
+                history.push({ role: 'user', content: `Command output:\n${output}` });
                 continue;
             }
             else {
@@ -341,16 +350,11 @@ async function run() {
                 history.push({ role: 'assistant', content: result });
             }
         }
-        if (!response.terminal) {
-            console.log(buildTaggedContract({
-                message: response.message || '',
-                terminal: '',
-                action: response.action || ''
-            }));
-            break;
-        }
-        const output = await executeCommand(response.terminal);
-        history.push({ role: 'user', content: `Command output:\n${output}` });
+        console.log(buildTaggedContract({
+            message: response.message || '',
+            action: response.action || ''
+        }));
+        break;
     }
     log('Agent finished');
 }

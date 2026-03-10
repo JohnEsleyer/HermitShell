@@ -39,7 +39,7 @@ describe('agent system prompt identity injection', () => {
     const output = getDefaultSystemPrompt();
     expect(output).toContain('<thought>');
     expect(output).toContain('<message>');
-    expect(output).toContain('<terminal>');
+    expect(output).toContain('TERMINAL:');
     expect(output).toContain('<action>');
     expect(output).toContain('Do not emit JSON output.');
   });

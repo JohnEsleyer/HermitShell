@@ -25,7 +25,7 @@ HermitShell is a **Secure Agentic Operating System**. Each AI agent runs in a Do
 - **Delegation HITL**: Agent collaboration requires operator approval
 - **Async Telegram Processing**: Instant responses with background processing and status updates
 - **Audit Logs**: Complete searchable history of all agent commands and responses
-- **Web Terminal**: Attach to running agent containers via xterm.js
+- **Web Terminal**: View terminal logs from running agent containers
 - **Web Dashboard**: Manage agents, users, and settings via a built-in GUI
 - **Improved Agent Cards**: Less crowded cards with better action button fit and readability
 - **File Browser**: Browse and download agent workspace files from dashboard
@@ -329,10 +329,12 @@ HermitShell uses a "Portal" architecture for file transfers. Instead of parsing 
 - `/workspace/in/`: 📥 **Input**. Files uploaded by the user via Telegram land here.
 - `/workspace/out/`: 📤 **Output**. Files placed here are delivered to Telegram immediately.
 - `/workspace/www/`: 🌐 **Web Apps**. Each subfolder is a separate web app with index.html.
+- `/workspace/data/`: 🗄️ **Databases**. Workspace-specific databases (calendar.db, etc.)
+- `terminal_logs.txt`: 📝 **Terminal Logs**. Log of all TERMINAL actions executed by the agent.
 
 **Agent execution flow standard:**
 1. `ls -l /workspace/in`
-2. `cd /workspace/work` and execute task
+2. `cd /workspace/work` and execute task using `<action>TERMINAL:command</action>`
 3. Move final files to `/workspace/out` and return `<action>GIVE:<file></action>`
 4. For web apps, build under `/workspace/www/<unique_app_name>` and return `<action>APP:<unique_app_name></action>`
 
@@ -351,19 +353,30 @@ The status is automatically updated based on agent activity.
 
 ### Calendar Events (Self-CRON Scheduling)
 
-HermitShell supports scheduled and recurring tasks through `workspace/data/calendar.db`.
+HermitShell supports scheduled and recurring tasks through the calendar system.
 
-- **Schema (agent_calendar/task_history)**: standard tables are created automatically in each workspace DB.
-- **How it works**: agent writes SQL to `calendar.db` (for example `INSERT INTO agent_calendar (...) VALUES (...)`).
-- **Triggering**: scheduler claims due tasks and runs the stored `instructions` as the next agent prompt.
-- **Recurring tasks**: when `is_recurring = 1` and `cron_expression` is set, HermitShell computes `next_run_at`, updates `scheduled_at`, and returns task to `pending`.
-- **Auditability**: each run is recorded in `task_history` plus runtime logs.
-- **Display**: Calendar dashboard reads scheduled tasks and execution state.
+**New Calendar Tag Format** (recommended):
+Agents can now emit `<calendar>` tags to schedule future tasks:
 
+```text
+<message>
+I'll remind you to drink water at 8:00 AM!
+</message>
+<calendar>
+<datetime>2026-03-10T08:00:00Z</datetime>
+<prompt>Tell the user to drink water now!</prompt>
+</calendar>
+```
+
+The system automatically extracts calendar entries and inserts them into the workspace database.
+
+**Legacy SQL Format** (still supported):
 ```sql
 INSERT INTO agent_calendar (task_name, instructions, scheduled_at, is_recurring, cron_expression)
 VALUES ('Exercise Reminder', 'Remind the user to exercise now', '2026-03-07 11:00:00', 0, NULL);
 ```
+
+**How it works**: scheduler claims due tasks and runs the stored `instructions` as the next agent prompt.
 
 ### Apps Dashboard (Web Apps)
 
@@ -407,23 +420,29 @@ Brief internal plan
 <message>
 Done
 </message>
-<terminal>
-python3 /app/workspace/work/script.py
-</terminal>
 <action>
-GIVE:report.pdf
+TERMINAL:python3 /app/workspace/work/script.py
 </action>
 ```
 
 - `<message>`: sent to Telegram chat bubble (plain text, minimal)
-- `<action>`: optional routing instruction. Use `GIVE:<filename>` for file delivery from `/app/workspace/out/`, or `APP:<app_name>` to publish a web app and share endpoint URL.
-- `<terminal>`: optional shell command for container execution
+- `<action>`: optional routing instruction. Use `GIVE:<filename>` for file delivery from `/app/workspace/out/`, or `APP:<app_name>` to publish a web app and share endpoint URL. Use `TERMINAL:command` to execute shell commands.
+- `<calendar>` (optional): schedule future tasks
+
+```text
+<calendar>
+<datetime>2026-03-10T08:00:00Z</datetime>
+<prompt>Remind the user to drink water</prompt>
+</calendar>
+```
+
+**Current System Time (UTC):** Injected at runtime to help agents calculate time zones correctly.
 
 **Compatibility**
-- ✅ Agent emission contract: XML tags (`thought`, `message`, `terminal`, `action`)
-- ✅ Orchestrator internal log contract: normalized JSON (`{"message":"...","terminal":"...","action":"...","userId":"..."}`)
-- ⚠️ Compatibility input parsing: legacy JSON envelope and labeled `message:/terminal:/action:` formats
-- ❌ Deprecated for new behavior: text `ACTION: EXECUTE` formats
+- ✅ Agent emission contract: XML tags (`thought`, `message`, `action`)
+- ✅ Orchestrator internal log contract: normalized JSON (`{"message":"...","action":"...","userId":"..."}`)
+- ⚠️ Compatibility input parsing: legacy JSON envelope and labeled `message:/action:` formats
+- ❌ Deprecated for new behavior: `<terminal>` tag (use `<action>TERMINAL:...</action>` instead)
 - ℹ️ Agent Test modal includes a help (`?`) explainer describing XML agent output vs JSON log normalization.
 
 ### Agent Test Modal (XML Input → JSON Logs)
@@ -441,7 +460,7 @@ Browse and download agent workspace files from the dashboard:
 
 - **Access**: Dashboard → Agents → Files button
 - **Download**: Click any file to download
-- **Directory tree**: Navigate nested directories
+- **Collapsible Tree**: Click folders to expand/collapse. Directories are collapsed by default (except top-level) to hide contents of heavy folders like `node_modules`.
 
 ### Operator Security
 
@@ -734,8 +753,19 @@ Or use the **Start** button in the Cubicles dashboard tab.
 - **Database**: libSQL (SQLite-compatible)
 - **Agent Runtime**: Python 3.10+
 - **Container Runtime**: Docker with labels + exec
-- **Frontend**: Vanilla JS + Tailwind CSS + xterm.js
+- **Frontend**: Vanilla JS + Tailwind CSS
 - **LLM Providers**: OpenRouter / OpenAI / Anthropic / Google / Groq / Mistral / DeepSeek / xAI
+
+## Memory Optimization
+
+HermitShell is optimized for deployment on VPS with 1GB RAM:
+
+- **Container Memory**: 256MB per container (down from 512MB)
+- **Full Memory Metrics**: Dashboard shows total memory usage including:
+  - Host memory (total/used/free)
+  - Container memory (allocations)
+  - HermitShell Core (Node.js process memory)
+- **Workspace Collapsible Tree**: File browser collapses heavy directories by default
 
 ## License
 

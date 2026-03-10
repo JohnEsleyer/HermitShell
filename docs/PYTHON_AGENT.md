@@ -39,7 +39,7 @@ The agent follows a standard Loop:
   - Web app creation (vanilla HTML/CSS/JS, index.html required)
   - Video creation capabilities
 - `callLlm()`: Uses Node.js `fetch` to securely call the Orchestrator proxy. Since the container is air-gapped, this is the **only** way the agent can communicate with the outside world.
-- `extractCommand()`: Prioritizes tagged `<terminal>` command; JSON and legacy `ACTION: EXECUTE` are fallback compatibility paths.
+- `extractCommand()`: Prioritizes `TERMINAL:` action commands; JSON and legacy `ACTION: EXECUTE` are fallback compatibility paths.
 - `extractPanelActions()`: Legacy parser for deprecated control panel actions.
 - `isInternetRequest()`: A list of network egress commands that trigger Human-in-the-Loop checks.
 - `waitForApproval()`: Monitors lock files (`/tmp/hermit_approval.lock`, `/tmp/hermit_deny.lock`) that the Orchestrator writes after operator Yes/No Telegram replies.
@@ -63,17 +63,28 @@ Agents are expected to return deterministic tagged output:
 ```text
 <thought>Plan</thought>
 <message>Task completed</message>
-<terminal></terminal>
-<action>GIVE:report.pdf</action>
+<action>TERMINAL:ls -la</action>
 ```
 
-> Legacy compatibility: old ad-hoc action channels may appear in historical logs/docs but should not be used for new implementations.
-
 ### Available Actions:
-- **File Delivery**: `GIVE:<filename>`
-- **Web App Publish**: `APP:<app_name>`
+- **Terminal Execution**: `TERMINAL:command` - Execute a bash command
+- **File Delivery**: `GIVE:<filename>` - Deliver a file from `/app/workspace/out/`
+- **Web App Publish**: `APP:<app_name>` - Publish a web app
 
-Calendar scheduling should be performed via SQL writes to `/app/workspace/data/calendar.db` (`agent_calendar`), not legacy ad-hoc action strings.
+### Calendar Scheduling:
+Use `<calendar>` tags to schedule future tasks:
+
+```text
+<message>I'll remind you at 8 AM</message>
+<calendar>
+<datetime>2026-03-10T08:00:00Z</datetime>
+<prompt>Tell the user to drink water now!</prompt>
+</calendar>
+```
+
+**Current System Time (UTC):** `{{CURRENT_UTC_TIME}}` is injected at runtime to help agents calculate time zones correctly.
+
+> Legacy: `<terminal>` tag is deprecated - use `<action>TERMINAL:...</action>` instead.
 
 ## ⚠️ Legacy Compatibility
 

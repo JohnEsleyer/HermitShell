@@ -9,20 +9,27 @@ Agent responses should use deterministic XML-style tags:
 ```text
 <thought>Plan</thought>
 <message>Short status</message>
-<terminal>cd /app/workspace/work && ls -la</terminal>
-<action>GIVE:report.txt</action>
+<action>TERMINAL:cd /app/workspace/work && ls -la</action>
+<calendar>
+<datetime>2026-03-10T08:00:00Z</datetime>
+<prompt>Remind user to drink water</prompt>
+</calendar>
 ```
 
 Canonical fields:
 - `<thought>`
 - `<message>`
-- `<terminal>`
-- `<action>`
+- `<action>` (with type prefixes: `TERMINAL:`, `GIVE:`, `APP:`, `SKILL:`)
+- `<calendar>`
+
+**Current System Time (UTC):** `{{CURRENT_UTC_TIME}}` is injected at runtime.
 
 ## Legacy (Do Not Use for New Features)
 
+- `<terminal>` tag (deprecated - use `<action>TERMINAL:...</action>` instead)
 - JSON envelope contract (still parsed but no longer primary)
 - Textual `ACTION: EXECUTE` contracts
+- SQL-based calendar scheduling (deprecated - use `<calendar>` tags)
 
 These may appear in older logs, tests, or historical docs for migration context.
 
@@ -32,11 +39,11 @@ These may appear in older logs, tests, or historical docs for migration context.
 Even when agent output is XML-tagged, orchestrator persistence/history is intentionally normalized to JSON objects:
 
 ```json
-{"message":"Done","terminal":"","action":"GIVE:file.txt","userId":"123"}
+{"message":"Done","action":"TERMINAL:ls -la","userId":"123"}
 ```
 
 This keeps dashboard rendering and downstream tooling deterministic while retaining XML as the agent emission contract. Agent Test dashboard includes a help (`?`) control explaining this dual-format flow.
 
 ## Rule of Thumb
 
-If you're adding new behavior, wire it through deterministic `action` values and explicit server-side handlers. Do not add new ad-hoc panel action pathways.
+If you're adding new behavior, wire it through deterministic `action` values (with type prefixes) and explicit server-side handlers. Do not add new ad-hoc panel action pathways.

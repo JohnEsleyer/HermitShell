@@ -162,7 +162,7 @@ async function createNewCubicle(config: AgentConfig): Promise<Docker.Container> 
         Cmd: ['sleep', 'infinity'],
         HostConfig: {
             AutoRemove: false,
-            Memory: 512 * 1024 * 1024,
+            Memory: 256 * 1024 * 1024,
             CpuQuota: 100000,
             PidsLimit: 100,
             NetworkMode: 'bridge',

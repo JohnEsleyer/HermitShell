@@ -9,9 +9,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="./calendar-symbols.js"></script>
     <script src="./sites-ui.js"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
@@ -919,6 +916,10 @@
                                                 <div id="metric-app-memory-remaining" class="text-cyan-300 font-semibold">0 B</div>
                                             </div>
                                         </div>
+                                        <div class="flex justify-between text-xs mb-1">
+                                            <span class="text-slate-400">HermitShell Core (Node.js)</span>
+                                            <span id="metric-node-memory" class="text-purple-300 mono">0 B</span>
+                                        </div>
                                         <div class="text-xs text-slate-500">Container memory usage: <span id="metric-container-memory" class="text-orange-300">0%</span> of allocated limits.</div>
                                     </div>
                                 </div>
@@ -1574,28 +1575,29 @@
         </div>
     </div>
 
-    <!-- Terminal Modal with xterm.js -->
+    <!-- Terminal Logs Modal (Fake Terminal) -->
     <div id="terminal-modal"
         class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
         <div
             class="w-full max-w-4xl h-[80vh] bg-[#0c0a09] border border-slate-700 rounded-xl shadow-2xl flex flex-col overflow-hidden">
-            <div class="bg-slate-800 px-4 py-2 flex justify-between items-center border-b border-slate-700">
+            <div class="bg-slate-800 px-4 py-3 flex justify-between items-center border-b border-slate-700">
                 <div class="flex items-center gap-2">
                     <div class="w-3 h-3 rounded-full bg-red-500"></div>
                     <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
                     <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                    <span id="term-title" class="ml-2 text-slate-400">root@hermitshell:~</span>
+                    <span id="term-title" class="ml-2 text-slate-400 font-mono text-sm">Terminal Logs</span>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button onclick="attachTerminal()" class="text-orange-500 hover:text-white text-sm"
-                        title="Attach to container">
-                        <i data-lucide="link" class="w-4 h-4"></i>
+                    <button onclick="refreshTerminalLogs()" class="text-orange-500 hover:text-white text-sm px-2 flex items-center gap-1" title="Refresh Logs">
+                        <i data-lucide="refresh-cw" class="w-4 h-4"></i> Refresh
                     </button>
-                    <button onclick="closeTerminal()" class="text-slate-400 hover:text-white"><i data-lucide="x"
+                    <button onclick="closeTerminal()" class="text-slate-400 hover:text-white ml-2"><i data-lucide="x"
                             class="w-4 h-4"></i></button>
                 </div>
             </div>
-            <div id="xterm-container"></div>
+            <div id="fake-terminal-content" class="flex-1 overflow-y-auto p-4 text-green-400 font-mono text-sm whitespace-pre-wrap break-words pb-10">
+                Loading logs...
+            </div>
         </div>
     </div>
 
@@ -2661,6 +2663,7 @@
                     document.getElementById('metric-app-memory-used').innerText = formatBytes(resources.containersMemoryUsageBytes);
                     document.getElementById('metric-host-memory-remaining').innerText = formatBytes(resources.hostMemoryFreeBytes);
                     document.getElementById('metric-app-memory-remaining').innerText = formatBytes(resources.remainingMemoryBytes);
+                    document.getElementById('metric-node-memory').innerText = resources.nodeProcessMemoryBytes ? formatBytes(resources.nodeProcessMemoryBytes) : 'N/A';
                     document.getElementById('metric-cpu-used').innerText = `${hostCpuPercent.toFixed(1)}%`;
                     document.getElementById('metric-cpu-remaining').innerText = `${clampPercent(resources.hostCpuRemainingPercent).toFixed(1)}%`;
                     document.getElementById('metric-load-per-core').innerText = `${(resources.loadAverage?.[0] || 0).toFixed(2)} / ${resources.cpuCount || 0} cores`;
@@ -2673,6 +2676,7 @@
                     document.getElementById('metric-app-memory-used').innerText = 'N/A';
                     document.getElementById('metric-host-memory-remaining').innerText = 'N/A';
                     document.getElementById('metric-app-memory-remaining').innerText = 'N/A';
+                    document.getElementById('metric-node-memory').innerText = 'N/A';
                     document.getElementById('metric-cpu-used').innerText = 'N/A';
                     document.getElementById('metric-cpu-remaining').innerText = 'N/A';
                     document.getElementById('metric-load-per-core').innerText = 'N/A';
@@ -3460,25 +3464,50 @@
                     return;
                 }
                 const data = await res.json();
-                const rows = flattenWorkspace(data.files || []);
-                if (!rows.length) {
+                const treeHtml = renderFileTree(data.files || [], agentId, userId);
+                if (!treeHtml) {
                     browser.innerHTML = '<span class="text-slate-400">Workspace is empty.</span>';
                     return;
                 }
                 const selectedAgent = (cachedAgents || []).find(a => String(a.id) === String(agentId)) || { name: 'Agent' };
-                const listHtml = rows.map(item => {
-                    const indent = '&nbsp;'.repeat(item.depth * 4);
-                    const icon = item.type === 'directory' ? '📁' : '📄';
-                    const download = item.type === 'file'
-                        ? `<a href="/api/files/${agentId}/${userId}/download/${item.path}?token=${getStoredSessionToken()}" class="text-blue-300 hover:text-blue-200 text-xs ml-2">download</a>`
-                        : '';
-                    const del = `<button onclick="deleteWorkspacePath(${agentId}, ${userId}, '${encodeURIComponent(item.path)}')" class="text-red-300 hover:text-red-200 text-xs ml-2">delete</button>`;
-                    return `<div class="py-1 border-b border-slate-800/70 last:border-b-0 mono text-xs">${indent}${icon} ${item.path}${download}${del}</div>`;
-                }).join('');
-                browser.innerHTML = `<div class="flex items-center gap-2 mb-3 text-xs text-slate-400">${avatarImg(selectedAgent, true)}<span>${selectedAgent.name} workspace</span></div>${listHtml}`;
+                browser.innerHTML = `<div class="flex items-center gap-2 mb-3 text-xs text-slate-400 pb-2 border-b border-slate-700/50">${avatarImg(selectedAgent, true)}<span>Workspace Root for User ${userId}</span></div>${treeHtml}`;
+                lucide.createIcons();
             } catch (e) {
                 browser.innerHTML = '<span class="text-red-400">Failed to load workspace files.</span>';
             }
+        }
+
+        function renderFileTree(items, agentId, userId, pathPrefix = '') {
+            if (!items || items.length === 0) return '<div class="text-slate-500 italic pl-4 py-1 text-xs">Empty directory</div>';
+            return items.map(item => {
+                if (item.type === 'directory') {
+                    const isTopLevel = pathPrefix === '';
+                    return `
+                    <details class="pl-3 group" ${isTopLevel ? 'open' : ''}>
+                        <summary class="cursor-pointer select-none py-1.5 hover:text-orange-400 text-slate-300 list-none flex items-center gap-1.5 text-sm font-medium">
+                            <svg class="w-3.5 h-3.5 text-slate-500 group-open:hidden transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            <svg class="w-3.5 h-3.5 text-orange-400 hidden group-open:block transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            <i data-lucide="folder" class="w-4 h-4 text-blue-400"></i> ${item.name}
+                        </summary>
+                        <div class="border-l border-slate-700/50 ml-2 pl-1 mb-1">
+                            ${renderFileTree(item.children, agentId, userId, item.path)}
+                        </div>
+                    </details>`;
+                } else {
+                    const downloadUrl = `/api/files/${agentId}/${userId}/download/${encodeURIComponent(item.path)}?token=${getStoredSessionToken()}`;
+                    return `
+                    <div class="pl-5 py-1.5 flex items-center justify-between group/file hover:bg-slate-800/40 rounded px-2">
+                        <div class="flex items-center gap-2 text-slate-400 text-xs font-mono">
+                            <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-500"></i>
+                            <span class="truncate">${item.name}</span>
+                        </div>
+                        <div class="hidden group-hover/file:flex gap-2 items-center">
+                            <a href="${downloadUrl}" target="_blank" class="text-blue-400 hover:text-blue-300 text-[10px] uppercase font-bold tracking-wider">DL</a>
+                            <button onclick="deleteWorkspacePath(${agentId}, ${userId}, '${encodeURIComponent(item.path)}')" class="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold tracking-wider">DEL</button>
+                        </div>
+                    </div>`;
+                }
+            }).join('');
         }
 
 
@@ -4369,46 +4398,43 @@
 
         async function openTerminal(id, name) {
             currentAgentId = id;
-            document.getElementById('term-title').innerText = `ssh ${name.toLowerCase()}@hermitshell`;
+            const targetUserId = document.getElementById('files-user')?.value || 0;
+            document.getElementById('term-title').innerText = `ssh ${name.toLowerCase()}@hermitshell (User ID: ${targetUserId})`;
             document.getElementById('terminal-modal').classList.remove('hidden');
+            document.getElementById('fake-terminal-content').innerText = "Loading terminal logs...";
+            await refreshTerminalLogs(id, targetUserId);
+        }
 
-            if (!term) {
-                term = new Terminal({
-                    cursorBlink: true,
-                    fontSize: 14,
-                    fontFamily: 'JetBrains Mono, monospace',
-                    theme: {
-                        background: '#0c0a09',
-                        foreground: '#f8fafc',
-                        cursor: '#ff6b35'
-                    }
-                });
-                fitAddon = new FitAddon.FitAddon();
-                term.loadAddon(fitAddon);
-                term.open(document.getElementById('xterm-container'));
-                fitAddon.fit();
-
-                term.writeln('\x1b[38;5;208mCRABSHELL v2026.03.06 - Secure Shell Connection Established.\x1b[0m');
-                term.writeln('\x1b[90mClick "Link" button to attach to a running container\x1b[0m');
+        async function refreshTerminalLogs(agentId, userId) {
+            const targetAgentId = agentId || currentAgentId;
+            const targetUserId = userId || document.getElementById('files-user')?.value || 0;
+            if (!targetAgentId) return;
+            try {
+                const res = await fetch(`/api/agents/${targetAgentId}/terminal-logs/${targetUserId}`);
+                const data = await res.json();
+                const termContent = document.getElementById('fake-terminal-content');
+                termContent.innerText = data.logs || "No logs available.";
+                termContent.scrollTop = termContent.scrollHeight;
+            } catch (e) {
+                document.getElementById('fake-terminal-content').innerText = `Failed to load logs: ${e.message}`;
             }
+        }
+
+        function closeTerminal() {
+            document.getElementById('terminal-modal').classList.add('hidden');
+        }
+
+        function attachTerminal() {
+            // No-op for fake terminal
         }
 
         function disconnectTerminalSocket() {
-            if (ws) {
-                ws.onopen = null;
-                ws.onmessage = null;
-                ws.onclose = null;
-                ws.onerror = null;
-                ws.close();
-                ws = null;
-            }
+            // No-op for fake terminal
         }
 
         function bindTerminalInput() {
-            if (!term || termDataDisposable) return;
-            termDataDisposable = term.onData((data) => {
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(btoa(data));
+            // No-op for fake terminal
+        }
                 }
             });
         }

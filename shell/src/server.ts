@@ -72,7 +72,6 @@ type AgentInteractionLog = {
     parsed: {
         userId?: string;
         message: string;
-        terminal: string;
         action: string;
         structuredContract: boolean;
         contractFormat: "xml" | "json" | "labeled" | "none";
@@ -134,7 +133,6 @@ function buildAgentInteractionLogs(agentId: number, userId: number): AgentIntera
                 parsed: {
                     userId: parsed.userId || String(userId),
                     message: parsed.message,
-                    terminal: parsed.terminal,
                     action: parsed.action,
                     structuredContract: hasStructuredContract(content),
                     contractFormat: detectContractFormat(content)
@@ -465,7 +463,6 @@ export async function startServer() {
                 message: delivered
                     ? `Send file test delivered ${safeFileName} to Telegram.`
                     : `Send file test failed to deliver ${safeFileName} to Telegram.`,
-                terminal: '',
                 action: `GIVE:${safeFileName}`
             }, targetUserId)
         });
@@ -1193,6 +1190,22 @@ export async function startServer() {
         } catch (err) {
             console.error('Terminal error:', err);
             connection.socket.close();
+        }
+    });
+
+    fastify.get('/api/agents/:agentId/terminal-logs/:userId', async (request: any, reply: any) => {
+        const { agentId, userId } = request.params;
+        const logPath = path.join(WORKSPACE_DIR, `${agentId}_${userId}`, 'work', 'terminal_logs.txt');
+        
+        if (!fs.existsSync(logPath)) {
+            return { logs: "No terminal commands executed yet. Agent terminal actions will appear here." };
+        }
+        
+        try {
+            const content = fs.readFileSync(logPath, 'utf-8');
+            return { logs: content.slice(-25000) };
+        } catch (e: any) {
+            return { logs: `Error reading terminal logs: ${e.message}` };
         }
     });
 

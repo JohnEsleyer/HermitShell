@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 import * as chokidar from 'chokidar';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { setPreviewPassword } from './server';
-import { parseAgentResponse, parseFileAction, parseAppAction, normalizeAgentOutputToJson } from './agent-response';
+import { parseAgentResponse, parseFileAction, parseAppAction, normalizeAgentOutputToJson, extractCalendars } from './agent-response';
 import { buildPublicAppEndpoint } from './sites';
 import { startAppServer } from './app-server';
 import { getTunnelUrl } from './tunnel';
@@ -531,8 +531,26 @@ export async function processAgentMessage(
 
         let finalOutput = result.output;
         const parsed = parseAgentResponse(result.output);
+        const calendars = extractCalendars(result.output);
+
+        if (calendars.length > 0) {
+            for (const cal of calendars) {
+                await initWorkspaceDatabases(agent.id, userId);
+                await wsCreateCalendarEvent({
+                    agent_id: agent.id,
+                    title: 'Scheduled Task',
+                    prompt: cal.prompt,
+                    start_time: cal.datetime,
+                    target_user_id: userId,
+                    symbol: '⏰'
+                }, userId);
+            }
+            finalOutput = finalOutput.replace(/<calendar>[\s\S]*?<\/calendar>/gi, '').trim();
+            finalOutput += `\n\n⏰ Added ${calendars.length} scheduled event(s) to the calendar.`;
+        }
+
         if (parsed.message) {
-            finalOutput = parsed.message;
+            finalOutput = parsed.message + (calendars.length > 0 ? `\n\n⏰ Added ${calendars.length} scheduled event(s) to the calendar.` : '');
         }
         finalOutput = sanitizeUserFacingOutput(finalOutput);
 

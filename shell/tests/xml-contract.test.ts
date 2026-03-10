@@ -6,12 +6,10 @@ describe('buildXmlContract', () => {
   it('builds deterministic xml with canonical fields', () => {
     const xml = buildXmlContract({
       message: 'Delivered report',
-      terminal: '',
       action: 'GIVE:report.txt'
     });
 
     expect(xml).toContain('<message>Delivered report</message>');
-    expect(xml).toContain('<terminal></terminal>');
     expect(xml).toContain('<action>GIVE:report.txt</action>');
     expect(detectContractFormat(xml)).toBe('xml');
 
@@ -23,12 +21,10 @@ describe('buildXmlContract', () => {
   it('escapes xml entities in fields', () => {
     const xml = buildXmlContract({
       message: 'A & B < C > D',
-      terminal: 'echo "1 < 2"',
-      action: 'GIVE:a&b.txt'
+      action: 'TERMINAL:echo "1 < 2"'
     });
 
     expect(xml).toContain('<message>A &amp; B &lt; C &gt; D</message>');
-    expect(xml).toContain('<terminal>echo "1 &lt; 2"</terminal>');
-    expect(xml).toContain('<action>GIVE:a&amp;b.txt</action>');
+    expect(xml).toContain('<action>TERMINAL:echo "1 &lt; 2"</action>');
   });
 });
