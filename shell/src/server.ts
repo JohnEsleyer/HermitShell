@@ -10,9 +10,7 @@ import {
 import {
     initWorkspaceDatabases, createCalendarEvent as wsCreateCalendarEvent, getCalendarEvents as wsGetCalendarEvents,
     updateCalendarEvent as wsUpdateCalendarEvent, getCalendarEventById as wsGetCalendarEventById,
-    deleteCalendarEvent as wsDeleteCalendarEvent, claimDueCalendarEvents as wsClaimDueCalendarEvents,
-    storeRagMemory as wsStoreRagMemory, getRagMemories as wsGetRagMemories, searchRagMemories as wsSearchRagMemories,
-    deleteRagMemory as wsDeleteRagMemory, clearRagMemories as wsClearRagMemories
+    deleteCalendarEvent as wsDeleteCalendarEvent, claimDueCalendarEvents as wsClaimDueCalendarEvents
 } from './workspace-db';
 import { checkDocker, listContainers, getContainerExec, docker, spawnAgent, restartAgentContainer, getSystemResources, getContainerResources } from './docker';
 import { hashPassword, verifyPassword, generateSessionToken } from './auth';
@@ -172,77 +170,6 @@ export async function startServer() {
     startCalendarScheduler();
 
     const fastify = require('fastify')({ logger: true });
-
-    fastify.get('/api/agents/:id/memory', async (request: any, reply: any) => {
-        try {
-            const agentId = Number(request.params.id);
-            const userId = Number(request.query.userId) || 0;
-            await initWorkspaceDatabases(agentId, userId);
-            const memories = await wsGetRagMemories(agentId, userId, 50);
-            return { memories };
-        } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
-        }
-    });
-
-    fastify.post('/api/agents/:id/memory', async (request: any, reply: any) => {
-        try {
-            const agentId = Number(request.params.id);
-            const userId = Number(request.body?.userId) || 0;
-            const { content } = request.body;
-            if (!content) return reply.code(400).send({ error: 'Missing content' });
-
-            await initWorkspaceDatabases(agentId, userId);
-            const id = await wsStoreRagMemory({
-                agent_id: agentId,
-                user_id: userId,
-                content: content
-            });
-            return { success: true, memoryId: id };
-        } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
-        }
-    });
-
-    fastify.delete('/api/agents/:id/memory', async (request: any, reply: any) => {
-        try {
-            const agentId = Number(request.params.id);
-            const userId = Number(request.query.userId) || 0;
-            await initWorkspaceDatabases(agentId, userId);
-            await wsClearRagMemories(agentId, userId);
-            return { success: true };
-        } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
-        }
-    });
-
-    fastify.get('/api/agents/:id/memory/search', async (request: any, reply: any) => {
-        try {
-            const agentId = Number(request.params.id);
-            const userId = Number(request.query.userId) || 0;
-            const q = String(request.query.q || '').trim();
-            if (!q) return { memories: [] };
-
-            await initWorkspaceDatabases(agentId, userId);
-            const memories = await wsSearchRagMemories(agentId, userId, q, 25);
-            return { memories };
-        } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
-        }
-    });
-
-    fastify.delete('/api/agents/:agentId/memory/:memoryId', async (request: any, reply: any) => {
-        try {
-            const agentId = Number(request.params.agentId);
-            const memoryId = Number(request.params.memoryId);
-            const userId = Number(request.query.userId) || 0;
-            await initWorkspaceDatabases(agentId, userId);
-            await wsDeleteRagMemory(memoryId, agentId, userId);
-            return { success: true };
-        } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
-        }
-    });
 
     await fastify.register(cookie);
 
@@ -1049,7 +976,8 @@ export async function startServer() {
                 body.model = model;
                 if (provider === 'openrouter') {
                     if (body.model === 'auto') body.model = 'openrouter/free';
-                    url = 'https://openrouter.ai/api/v1/chat/completions'; headers['HTTP-Referer'] = 'https://crabshell.local'; headers['X-Title'] = 'CrabShell'; }
+                    url = 'https://openrouter.ai/api/v1/chat/completions'; headers['HTTP-Referer'] = 'https://crabshell.local'; headers['X-Title'] = 'CrabShell';
+                }
                 else if (provider === 'openai') url = 'https://api.openai.com/v1/chat/completions';
                 else if (provider === 'groq') url = 'https://api.groq.com/openai/v1/chat/completions';
                 else if (provider === 'mistral') url = 'https://api.mistral.ai/v1/chat/completions';
@@ -1417,11 +1345,11 @@ export async function startServer() {
         try {
             const { agentId, userId, siteName } = request.params;
             const screenshotDir = path.join(__dirname, '../../data/screenshots');
-            
+
             if (!fs.existsSync(screenshotDir)) {
                 fs.mkdirSync(screenshotDir, { recursive: true });
             }
-            
+
             const filename = `${agentId}_${userId}_${siteName}_${Date.now()}.png`;
             const screenshotPath = path.join(screenshotDir, filename);
             const settings = await getAllSettings();
@@ -1429,14 +1357,14 @@ export async function startServer() {
             const targetUrl = `${String(baseUrl).replace(/\/$/, '')}/preview/${agentId}/8080/${encodeURIComponent(siteName)}/`;
 
             await captureAppScreenshot(targetUrl, screenshotPath);
-            
+
             await createSiteScreenshot({
                 agent_id: Number(agentId),
                 user_id: Number(userId),
                 site_name: siteName,
                 screenshot_path: screenshotPath
             });
-            
+
             return { success: true, screenshotPath: `/api/screenshots/${filename}` };
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
@@ -1474,14 +1402,14 @@ export async function startServer() {
         try {
             const { agentId, userId, siteName } = request.params;
             const tunnelUrl = getTunnelUrl();
-            
+
             if (!tunnelUrl) {
                 return reply.code(500).send({ error: 'Tunnel not available' });
             }
-            
+
             const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
             const siteTunnelUrl = `${tunnelUrl}/preview/${agentId}/8080/`;
-            
+
             await createSiteTunnel({
                 agent_id: Number(agentId),
                 user_id: Number(userId),
@@ -1489,9 +1417,9 @@ export async function startServer() {
                 tunnel_url: siteTunnelUrl,
                 expires_at: expiresAt
             });
-            
-            return { 
-                success: true, 
+
+            return {
+                success: true,
                 tunnelUrl: siteTunnelUrl,
                 expiresAt
             };
@@ -1533,7 +1461,7 @@ export async function startServer() {
             if (!agent) {
                 return reply.code(404).send({ error: 'Agent not found' });
             }
-            return { 
+            return {
                 status: (agent as any).status || 'idle',
                 lastActiveAt: (agent as any).last_active_at
             };

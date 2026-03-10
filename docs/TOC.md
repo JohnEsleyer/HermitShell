@@ -10,12 +10,12 @@ Welcome to the official documentation for **HermitShell**, the autonomous AI age
     *   Details on the Node.js Fastify server, API endpoints, and the internal proxy.
 3.  **[Docker Cubicles & Isolation](./DOCKER_CUBICLES.md)**
     *   How containers are managed, workspace isolation (`/out`, `/in`, `/www`), and lifecycle hooks.
-4.  **[The Python Agent (Crab)](./PYTHON_AGENT.md)**
-    *   The core logic running inside the cubicle: command execution, LLM calls via proxy, and safety guards.
+4.  **[The Agent Runtime](./AGENT_RUNTIME.md)**
+    *   The core TypeScript/Node.js logic running inside the cubicle: command execution, LLM calls via proxy, and safety guards.
 5.  **[Telegram Integration & The Portal](./TELEGRAM_INTEGRATION.md)**
     *   Handling Telegram webhooks, file uploads/downloads, and real-time interaction logs.
 6.  **[Database & Storage](./DATABASE_AND_STORAGE.md)**
-    *   libSQL schema overview, RAG memory implementation, and audit trail persistence.
+    *   libSQL schema overview and audit trail persistence.
 7.  **[Security & HITL](./SECURITY.md)**
     *   Authentication, session management, and the Human-in-the-Loop approval system.
 

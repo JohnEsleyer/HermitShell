@@ -12,10 +12,6 @@ function getCalendarDbPath(agentId: number, userId: number): string {
     return path.join(getWorkspacePath(agentId, userId), 'calendar.db');
 }
 
-function getRagDbPath(agentId: number, userId: number): string {
-    return path.join(getWorkspacePath(agentId, userId), 'rag.db');
-}
-
 interface CalendarEvent {
     id: number;
     agent_id: number;
@@ -102,15 +98,6 @@ function computeNextRunAt(cronExpression: string, fromDate: Date = new Date()): 
     return candidate.toISOString();
 }
 
-interface RagMemory {
-    id: number;
-    agent_id: number;
-    user_id: number;
-    content: string;
-    embedding: string;
-    created_at: string;
-}
-
 function ensureDataDir(agentId: number, userId: number): void {
     const dataDir = getWorkspacePath(agentId, userId);
     if (!fs.existsSync(dataDir)) {
@@ -124,15 +111,8 @@ function getCalendarClient(agentId: number, userId: number): Client {
     return createClient({ url: `file:${dbPath}` });
 }
 
-function getRagClient(agentId: number, userId: number): Client {
-    ensureDataDir(agentId, userId);
-    const dbPath = getRagDbPath(agentId, userId);
-    return createClient({ url: `file:${dbPath}` });
-}
-
 export async function initWorkspaceDatabases(agentId: number, userId: number = 0): Promise<void> {
     const calendarClient = getCalendarClient(agentId, userId);
-    const ragClient = getRagClient(agentId, userId);
 
     await calendarClient.execute(`
         CREATE TABLE IF NOT EXISTS calendar_events (
@@ -199,17 +179,6 @@ export async function initWorkspaceDatabases(agentId: number, userId: number = 0
 
     await calendarClient.execute(`
         CREATE INDEX IF NOT EXISTS idx_pending_tasks ON agent_calendar (scheduled_at, status)
-    `);
-
-    await ragClient.execute(`
-        CREATE TABLE IF NOT EXISTS rag_memories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_id INTEGER NOT NULL,
-            user_id INTEGER NOT NULL,
-            content TEXT NOT NULL,
-            embedding TEXT,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
     `);
 }
 
@@ -368,50 +337,6 @@ export async function claimDueCalendarEvents(agentId: number, userId: number = 0
     }
 
     return claimed;
-}
-
-export async function storeRagMemory(memory: {
-    agent_id: number;
-    user_id: number;
-    content: string;
-    embedding?: string;
-}): Promise<number> {
-    const client = getRagClient(memory.agent_id, memory.user_id);
-    const rs = await client.execute({
-        sql: 'INSERT INTO rag_memories (agent_id, user_id, content, embedding) VALUES (?, ?, ?, ?)',
-        args: [memory.agent_id, memory.user_id, memory.content, memory.embedding || null]
-    });
-    return Number(rs.lastInsertRowid);
-}
-
-export async function getRagMemories(agentId: number, userId: number, limit: number = 20): Promise<RagMemory[]> {
-    const client = getRagClient(agentId, userId);
-    const rs = await client.execute({
-        sql: 'SELECT * FROM rag_memories WHERE agent_id = ? AND user_id = ? ORDER BY created_at DESC LIMIT ?',
-        args: [agentId, userId, limit]
-    });
-    return rs.rows as unknown as RagMemory[];
-}
-
-export async function searchRagMemories(agentId: number, userId: number, query: string, limit: number = 5): Promise<RagMemory[]> {
-    const client = getRagClient(agentId, userId);
-    const rs = await client.execute({
-        sql: `SELECT * FROM rag_memories 
-              WHERE agent_id = ? AND user_id = ?
-              ORDER BY created_at DESC LIMIT ?`,
-        args: [agentId, userId, limit]
-    });
-    return rs.rows as unknown as RagMemory[];
-}
-
-export async function deleteRagMemory(id: number, agentId: number, userId: number): Promise<void> {
-    const client = getRagClient(agentId, userId);
-    await client.execute({ sql: 'DELETE FROM rag_memories WHERE id = ?', args: [id] });
-}
-
-export async function clearRagMemories(agentId: number, userId: number): Promise<void> {
-    const client = getRagClient(agentId, userId);
-    await client.execute({ sql: 'DELETE FROM rag_memories WHERE agent_id = ? AND user_id = ?', args: [agentId, userId] });
 }
 
 export function getWorkspaceDataDir(agentId: number, userId: number): string {

@@ -26,7 +26,7 @@ Responsible for every aspect of the agent's containerized existence.
 
 ### 3. Database Layer (`db.ts`)
 A lightweight **libSQL (SQLite compatibility)** implementation using `@libsql/client`.
-- **Tables**: Agents, Budgets, Allowlist, Settings, Audit Logs, Calendar Events, Asset Requests, Site Screenshots, Site Tunnels, Agent Memory, Runtime Logs.
+- **Tables**: Agents, Budgets, Allowlist, Settings, Audit Logs, Calendar Events, Asset Requests, Site Screenshots, Site Tunnels, Runtime Logs.
 - **Initialization**: `initDb()` creates all tables and migrates schemas automatically.
 
 ### 4. Telegram Bridge (`telegram.ts`)

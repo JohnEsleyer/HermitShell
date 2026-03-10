@@ -13,7 +13,6 @@ HermitShell is a **Secure Agentic Operating System**. Each AI agent runs in a Do
 - **Persistent Workspaces**: Each agent+user pair gets a persistent workspace that survives container restarts
 - **Auto Cloudflare Tunnel**: Automatic public URL generation on startup - no manual ngrok required
 - **Automatic File Delivery**: Files dropped in `/workspace/out/` are automatically detected and sent via Telegram
-- **Built-in RAG Memory**: Persistent factual memory per agent, configurable via the web UI
 - **Agent Verification Handshake**: Verify Telegram tokens before creating agents via 6-digit code
 - **Auto-Webhook Registration**: Webhooks automatically registered when agents are created
 - **Sync Bots Button**: Re-register all webhooks with one click (useful when public URL changes)
@@ -50,7 +49,7 @@ HermitShell is a **Secure Agentic Operating System**. Each AI agent runs in a Do
 │  │  - Agent Management  - Budget Tracking  - Settings   │   │
 │  │  - Audit Logs       - Web Terminal    - Test Agent  │   │
 │  │  - Cubicles View    - Sync Bots       - File Browser│   │
-│  │  - Calendar Events  - Apps Dashboard  - Memories    │   │
+│  │  - Calendar Events  - Apps Dashboard                │   │
 │  └─────────────────────────────────────────────────────┘   │
 │                           │                                 │
 │  ┌─────────────────────────────────────────────────────┐   │
@@ -141,7 +140,7 @@ hermitshell/
 ├── shell/                # Node.js orchestrator
 │   ├── src/
 │   │   ├── server.ts     # Fastify server + webhook handler + preview proxy
-│   │   ├── db.ts         # libSQL database + vector memory + meetings
+│   │   ├── db.ts         # libSQL database + meetings
 │   │   ├── docker.ts     # Docker orchestration + continuous containers
 │   │   ├── telegram.ts   # Telegram handler + HITL + file delivery
 │   │   ├── tunnel.ts     # Cloudflare tunnel management
@@ -339,7 +338,7 @@ HermitShell uses a "Portal" architecture for file transfers. Instead of parsing 
 
 **Host Data Directory** (for database operations):
 - `calendar.db`: Stores scheduled events. When time arrives, your prompt triggers automatically.
-- `rag.db`: Persistent RAG memory for facts/knowledge.
+- `*.db`: Future libSQL databases for additional capabilities.
 
 ### Agent Status Indicator
 
@@ -435,15 +434,6 @@ The Agent Test modal is intentionally split:
 - **Right panel**: XML Contract Input used to simulate agent output.
 - **Run XML Contract Test**: parses XML, inserts a JSON log card at the top with a smooth transition, and executes action effects (for `GIVE:<file>`, file must exist in `/workspace/out/` to deliver via Telegram).
 - **`?` button**: explains why HermitShell uses XML for agent emission but JSON for persisted logs.
-
-### Long-Term RAG Memory
-
-Every agent has access to a dedicated RAG (Retrieval-Augmented Generation) memory store.
-
-- **Storage**: Facts and rules are stored in `rag.db` (LibSQL database).
-- **Management**: Use the **"Memories (RAG)"** tab in the Dashboard to manually add or prune memories.
-- **Injection**: Relevant memories are automatically injected into the agent's system prompt before every request.
-- **Persistence**: Memories survive container resets and workspace deletions.
 
 ### Dashboard File Browser
 
@@ -633,7 +623,6 @@ hermitshell.created_at: "2026-02-20T10:00:00Z"
 - **asset_requests**: id, agent_id, user_id, description, url, file_type, status, requested_at, reviewed_by, reviewed_at
 - **site_screenshots**: id, agent_id, user_id, site_name, screenshot_path, created_at
 - **site_tunnels**: id, agent_id, user_id, site_name, tunnel_url, expires_at, is_active, created_at
-- **agent_memory**: id, agent_id, content, embedding, created_at
 - **meetings**: id, initiator_id, participant_id, topic, transcript, status, created_at
 - **agent_runtime_logs**: id, agent_id, level, source, message, context, created_at
 

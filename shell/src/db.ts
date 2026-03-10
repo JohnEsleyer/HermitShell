@@ -112,6 +112,16 @@ export interface AppServer {
     created_at: string;
 }
 
+export interface Meeting {
+    id: number;
+    initiator_id: number;
+    participant_id: number;
+    topic: string;
+    transcript: string;
+    status: string;
+    created_at: string;
+}
+
 export async function initDb(): Promise<void> {
     const db = await getClient();
 
@@ -171,15 +181,6 @@ export async function initDb(): Promise<void> {
             approved_by INTEGER,
             approved_at DATETIME,
             status TEXT DEFAULT 'Executed',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (agent_id) REFERENCES agents(id)
-        );
-
-        CREATE TABLE IF NOT EXISTS agent_memory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agent_id INTEGER,
-            content TEXT,
-            embedding TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (agent_id) REFERENCES agents(id)
         );
@@ -427,7 +428,6 @@ export async function deleteAgent(id: number): Promise<void> {
     const db = await getClient();
     await db.execute({ sql: 'DELETE FROM budgets WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM audit_logs WHERE agent_id = ?', args: [id] });
-    await db.execute({ sql: 'DELETE FROM agent_memory WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM agent_runtime_logs WHERE agent_id = ?', args: [id] });
     await db.execute({ sql: 'DELETE FROM agents WHERE id = ?', args: [id] });
 }
@@ -467,7 +467,7 @@ export async function createSiteTunnel(tunnel: {
         sql: 'UPDATE site_tunnels SET is_active = 0 WHERE agent_id = ? AND user_id = ? AND site_name = ?',
         args: [tunnel.agent_id, tunnel.user_id, tunnel.site_name]
     });
-    
+
     const rs = await db.execute({
         sql: `INSERT INTO site_tunnels (agent_id, user_id, site_name, tunnel_url, expires_at) VALUES (?, ?, ?, ?, ?)`,
         args: [tunnel.agent_id, tunnel.user_id, tunnel.site_name, tunnel.tunnel_url, tunnel.expires_at]
@@ -506,7 +506,7 @@ export async function createAppServer(server: {
         sql: 'UPDATE app_servers SET is_active = 0 WHERE agent_id = ? AND user_id = ? AND site_name = ?',
         args: [server.agent_id, server.user_id, server.site_name]
     });
-    
+
     const rs = await db.execute({
         sql: `INSERT INTO app_servers (agent_id, user_id, site_name, port, is_active) VALUES (?, ?, ?, ?, 1)`,
         args: [server.agent_id, server.user_id, server.site_name, server.port]
@@ -880,93 +880,6 @@ export function extractId(record: any): number {
         return parseInt(parts[parts.length - 1], 10) || 0;
     }
     return 0;
-}
-
-export interface AgentMemory {
-    id: number;
-    agent_id: number;
-    content: string;
-    embedding: string;
-    created_at: string;
-}
-
-export interface Meeting {
-    id: number;
-    initiator_id: number;
-    participant_id: number;
-    topic: string;
-    transcript: string;
-    status: string;
-    created_at: string;
-}
-
-export async function storeMemory(agentId: number, content: string, embedding: number[]): Promise<number> {
-    const db = await getClient();
-    const rs = await db.execute({
-        sql: 'INSERT INTO agent_memory (agent_id, content, embedding) VALUES (?, ?, ?)',
-        args: [agentId, content, JSON.stringify(embedding)]
-    });
-    return Number(rs.lastInsertRowid);
-}
-
-export async function searchMemory(agentId: number, queryEmbedding: number[], limit: number = 5): Promise<AgentMemory[]> {
-    const db = await getClient();
-    const rs = await db.execute({
-        sql: `SELECT id, agent_id, content, embedding, created_at FROM agent_memory 
-              WHERE agent_id = ?`,
-        args: [agentId]
-    });
-
-    const rows = rs.rows as unknown as any[];
-    if (queryEmbedding.length === 0 || rows.length === 0) {
-        return rows.slice(-limit).reverse() as AgentMemory[];
-    }
-
-    const { cosineSimilarity } = require('./embeddings');
-
-    const scored = rows.map(row => {
-        let emb: number[] = [];
-        try {
-            emb = JSON.parse(row.embedding);
-        } catch (e) {
-            emb = new Array(queryEmbedding.length).fill(0);
-        }
-        return {
-            id: Number(row.id),
-            agent_id: Number(row.agent_id),
-            content: String(row.content),
-            embedding: String(row.embedding),
-            created_at: String(row.created_at),
-            score: cosineSimilarity(queryEmbedding, emb)
-        } as AgentMemory & { score: number };
-    });
-
-    return scored.sort((a, b) => b.score - a.score).slice(0, limit);
-}
-
-export async function getAgentMemories(agentId: number, limit: number = 20): Promise<AgentMemory[]> {
-    const db = await getClient();
-    const rs = await db.execute({
-        sql: 'SELECT id, agent_id, content, embedding, created_at FROM agent_memory WHERE agent_id = ? ORDER BY created_at DESC LIMIT ?',
-        args: [agentId, limit]
-    });
-    return rs.rows as unknown as AgentMemory[];
-}
-
-export async function clearMemories(agentId: number): Promise<void> {
-    const db = await getClient();
-    await db.execute({
-        sql: 'DELETE FROM agent_memory WHERE agent_id = ?',
-        args: [agentId]
-    });
-}
-
-export async function deleteMemory(memoryId: number): Promise<void> {
-    const db = await getClient();
-    await db.execute({
-        sql: 'DELETE FROM agent_memory WHERE id = ?',
-        args: [memoryId]
-    });
 }
 
 export async function createMeeting(initiatorId: number, participantId: number, topic: string): Promise<number> {

@@ -481,9 +481,6 @@
                 <a href="#" data-section="allowlist" onclick="showSection('allowlist')"
                     class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
                         data-lucide="users" class="w-5 h-5"></i><span>Allowlist</span></a>
-                <a href="#" data-section="memories" onclick="showSection('memories')"
-                    class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
-                        data-lucide="brain" class="w-5 h-5"></i><span>Memories (RAG)</span></a>
                 <a href="#" data-section="settings" onclick="showSection('settings')"
                     class="nav-item flex items-center space-x-3 px-4 py-3 text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors"><i
                         data-lucide="settings" class="w-5 h-5"></i><span>Settings</span></a>
@@ -550,9 +547,6 @@
                         <a href="#" data-section="allowlist" onclick="showSection('allowlist')"
                             class="nav-item text-slate-300"><i data-lucide="users"
                                 class="w-4 h-4 inline mr-1"></i>Allowlist</a>
-                        <a href="#" data-section="memories" onclick="showSection('memories')"
-                            class="nav-item text-slate-300"><i data-lucide="brain"
-                                class="w-4 h-4 inline mr-1"></i>Memories</a>
                         <a href="#" data-section="settings" onclick="showSection('settings')"
                             class="nav-item text-slate-300"><i data-lucide="settings"
                                 class="w-4 h-4 inline mr-1"></i>Settings</a>
@@ -1044,89 +1038,6 @@
                             </table>
                             <div id="allowlist-empty" class="p-8 text-center text-slate-500 hidden">
                                 No users in allowlist yet. Add users to control who can access your agents.
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Memories Section -->
-                    <div id="section-memories" class="hidden">
-                        <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                                <i data-lucide="brain" class="w-5 h-5 text-orange-500"></i>
-                                Agent Memories
-                            </h3>
-                        </div>
-                        <div class="glass-card p-5 rounded-2xl mb-5 text-sm text-slate-300">
-                            <p>Store persistent facts, rules, and preferences for your agents here. When a user
-                                interacts
-                                with an agent, relevant memories will be automatically injected into the system prompt.
-                            </p>
-                        </div>
-
-                        <div class="glass-card p-6 rounded-2xl mb-6">
-                            <div class="flex items-center gap-3 w-full mb-4">
-                                <label class="text-sm font-bold text-slate-300">Select Agent:</label>
-                                <select id="memory-agent-select"
-                                    class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white"
-                                    onchange="loadAgentMemories()">
-                                    <option value="">Select an agent...</option>
-                                </select>
-                                <label class="text-sm font-bold text-slate-300">User:</label>
-                                <select id="memory-user-select"
-                                    class="w-40 bg-slate-800 border border-slate-700 rounded-lg p-2 text-white"
-                                    onchange="loadAgentMemories()">
-                                    <option value="0">User 0</option>
-                                </select>
-                            </div>
-
-                            <div class="w-full flex flex-wrap gap-3 mb-6">
-                                <input type="text" id="new-memory-input"
-                                    class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-orange-500 outline-none min-w-[300px]"
-                                    placeholder="Enter a new fact or rule...">
-                                <div class="flex gap-2">
-                                    <button onclick="addAgentMemory()"
-                                        class="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap">
-                                        <i data-lucide="plus" class="w-4 h-4"></i> Add Memory
-                                    </button>
-                                    <button onclick="clearAgentMemories()"
-                                        class="bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap">
-                                        <i data-lucide="trash-2" class="w-4 h-4"></i> Clear All
-                                    </button>
-                                </div>
-                            </div>
-
-
-                            <div class="w-full flex flex-wrap gap-3 mb-6 items-center">
-                                <input type="text" id="memory-search-input"
-                                    class="flex-1 bg-slate-800 border border-slate-700 rounded-lg p-3 text-white focus:border-cyan-500 outline-none min-w-[260px]"
-                                    placeholder="Search RAG memories with semantic lookup...">
-                                <div class="flex gap-2">
-                                    <button onclick="searchAgentMemories()"
-                                        class="bg-cyan-600 hover:bg-cyan-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap">
-                                        <i data-lucide="search" class="w-4 h-4"></i> Search
-                                    </button>
-                                    <button onclick="loadAgentMemories()"
-                                        class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap">
-                                        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Reset
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div class="rounded-xl overflow-hidden border border-slate-700">
-                                <table class="w-full text-sm">
-                                    <thead class="bg-slate-800/80 text-slate-400">
-                                        <tr>
-                                            <th class="px-4 py-3 text-left font-mono">MEMORY THOUGHT (FACT/RULE)</th>
-                                            <th class="px-4 py-3 text-right font-mono">ACTIONS</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="memories-tbody" class="divide-y divide-slate-800/80">
-                                    </tbody>
-                                </table>
-                                <div id="memories-empty" class="p-8 text-center text-slate-500 hidden">
-                                    <i data-lucide="brain" class="w-8 h-8 mx-auto mb-2 opacity-30"></i>
-                                    No memories stored for this agent yet.
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -2240,7 +2151,6 @@
             document.getElementById('section-cubicle').classList.add('hidden');
             document.getElementById('section-sites').classList.add('hidden');
                         document.getElementById('section-calendars').classList.add('hidden');
-            document.getElementById('section-memories').classList.add('hidden');
             document.getElementById('section-skills').classList.add('hidden');
             document.getElementById('section-' + section).classList.remove('hidden');
 
@@ -2253,7 +2163,6 @@
                 'allowlist': 'User Allowlist',
                 'sites': 'Apps',
                                 'calendars': 'Calendars',
-                'memories': 'Agent Memories',
                 'skills': 'Skills'
             };
             document.getElementById('page-title').innerText = titles[section] || 'Mission Control';
@@ -2266,7 +2175,6 @@
             if (section === 'sites') loadSites();
             if (section === 'skills') loadSkillsList();
             if (section === 'calendars') loadCalendarsSection();
-            if (section === 'memories') loadMemoriesSection();
         }
 
         const PROVIDER_MODELS = {
@@ -4716,150 +4624,6 @@ Describe how the agent should behave.` })
             } catch (err) {
                 console.error('API Error:', err);
                 return { error: err.message };
-            }
-        }
-
-        async function loadMemoriesSection() {
-            try {
-                const [agentsRes, usersRes] = await Promise.all([fetch('/api/agents'), fetch('/api/allowlist')]);
-                const agents = await agentsRes.json();
-                const users = await usersRes.json();
-                
-                if (agents) {
-                    const select = document.getElementById('memory-agent-select');
-                    const userSelect = document.getElementById('memory-user-select');
-                    const currentValue = select.value;
-                    select.innerHTML = '<option value="">Select an agent...</option>';
-                    agents.forEach(a => {
-                        select.innerHTML += `<option value="${a.id}">${a.name} (${a.role})</option>`;
-                    });
-                    if (users) {
-                        userSelect.innerHTML = users.map(u => `<option value="${u.user_id}">${u.first_name || u.username || u.user_id} (${u.user_id})</option>`).join('') || '<option value="0">User 0</option>';
-                        if (users.length) userSelect.value = String(users[0].user_id);
-                    }
-                    if (currentValue && agents.find(a => a.id == currentValue)) {
-                        select.value = currentValue;
-                        loadAgentMemories();
-                    } else if (agents.length > 0) {
-                        select.value = agents[0].id;
-                        loadAgentMemories();
-                    }
-                }
-                lucide.createIcons();
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        function renderMemoriesTable(memories = []) {
-            const tbody = document.getElementById('memories-tbody');
-            const empty = document.getElementById('memories-empty');
-            if (memories && memories.length > 0) {
-                tbody.innerHTML = memories.map(m => `
-                    <tr class="hover:bg-white/5 transition-colors">
-                        <td class="px-4 py-4 text-slate-300 align-top">${m.content}</td>
-                        <td class="px-4 py-4 text-right align-top">
-                            <button onclick="deleteAgentMemory(${m.id})" class="text-red-400 hover:text-red-300 bg-red-400/10 hover:bg-red-400/20 px-3 py-1.5 rounded transition-colors text-xs font-bold">Delete</button>
-                        </td>
-                    </tr>
-                `).join('');
-                empty.classList.add('hidden');
-            } else {
-                tbody.innerHTML = '';
-                empty.classList.remove('hidden');
-            }
-            lucide.createIcons();
-        }
-
-        async function loadAgentMemories() {
-            const agentId = document.getElementById('memory-agent-select').value;
-            const userId = document.getElementById('memory-user-select')?.value || 0;
-            if (!agentId) return;
-
-            try {
-                const res = await fetchAPI(`/api/agents/${agentId}/memory?userId=${userId}`);
-                renderMemoriesTable(res.memories || []);
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        async function searchAgentMemories() {
-            const agentId = document.getElementById('memory-agent-select').value;
-            const userId = document.getElementById('memory-user-select')?.value || 0;
-            const q = (document.getElementById('memory-search-input')?.value || '').trim();
-            if (!agentId) return showToast('Please select an agent first.');
-            if (!q) return loadAgentMemories();
-
-            try {
-                const res = await fetchAPI(`/api/agents/${agentId}/memory/search?userId=${userId}&q=${encodeURIComponent(q)}`);
-                renderMemoriesTable(res.memories || []);
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        async function addAgentMemory() {
-            const agentId = document.getElementById('memory-agent-select').value;
-            const userId = document.getElementById('memory-user-select')?.value || 0;
-            const input = document.getElementById('new-memory-input');
-            const content = input.value.trim();
-
-            if (!agentId) return showToast('Please select an agent first.');
-            if (!content) return;
-
-            try {
-                const res = await fetchAPI(`/api/agents/${agentId}/memory?userId=${userId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content, userId })
-                });
-                if (res.success) {
-                    input.value = '';
-                    loadAgentMemories();
-                } else {
-                    showToast('Failed to add memory: ' + (res.error || 'Unknown error'));
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        async function clearAgentMemories() {
-            const agentId = document.getElementById('memory-agent-select').value;
-            const userId = document.getElementById('memory-user-select')?.value || 0;
-            if (!agentId || !confirm('Are you sure you want to clear ALL memories for this agent? This cannot be undone.')) return;
-
-            try {
-                const res = await fetchAPI(`/api/agents/${agentId}/memory?userId=${userId}`, {
-                    method: 'DELETE'
-                });
-                if (res.success) {
-                    loadAgentMemories();
-                } else {
-                    showToast('Failed to clear memories: ' + (res.error || 'Unknown error'));
-                }
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        async function deleteAgentMemory(memoryId) {
-            const agentId = document.getElementById('memory-agent-select').value;
-            const userId = document.getElementById('memory-user-select')?.value || 0;
-            if (!agentId || !confirm('Are you sure you want to delete this memory?')) return;
-
-            try {
-                const res = await fetchAPI(`/api/agents/${agentId}/memory/${memoryId}?userId=${userId}`, {
-                    method: 'DELETE'
-                });
-                if (res.success) {
-                    loadAgentMemories();
-                } else {
-                    showToast('Failed to delete memory: ' + (res.error || 'Unknown error'));
-                }
-            } catch (e) {
-                console.error(e);
             }
         }
 

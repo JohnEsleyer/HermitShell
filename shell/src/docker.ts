@@ -5,7 +5,7 @@ import { PassThrough } from 'stream';
 import * as os from 'os';
 import { createAuditLog, getAgentById, getAllSettings, getSetting, getActiveMeetings } from './db';
 import { sendApprovalRequest } from './telegram';
-import { searchRagMemories, initWorkspaceDatabases, workspaceDataExists } from './workspace-db';
+import { initWorkspaceDatabases, workspaceDataExists } from './workspace-db';
 import { buildSkillsPromptContext } from './skills';
 import { ensureWorkspaceRuntimeAssets } from './runtime-assets';
 
@@ -212,18 +212,8 @@ export async function spawnAgent(config: AgentConfig): Promise<SpawnResult> {
         if (workspaceDataExists(config.agentId, userId)) {
             await initWorkspaceDatabases(config.agentId, userId);
         }
-        const memories = await searchRagMemories(config.agentId, userId, config.userMessage, 10);
 
         let injectedHistory = [...config.history];
-
-        if (memories && memories.length > 0) {
-            const memoryText = memories.map((m: any) => `- ${m.content}`).join('\n');
-            injectedHistory.unshift({
-                role: 'system',
-                content: `Relevant memories for this context:\n${memoryText}`
-            });
-        }
-
         const historyB64 = Buffer.from(JSON.stringify(injectedHistory)).toString('base64');
 
         const exec = await container.exec({

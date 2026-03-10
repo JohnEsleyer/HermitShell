@@ -69,10 +69,13 @@ Temporary tunnel links for sharing sites.
 - `expires_at`: When the link expires.
 - `is_active`: Whether the tunnel is currently active.
 
-### 8. `agent_memory` (RAG)
-Used for long-term "context" beyond the immediate chat history.
-- `content`: The text snippet.
-- `embedding`: JSON-serialized vector (for future semantic search).
+### 8. `meetings`
+Tracks interactions between agents.
+- `initiator_id`: Agent that started the meeting.
+- `participant_id`: Agent that was invited.
+- `topic`: Subject of the meeting.
+- `transcript`: Record of the conversation.
+- `status`: `active` or `closed`.
 
 ### 9. `allowlist`
 Manages access control for the Telegram bots.
@@ -87,7 +90,6 @@ Persistent data that doesn't fit in the DB is stored in the `data/` directory:
   - `hermitshell.db`: Main application database (agents, users, settings, etc.)
 - `data/workspaces/{agentId}_{userId}/data/`: Per-container prebuilt libSQL files:
   - `calendar.db`: Scheduled actions/events for that specific agent-user workspace
-  - `rag.db`: Long-term RAG memory for that specific workspace
   
 - `data/workspaces/`: **Crucial Area.**
   - Folders are named `{agentId}_{userId}/`.
@@ -117,16 +119,6 @@ Behavior:
 - For recurring tasks (`is_recurring=1` + `cron_expression`), scheduler computes and stores next run, then resets status to `pending`.
 - Calendar dashboard reads scheduled tasks and current state.
 
-## 🧠 RAG Memory (rag.db)
-
-Persistent long-term memory for each agent:
-
-- Facts, rules, and knowledge are stored here
-- Managed via the **Memories (RAG)** tab in the Dashboard
-- Relevant memories are automatically injected into the agent's system prompt
-- Survives container restarts and workspace deletions
-
 ## 🧠 Memory Management
 
 - **Short-term Memory**: The last ~10-20 messages are loaded from `data/history/` and passed to the LLM with every request.
-- **Long-term Memory**: Managed via the `agent_memory` table / `rag.db`. The Orchestrator can inject relevant snippets into the system prompt based on the user's query.

@@ -1,16 +1,16 @@
-# The Python Agent (Crab)
+# The Agent Runtime
 
-The **HermitShell Agent**, also known as **Crab**, is the core logic running inside the Docker Cubicle. It's a Python-based daemon (`crab/agent.py`) that acts as the bridge between the LLM and the local Linux environment.
+The **HermitShell Agent** is the core logic running inside the Docker Cubicle. It's a TypeScript/Node.js script (`agent.js`) that acts as the bridge between the LLM and the local Linux environment.
 
 ## 🤖 Core Functionality
 
-The Python agent is the brain of the container. It's responsible for:
+The agent runtime is the brain of the container. It's responsible for:
 - **Prompt Engineering**: Building the system prompt and context for the LLM.
 - **LLM Communication**: Sending requests to the Orchestrator's internal proxy.
 - **Action Extraction**: Parsing the LLM's response to identify and execute actions.
 - **Safety Checks**: Validating commands to prevent dangerous or unintended operations.
 - **Execution**: Running bash commands natively and capturing their output.
-- **State Management**: Handling conversation history and memory.
+- **State Management**: Handling conversation history.
 - **Status Tracking**: Reporting idle/active status to the orchestrator.
 
 ## ⚙️ How it Works
@@ -29,21 +29,20 @@ The agent follows a standard Loop:
         - Appends the output to the conversation history.
 4.  **Repeat**: Sends the command output back to the LLM and repeats until the task is complete or a maximum iteration limit is reached.
 
-## 🛠️ Key Components in `agent.py`
+## 🛠️ Key Components in `agent.js`
 
-- `build_system_prompt()`: Dynamically creates the system instruction based on the agent's name, role, and personality. Includes instructions for:
+- `buildSystemPrompt()`: Dynamically creates the system instruction based on the agent's name, role, and personality. Includes instructions for:
   - Workspace directory structure (work/, in/, out/, www/)
   - Calendar events for scheduling future tasks (stored in calendar.db)
-  - RAG memory for persistent facts (stored in rag.db)
   - Asset procurement for requesting files from the internet
   - Telegram message optimization (concise outputs)
   - Web app creation (vanilla HTML/CSS/JS, index.html required)
-  - ClawMotion for video creation
-- `call_llm()`: Uses Python's `urllib.request` to securely call the Orchestrator proxy. Since the container is air-gapped, this is the **only** way the agent can communicate with the outside world.
-- `extract_command()`: Prioritizes tagged `<terminal>` command; JSON and legacy `ACTION: EXECUTE` are fallback compatibility paths.
-- `extract_panel_actions()`: Legacy parser for deprecated control panel actions.
+  - Video creation capabilities
+- `callLlm()`: Uses Node.js `fetch` to securely call the Orchestrator proxy. Since the container is air-gapped, this is the **only** way the agent can communicate with the outside world.
+- `extractCommand()`: Prioritizes tagged `<terminal>` command; JSON and legacy `ACTION: EXECUTE` are fallback compatibility paths.
+- `extractPanelActions()`: Legacy parser for deprecated control panel actions.
 - `isInternetRequest()`: A list of network egress commands that trigger Human-in-the-Loop checks.
-- `wait_for_approval()`: Monitors lock files (`/tmp/hermit_approval.lock`, `/tmp/hermit_deny.lock`) that the Orchestrator writes after operator Yes/No Telegram replies.
+- `waitForApproval()`: Monitors lock files (`/tmp/hermit_approval.lock`, `/tmp/hermit_deny.lock`) that the Orchestrator writes after operator Yes/No Telegram replies.
 
 ## 📂 File Delivery via the Agent
 

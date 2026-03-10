@@ -42,7 +42,6 @@ Workspace-local databases are stored here:
 | Database | Purpose |
 |----------|---------|
 | `calendar.db` | Stores scheduled calendar events (future prompts). When the time arrives, the system triggers your prompt automatically. |
-| `rag.db` | Persistent RAG memory for facts and knowledge. Survives container restarts. |
 | `*.db` | Future libSQL databases for additional capabilities. |
 
 ## 📜 Lifecycle of a Cubicle
