@@ -5,6 +5,8 @@ import * as crypto from 'crypto';
 export interface SkillRecord {
     id: string;
     name: string;
+    description: string;
+    keywords: string;
     file_name: string;
     created_at: string;
     updated_at: string;
@@ -13,6 +15,8 @@ export interface SkillRecord {
 const SKILLS_DIR = path.join(__dirname, '../../data/skills');
 const INDEX_PATH = path.join(SKILLS_DIR, 'index.json');
 const DEFAULT_SKILL_NAME = 'ClawMotion Video Engine';
+const DEFAULT_SKILL_DESC = 'Create complex video sequences using declarative blueprints.';
+const DEFAULT_SKILL_KW = 'video, motion, clawmotion, render, mp4';
 const DEFAULT_SKILL_CONTENT = `ClawMotion is a high-precision, programmatic video motion engine designed for AI Agents. Create complex video sequences using declarative blueprints and render with 100% parity between browser preview and server export.
 
 ✨ Key Features
@@ -129,7 +133,6 @@ function resolveSkillPath(fileName: string): string {
 
 function safeReadIndex(): SkillRecord[] {
     ensureSkillsStore();
-
     try {
         const raw = fs.readFileSync(INDEX_PATH, 'utf8');
         const parsed = JSON.parse(raw);
@@ -140,6 +143,8 @@ function safeReadIndex(): SkillRecord[] {
             .map((item) => ({
                 id: String(item.id),
                 name: String(item.name || 'Untitled Skill'),
+                description: String(item.description || ''),
+                keywords: String(item.keywords || ''),
                 file_name: path.basename(String(item.file_name)),
                 created_at: String(item.created_at || new Date().toISOString()),
                 updated_at: String(item.updated_at || new Date().toISOString())
@@ -173,6 +178,8 @@ function ensureDefaultSkill(items: SkillRecord[]): SkillRecord[] {
         {
             id: skillId,
             name: DEFAULT_SKILL_NAME,
+            description: DEFAULT_SKILL_DESC,
+            keywords: DEFAULT_SKILL_KW,
             file_name: fileName,
             created_at: now,
             updated_at: now
@@ -208,7 +215,7 @@ export function getSkill(skillId: string): (SkillRecord & { content: string }) |
     return { ...skill, content };
 }
 
-export function createSkill(name: string, content: string): SkillRecord {
+export function createSkill(name: string, description: string, keywords: string, content: string): SkillRecord {
     const now = new Date().toISOString();
     const skillId = crypto.randomUUID();
     const fileName = `${sanitizeFileName(name)}-${skillId.slice(0, 8)}.md`;
@@ -218,6 +225,8 @@ export function createSkill(name: string, content: string): SkillRecord {
     const record: SkillRecord = {
         id: skillId,
         name: name.trim() || 'Untitled Skill',
+        description: description.trim(),
+        keywords: keywords.trim(),
         file_name: fileName,
         created_at: now,
         updated_at: now
@@ -230,15 +239,14 @@ export function createSkill(name: string, content: string): SkillRecord {
     return record;
 }
 
-export function updateSkill(skillId: string, updates: { name?: string; content?: string }): SkillRecord | null {
+export function updateSkill(skillId: string, updates: { name?: string; description?: string; keywords?: string; content?: string }): SkillRecord | null {
     const index = loadIndex();
     const target = index.find((item) => item.id === skillId);
     if (!target) return null;
 
-    if (typeof updates.name === 'string' && updates.name.trim()) {
-        target.name = updates.name.trim();
-    }
-
+    if (typeof updates.name === 'string' && updates.name.trim()) target.name = updates.name.trim();
+    if (typeof updates.description === 'string') target.description = updates.description.trim();
+    if (typeof updates.keywords === 'string') target.keywords = updates.keywords.trim();
     if (typeof updates.content === 'string') {
         fs.writeFileSync(resolveSkillPath(target.file_name), updates.content, 'utf8');
     }
@@ -266,12 +274,9 @@ export function buildSkillsPromptContext(): string {
     const index = loadIndex().sort((a, b) => a.name.localeCompare(b.name));
     if (!index.length) return '';
 
-    const blocks = index.map((skill) => {
-        const filePath = resolveSkillPath(skill.file_name);
-        const content = fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : '';
-        return `## Skill: ${skill.name}\n${content}`.trim();
-    }).filter(Boolean);
+    const directory = index.map((skill) => {
+        return `- file: ${skill.file_name}\n  name: ${skill.name}\n  description: ${skill.description}\n  keywords: ${skill.keywords}`;
+    }).join('\n\n');
 
-    if (!blocks.length) return '';
-    return ['Operator Skills (markdown files injected into your context prompt):', ...blocks].join('\n\n');
+    return `Available Skills Directory (Summary):\n${directory}\n\nIf you need the full content of a skill to complete a task based on its description/keywords, return <action>SKILL:filename.md</action>. The system will inject the full content and you can proceed.`;
 }

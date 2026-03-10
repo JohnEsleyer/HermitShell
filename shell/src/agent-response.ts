@@ -201,3 +201,14 @@ export function parseAppAction(action: string): string | null {
     if (appName.includes('..') || appName.includes('/') || appName.includes('\\')) return null;
     return appName;
 }
+
+export function parseSkillAction(action: string): string | null {
+    const normalized = asString(action).trim();
+    if (!normalized.toUpperCase().startsWith('SKILL:')) return null;
+
+    const skillName = normalized.slice(6).trim();
+    if (!skillName || skillName.includes('..') || skillName.includes('/') || skillName.includes('\\')) {
+        return null;
+    }
+    return skillName;
+}

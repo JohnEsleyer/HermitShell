@@ -1974,11 +1974,13 @@
                 </div>
                 <div class="md:col-span-2 p-4 overflow-y-auto">
                     <div class="space-y-3">
-                        <input id="skill-name-input" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white" placeholder="Skill name">
-                        <textarea id="skill-content-input" class="w-full h-[52vh] bg-slate-800 border border-slate-700 rounded-lg p-3 text-white mono" placeholder="# Skill content (markdown)"></textarea>
+                        <input id="skill-name-input" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white font-bold" placeholder="Skill Name (e.g. ClawMotion)">
+                        <input id="skill-desc-input" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200" placeholder="Short description (e.g. Video motion engine)">
+                        <input id="skill-keywords-input" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-300" placeholder="Keywords (e.g. video, motion, mp4)">
+                        <textarea id="skill-content-input" class="w-full h-[40vh] bg-slate-800 border border-slate-700 rounded-lg p-3 text-slate-300 mono text-sm" placeholder="# Skill content (markdown)"></textarea>
                         <div class="flex justify-end gap-2">
                             <button onclick="deleteActiveSkill()" class="bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 px-4 py-2 rounded-lg text-sm">Delete</button>
-                            <button onclick="saveActiveSkill()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm">Save</button>
+                            <button onclick="saveActiveSkill()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-bold">Save Skill</button>
                         </div>
                     </div>
                 </div>
@@ -3359,19 +3361,24 @@
                 return;
             }
             document.getElementById('skill-name-input').value = data.skill.name || '';
+            document.getElementById('skill-desc-input').value = data.skill.description || '';
+            document.getElementById('skill-keywords-input').value = data.skill.keywords || '';
             document.getElementById('skill-content-input').value = data.skill.content || '';
             await loadSkillsList();
         }
 
         async function createSkillPrompt() {
-            const name = prompt('Skill name');
+            const name = prompt('Enter a name for the new skill:');
             if (!name) return;
             const res = await fetch('/api/skills', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, content: `# ${name}
-
-Describe how the agent should behave.` })
+                body: JSON.stringify({ 
+                    name, 
+                    description: 'Short description here...',
+                    keywords: 'keyword1, keyword2',
+                    content: `# ${name}\n\nDescribe how the agent should behave.` 
+                })
             });
             const data = await parseJsonSafe(res);
             if (!res.ok) {
@@ -3385,17 +3392,21 @@ Describe how the agent should behave.` })
         async function saveActiveSkill() {
             if (!activeSkillId) return;
             const name = document.getElementById('skill-name-input').value;
+            const description = document.getElementById('skill-desc-input').value;
+            const keywords = document.getElementById('skill-keywords-input').value;
             const content = document.getElementById('skill-content-input').value;
+            
             const res = await fetch(`/api/skills/${activeSkillId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, content })
+                body: JSON.stringify({ name, description, keywords, content })
             });
             const data = await parseJsonSafe(res);
             if (!res.ok) {
                 showToast(data.error || 'Failed to save skill');
                 return;
             }
+            showToast('Skill saved successfully!');
             await loadSkillsList();
         }
 
@@ -3410,6 +3421,8 @@ Describe how the agent should behave.` })
             }
             activeSkillId = null;
             document.getElementById('skill-name-input').value = '';
+            document.getElementById('skill-desc-input').value = '';
+            document.getElementById('skill-keywords-input').value = '';
             document.getElementById('skill-content-input').value = '';
             await loadSkillsList();
         }

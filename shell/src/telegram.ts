@@ -369,6 +369,22 @@ To get access, follow these steps:
         return '🧹 Conversation context cleared. I will respond without previous chat memory.';
     }
 
+    if (text === '/tokens') {
+        const historyKey = `telegram_${agent.id}_${userId}`;
+        const history = loadHistory(historyKey);
+        const systemPromptLength = (agent.system_prompt || '').length;
+        
+        let totalChars = systemPromptLength;
+        history.forEach(m => totalChars += String(m.content || '').length);
+        
+        const estimatedTokens = Math.ceil(totalChars / 4);
+        
+        return `📊 *Context Window Info*\n\n` +
+               `*Estimated Tokens:* ~${estimatedTokens}\n` +
+               `*Messages in memory:* ${history.length}\n\n` +
+               `_Tip: Use /clear to reset the context window and save tokens._`;
+    }
+
     if (text === '/budget') {
         return await handleBudgetCommand(agent);
     }
@@ -1097,7 +1113,9 @@ export async function setBotCommands(token: string): Promise<void> {
                     { command: 'logs', description: 'View container logs' },
                     { command: 'workspace', description: 'List workspace files' },
                     { command: 'budget', description: 'Check remaining budget' },
+                    { command: 'tokens', description: 'Check estimated token usage' },
                     { command: 'reset', description: 'Reset the cubicle' },
+                    { command: 'clear', description: 'Clear conversation context' },
                     { command: 'containers', description: 'List all containers (operator)' },
                     { command: 'agents', description: 'List all agents (operator)' }
                 ]
@@ -1202,6 +1220,7 @@ async function handleHelpCommand(agent: any): Promise<string> {
 /logs - Recent container logs
 /workspace - Files in persistent workspace
 /budget - Daily budget remaining
+/tokens - Check estimated token usage
 /reset - Kill and reset cubicle
 /clear - Clear conversation context
 

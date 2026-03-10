@@ -23,7 +23,7 @@ import cookie from '@fastify/cookie';
 import { loadHistory, saveHistory, clearHistory } from './history';
 import { discoverSitesFromWorkspaces, deleteSiteWorkspace, deleteWebApp, resolveEndpointApp, resolveWorkspaceApp } from './sites';
 import { resolveDashboardStaticRoot } from './dashboard-static';
-import { parseAgentResponse, parseFileAction, parseAppAction, hasStructuredContract, detectContractFormat, normalizeAgentOutputToJson, toContractJson } from './agent-response';
+import { parseAgentResponse, parseFileAction, parseAppAction, parseSkillAction, hasStructuredContract, detectContractFormat, normalizeAgentOutputToJson, toContractJson } from './agent-response';
 import { listSkills, getSkill, createSkill, updateSkill, deleteSkill } from './skills';
 
 const PORT = process.env.PORT || 3000;
@@ -97,6 +97,11 @@ function summarizeActionEffects(agentId: number, userId: number, action: string)
         effects.push(fs.existsSync(appIndex)
             ? `App publish target exists: ${selectedApp}`
             : `App action requested but app missing: ${selectedApp}`);
+    }
+
+    const selectedSkill = parseSkillAction(action);
+    if (selectedSkill) {
+        effects.push(`Skill requested & injected: ${selectedSkill}`);
     }
 
     if (!effects.length && action) {
@@ -1633,17 +1638,17 @@ export async function startServer() {
     });
 
     fastify.post('/api/skills', async (request: any, reply: any) => {
-        const { name, content } = request.body || {};
+        const { name, description, keywords, content } = request.body || {};
         if (!name || typeof name !== 'string') {
             return reply.code(400).send({ error: 'name is required' });
         }
-        const skill = createSkill(name, String(content || ''));
+        const skill = createSkill(name, String(description || ''), String(keywords || ''), String(content || ''));
         return { skill };
     });
 
     fastify.put('/api/skills/:id', async (request: any, reply: any) => {
-        const { name, content } = request.body || {};
-        const skill = updateSkill(String(request.params.id || ''), { name, content });
+        const { name, description, keywords, content } = request.body || {};
+        const skill = updateSkill(String(request.params.id || ''), { name, description, keywords, content });
         if (!skill) return reply.code(404).send({ error: 'Skill not found' });
         return { skill };
     });
@@ -1652,6 +1657,13 @@ export async function startServer() {
         const ok = deleteSkill(String(request.params.id || ''));
         if (!ok) return reply.code(404).send({ error: 'Skill not found' });
         return { success: true };
+    });
+
+    fastify.get('/api/internal/skills/:fileName', async (request: any, reply: any) => {
+        const fileName = request.params.fileName;
+        const fullPath = path.join(__dirname, '../../data/skills', path.basename(fileName));
+        if (!fs.existsSync(fullPath)) return reply.code(404).send({ error: 'Skill not found' });
+        return { content: fs.readFileSync(fullPath, 'utf8') };
     });
 
     fastify.post('/preview-login', async (request: any, reply: any) => {

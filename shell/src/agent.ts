@@ -283,6 +283,21 @@ async function handleFileAction(action: string): Promise<string> {
     return `File ${requestedName} not found in /app/workspace/out/`;
 }
 
+async function handleSkillAction(action: string): Promise<string> {
+    const fileName = action.split('SKILL:')[1]?.trim();
+    if (!fileName) return 'Error: No skill filename provided.';
+    
+    const url = `${ORCHESTRATOR_URL}/api/internal/skills/${encodeURIComponent(fileName)}`;
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return `Error: Skill ${fileName} not found in directory.`;
+        const data = await res.json();
+        return `[SKILL INJECTED: ${fileName}]\n\n${data.content}\n\nYou now have the knowledge of this skill. Proceed with the user's request.`;
+    } catch (e) {
+        return `Error fetching skill: ${e}`;
+    }
+}
+
 
 function buildTaggedContract(response: AgentResponse): string {
     const message = (response.message || '').trim();
@@ -331,9 +346,17 @@ async function run(): Promise<void> {
         }
 
         if (response.action) {
-            log(`FILE_ACTION: ${response.action}`);
-            const result = await handleFileAction(response.action);
-            history.push({ role: 'assistant', content: result });
+            if (response.action.startsWith('SKILL:')) {
+                log(`SKILL_ACTION: ${response.action}`);
+                const result = await handleSkillAction(response.action);
+                history.push({ role: 'assistant', content: buildTaggedContract(response) });
+                history.push({ role: 'system', content: result });
+                continue;
+            } else {
+                log(`FILE_ACTION: ${response.action}`);
+                const result = await handleFileAction(response.action);
+                history.push({ role: 'assistant', content: result });
+            }
         }
 
         if (!response.terminal) {
