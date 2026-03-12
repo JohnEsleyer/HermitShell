@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -19,15 +21,19 @@ func main() {
 	port := getEnv("PORT", "3000")
 	dbPath := getEnv("DATABASE_PATH", "./data/hermit.db")
 	telegramToken := getEnv("TELEGRAM_BOT_TOKEN", "")
-	llmProvider := getEnv("LLM_PROVIDER", "openai")
-	llmModel := getEnv("LLM_MODEL", "gpt-4o-mini")
+	llmProvider := getEnv("LLM_PROVIDER", "openrouter")
+	llmModel := getEnv("LLM_MODEL", "openai/gpt-5.2")
 	llmAPIKey := getEnv("LLM_API_KEY", "")
 	openAIKey := getEnv("OPENAI_API_KEY", "")
 	anthropicKey := getEnv("ANTHROPIC_API_KEY", "")
 	geminiKey := getEnv("GEMINI_API_KEY", "")
+	openRouterKey := getEnv("OPENROUTER_API_KEY", "")
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		log.Fatalf("Failed to create database directory: %v", err)
+	}
+	if err := ensureRuntimeData(filepath.Dir(dbPath)); err != nil {
+		log.Fatalf("Failed to initialize runtime data directories: %v", err)
 	}
 
 	database, err := db.NewDB(dbPath)
@@ -54,6 +60,14 @@ func main() {
 	selectedKey := llmAPIKey
 
 	switch provider {
+	case llm.ProviderOpenRouter:
+		if openRouterKey != "" {
+			selectedKey = openRouterKey
+		}
+		if llmModel == "" {
+			llmModel = "openai/gpt-5.2"
+		}
+		baseURL = "https://openrouter.ai/api/v1"
 	case llm.ProviderAnthropic:
 		if anthropicKey != "" {
 			selectedKey = anthropicKey
@@ -71,14 +85,16 @@ func main() {
 		}
 		baseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
 	default:
-		provider = llm.ProviderOpenAI
-		if openAIKey != "" {
+		provider = llm.ProviderOpenRouter
+		if openRouterKey != "" {
+			selectedKey = openRouterKey
+		} else if openAIKey != "" {
 			selectedKey = openAIKey
 		}
 		if llmModel == "" {
-			llmModel = "gpt-4o-mini"
+			llmModel = "openai/gpt-5.2"
 		}
-		baseURL = "https://api.openai.com/v1"
+		baseURL = "https://openrouter.ai/api/v1"
 	}
 
 	if selectedKey != "" {
@@ -127,6 +143,7 @@ func main() {
 	http.HandleFunc("/api/agents", apiServer.HandleAgents)
 	http.HandleFunc("/api/agents/", apiServer.HandleAgentDetail)
 	http.HandleFunc("/api/settings", apiServer.HandleSettings)
+	http.HandleFunc("/api/context", apiServer.HandleContext)
 	http.HandleFunc("/api/workspace/out", apiServer.HandleWorkspaceOut)
 	http.HandleFunc("/api/docker/exec", apiServer.HandleDockerExec)
 	http.HandleFunc("/api/docker/containers", apiServer.HandleDockerContainers)
@@ -156,4 +173,33 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+func ensureRuntimeData(dataDir string) error {
+	skillsDir := filepath.Join(dataDir, "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		return err
+	}
+
+	runtimeContextPath := filepath.Join(skillsDir, "context.md")
+	if _, err := os.Stat(runtimeContextPath); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	sourceFile, err := os.Open("./context.md")
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(runtimeContextPath)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }

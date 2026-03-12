@@ -21,7 +21,7 @@ hermit/
 │   ├── telegram/         # Bot API and webhook management
 │   └── workspace/        # File I/O, fsnotify (Portal watcher)
 ├── dashboard/public/     # Static HTML/JS/CSS dashboard
-├── system_prompt.txt    # Core agent instruction
+├── context.md          # Base agent context template (immutable runtime skill)
 ├── docs/                # Technical docs and scenarios
 └── hermit               # Compiled binary
 ```
@@ -141,12 +141,13 @@ Server starts on port 3000:
 |----------|---------|-------------|
 | PORT | 3000 | Server port |
 | DATABASE_PATH | ./data/hermit.db | SQLite database path |
-| LLM_PROVIDER | openai | LLM provider (openai, anthropic, gemini) |
+| LLM_PROVIDER | openrouter | LLM provider (openrouter, gemini, openai, anthropic) |
 | LLM_API_KEY | - | Fallback LLM API key |
-| OPENAI_API_KEY | - | OpenAI API key |
+| OPENROUTER_API_KEY | - | OpenRouter API key |
+| OPENAI_API_KEY | - | OpenAI API key (optional fallback) |
 | ANTHROPIC_API_KEY | - | Anthropic API key |
 | GEMINI_API_KEY | - | Gemini API key |
-| LLM_MODEL | gpt-4o-mini | LLM model |
+| LLM_MODEL | openai/gpt-5.2 | LLM model (OpenRouter format by default) |
 | TELEGRAM_BOT_TOKEN | - | Telegram bot token |
 
 ## Authentication

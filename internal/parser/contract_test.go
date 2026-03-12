@@ -19,3 +19,18 @@ func TestParseLLMOutputMultipleTerminalsAndSystem(t *testing.T) {
 		t.Fatalf("expected system tag to be time, got %q", parsed.System)
 	}
 }
+
+func TestParseLLMOutputSkillTag(t *testing.T) {
+	input := `<message>Loading skill</message><skill>remotion.md</skill>`
+	parsed := ParseLLMOutput(input)
+
+	if len(parsed.Actions) != 1 {
+		t.Fatalf("expected 1 action, got %d", len(parsed.Actions))
+	}
+	if parsed.Actions[0].Type != "SKILL" {
+		t.Fatalf("expected action type SKILL, got %q", parsed.Actions[0].Type)
+	}
+	if parsed.Actions[0].Value != "remotion.md" {
+		t.Fatalf("expected skill remotion.md, got %q", parsed.Actions[0].Value)
+	}
+}

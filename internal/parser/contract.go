@@ -31,6 +31,7 @@ var (
 	terminalRegex = regexp.MustCompile(`(?is)<terminal>(.*?)</terminal>`)
 	systemRegex   = regexp.MustCompile(`(?is)<system>(.*?)</system>`)
 	actionRegex   = regexp.MustCompile(`(?is)<action\s+type=["']?([^"'>]+)["']?>(.*?)</action>`)
+	skillRegex    = regexp.MustCompile(`(?is)<skill>(.*?)</skill>`)
 	calendarRegex = regexp.MustCompile(`(?is)<calendar>\s*<datetime>(.*?)</datetime>\s*<prompt>(.*?)</prompt>\s*</calendar>`)
 )
 
@@ -72,6 +73,16 @@ func ParseLLMOutput(text string) ParsedResponse {
 				Type:  strings.ToUpper(strings.TrimSpace(m[1])),
 				Value: strings.TrimSpace(m[2]),
 			})
+		}
+	}
+
+	skillMatches := skillRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range skillMatches {
+		if len(m) > 1 {
+			value := strings.TrimSpace(m[1])
+			if value != "" {
+				resp.Actions = append(resp.Actions, ParsedAction{Type: "SKILL", Value: value})
+			}
 		}
 	}
 

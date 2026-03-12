@@ -39,12 +39,13 @@ func TestAgentCRUD(t *testing.T) {
 	defer db.Close()
 
 	agent := &Agent{
-		Name:         "test-agent",
-		Role:         "assistant",
-		Model:        "openai/gpt-4",
-		SystemPrompt: "You are a helpful assistant.",
-		TelegramID:   "123456789",
-		Active:       true,
+		Name:       "test-agent",
+		Role:       "assistant",
+		Model:      "openai/gpt-4",
+		Context:    "You are a helpful assistant.",
+		Provider:   "openrouter",
+		TelegramID: "123456789",
+		Active:     true,
 	}
 
 	id, err := db.CreateAgent(agent)
