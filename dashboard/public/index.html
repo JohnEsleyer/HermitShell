@@ -42,7 +42,35 @@
 </head>
 
 <body class="bg-black text-zinc-200 font-sans overflow-hidden">
-    <div class="flex h-screen">
+    <div id="login-view" class="min-h-screen w-full flex items-center justify-center p-6 bg-black">
+        <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl">
+            <div class="mb-8 text-center">
+                <h1 class="text-3xl font-black tracking-tight text-white">HERMIT</h1>
+                <p class="text-xs text-zinc-500 mt-2 uppercase tracking-[0.2em]">Dashboard Login</p>
+            </div>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Username</label>
+                    <input id="login-username" type="text" required autocomplete="username"
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                        placeholder="admin">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Password</label>
+                    <input id="login-password" type="password" required autocomplete="current-password"
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                        placeholder="••••••••">
+                </div>
+                <p id="login-error" class="text-xs text-rose-400 hidden"></p>
+                <button type="submit"
+                    class="w-full bg-white hover:bg-zinc-200 text-black py-3 rounded-xl font-bold uppercase text-xs tracking-widest transition-all">
+                    Sign In
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-shell" class="flex h-screen hidden">
         <!-- Sidebar -->
         <aside class="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col">
             <div class="p-8 flex items-center space-x-3">
@@ -114,6 +142,12 @@
                         Management</p>
                 </div>
                 <div class="flex items-center space-x-4">
+                    <span id="auth-username" class="text-xs text-zinc-400 uppercase tracking-wider"></span>
+                    <button onclick="logout()"
+                        class="bg-zinc-900 hover:bg-zinc-800 text-zinc-100 px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-2 transition-all uppercase tracking-widest">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                        <span>Logout</span>
+                    </button>
                     <button id="deploy-agent-header-btn" onclick="openCreateAgentModal()"
                         class="bg-white hover:bg-zinc-200 text-black px-5 py-2 rounded-xl text-sm font-bold flex items-center space-x-2 transition-all shadow-lg shadow-white/20 active:scale-95">
                         <i data-lucide="plus" class="w-4 h-4"></i>
@@ -599,9 +633,10 @@
         let allowList = [];
         let agents = [];
         let calendarEvents = [];
-                let containers = [];
+        let containers = [];
         let currentFileManagerAgent = null;
         let currentFolder = 'in';
+        let metricsInterval = null;
 
         const panelTitles = {
             'agents': 'Agents',
@@ -625,7 +660,107 @@
             loadSettings();
             toggleAgentModelInput();
             loadContextTemplate();
-            setInterval(loadMetrics, 3000);
+            if (!metricsInterval) {
+                metricsInterval = setInterval(loadMetrics, 3000);
+            }
+        }
+
+        function showLogin(errorMessage = '') {
+            document.getElementById('app-shell').classList.add('hidden');
+            document.getElementById('login-view').classList.remove('hidden');
+            const errorEl = document.getElementById('login-error');
+            if (errorMessage) {
+                errorEl.textContent = errorMessage;
+                errorEl.classList.remove('hidden');
+            } else {
+                errorEl.classList.add('hidden');
+                errorEl.textContent = '';
+            }
+        }
+
+        function showDashboard(username) {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('app-shell').classList.remove('hidden');
+            document.getElementById('auth-username').textContent = username ? `Signed in: ${username}` : '';
+            init();
+        }
+
+        async function ensurePasswordChanged() {
+            const newPassword = prompt('First login detected. Please set a new password:');
+            if (!newPassword) {
+                return false;
+            }
+            const res = await fetch('/api/auth/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newPassword })
+            });
+            const data = await res.json();
+            return !!data.success;
+        }
+
+        async function checkAuthAndInitialize() {
+            try {
+                const res = await fetch('/api/auth/check');
+                const data = await res.json();
+                if (!data.authenticated) {
+                    showLogin();
+                    return;
+                }
+
+                if (data.mustChangePassword) {
+                    const changed = await ensurePasswordChanged();
+                    if (!changed) {
+                        showLogin('Password change required before using the dashboard.');
+                        return;
+                    }
+                }
+
+                showDashboard(data.username);
+            } catch (e) {
+                showLogin('Failed to check auth status. Please try again.');
+            }
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+
+            try {
+                const res = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    showLogin(data.error || 'Invalid credentials');
+                    return;
+                }
+
+                if (data.mustChangePassword) {
+                    const changed = await ensurePasswordChanged();
+                    if (!changed) {
+                        showLogin('Password change is required to continue.');
+                        return;
+                    }
+                }
+
+                document.getElementById('login-password').value = '';
+                showDashboard(username);
+            } catch (e) {
+                showLogin('Login failed. Please try again.');
+            }
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } finally {
+                window.location.reload();
+            }
         }
 
         function showPanel(name) {
@@ -993,7 +1128,8 @@
             }
         }
 
-        init();
+        document.getElementById('login-form').addEventListener('submit', handleLogin);
+        checkAuthAndInitialize();
     </script>
 </body>
 
