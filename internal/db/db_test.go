@@ -152,3 +152,50 @@ func TestAuditLog(t *testing.T) {
 		t.Errorf("expected action terminal, got %s", logs[0].Action)
 	}
 }
+
+func TestUpdateCredentials(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "hermit-*.db")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	db, err := NewDB(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.InitDefaultUser(); err != nil {
+		t.Fatalf("failed to init default user: %v", err)
+	}
+
+	id, mustChange, err := db.VerifyUser("admin", "hermit123")
+	if err != nil || id == 0 {
+		t.Fatalf("expected default credentials to work, err=%v id=%d", err, id)
+	}
+	if !mustChange {
+		t.Fatalf("expected default user to require password change")
+	}
+
+	if err := db.UpdateCredentials("admin", "operator", "new-secret"); err != nil {
+		t.Fatalf("failed to update credentials: %v", err)
+	}
+
+	oldID, _, err := db.VerifyUser("admin", "hermit123")
+	if err != nil {
+		t.Fatalf("failed to verify old credentials: %v", err)
+	}
+	if oldID != 0 {
+		t.Fatalf("expected old credentials to fail after update")
+	}
+
+	newID, newMustChange, err := db.VerifyUser("operator", "new-secret")
+	if err != nil || newID == 0 {
+		t.Fatalf("expected new credentials to work, err=%v id=%d", err, newID)
+	}
+	if newMustChange {
+		t.Fatalf("expected credentials update to clear must_change_password")
+	}
+}

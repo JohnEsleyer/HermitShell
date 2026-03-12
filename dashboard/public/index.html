@@ -70,6 +70,34 @@
         </div>
     </div>
 
+    <div id="first-login-view" class="min-h-screen w-full flex items-center justify-center p-6 bg-black hidden">
+        <div class="w-full max-w-md bg-zinc-950 border border-zinc-800 rounded-3xl p-8 shadow-2xl">
+            <div class="mb-8 text-center">
+                <h1 class="text-3xl font-black tracking-tight text-white">FIRST LOGIN SETUP</h1>
+                <p class="text-xs text-zinc-500 mt-2 uppercase tracking-[0.2em]">Create your permanent credentials</p>
+            </div>
+            <form id="first-login-form" class="space-y-4">
+                <div>
+                    <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">New Username</label>
+                    <input id="first-login-username" type="text" required autocomplete="username"
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                        placeholder="Choose a username">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">New Password</label>
+                    <input id="first-login-password" type="password" required autocomplete="new-password"
+                        class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-white"
+                        placeholder="Create a strong password">
+                </div>
+                <p id="first-login-error" class="text-xs text-rose-400 hidden"></p>
+                <button type="submit"
+                    class="w-full bg-white hover:bg-zinc-200 text-black py-3 rounded-xl font-bold uppercase text-xs tracking-widest transition-all">
+                    Save Credentials
+                </button>
+            </form>
+        </div>
+    </div>
+
     <div id="app-shell" class="flex h-screen hidden">
         <!-- Sidebar -->
         <aside class="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col">
@@ -155,6 +183,8 @@
                     </button>
                 </div>
             </header>
+
+            <div id="global-message" class="hidden mx-10 mt-4 rounded-xl border px-4 py-3 text-xs font-semibold uppercase tracking-widest"></div>
 
             <div class="flex-1 overflow-y-auto p-10 bg-black">
                 <!-- Agents Panel -->
@@ -414,6 +444,18 @@
                                             <option value="Europe/London">Europe/London</option>
                                         </select>
                                     </div>
+                                    <div class="border border-zinc-800 rounded-2xl p-5 space-y-4">
+                                        <h3 class="text-sm font-bold text-white">Dashboard Credentials</h3>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">New Username</label>
+                                            <input type="text" id="setting-auth-username" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white" placeholder="New login username">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">New Password</label>
+                                            <input type="password" id="setting-auth-password" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white" placeholder="New login password">
+                                        </div>
+                                        <button onclick="changeDashboardCredentials()" class="bg-zinc-900 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-bold transition-all text-xs uppercase tracking-widest">Update Credentials</button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -637,6 +679,7 @@
         let currentFileManagerAgent = null;
         let currentFolder = 'in';
         let metricsInterval = null;
+        let currentUsername = '';
 
         const panelTitles = {
             'agents': 'Agents',
@@ -665,8 +708,26 @@
             }
         }
 
+        function showMessage(message, type = 'success') {
+            const el = document.getElementById('global-message');
+            if (!message) {
+                el.classList.add('hidden');
+                el.textContent = '';
+                el.className = 'hidden mx-10 mt-4 rounded-xl border px-4 py-3 text-xs font-semibold uppercase tracking-widest';
+                return;
+            }
+
+            const classes = type === 'error'
+                ? 'mx-10 mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 px-4 py-3 text-xs font-semibold uppercase tracking-widest'
+                : 'mx-10 mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 px-4 py-3 text-xs font-semibold uppercase tracking-widest';
+            el.className = classes;
+            el.textContent = message;
+            el.classList.remove('hidden');
+        }
+
         function showLogin(errorMessage = '') {
             document.getElementById('app-shell').classList.add('hidden');
+            document.getElementById('first-login-view').classList.add('hidden');
             document.getElementById('login-view').classList.remove('hidden');
             const errorEl = document.getElementById('login-error');
             if (errorMessage) {
@@ -676,27 +737,38 @@
                 errorEl.classList.add('hidden');
                 errorEl.textContent = '';
             }
+            showMessage('');
+        }
+
+        function showFirstLoginSetup(errorMessage = '', suggestedUsername = '') {
+            document.getElementById('app-shell').classList.add('hidden');
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('first-login-view').classList.remove('hidden');
+            const errorEl = document.getElementById('first-login-error');
+            if (errorMessage) {
+                errorEl.textContent = errorMessage;
+                errorEl.classList.remove('hidden');
+            } else {
+                errorEl.classList.add('hidden');
+                errorEl.textContent = '';
+            }
+            document.getElementById('first-login-username').value = suggestedUsername || currentUsername || '';
+            document.getElementById('first-login-password').value = '';
+            showMessage('');
         }
 
         function showDashboard(username) {
+            currentUsername = username || currentUsername;
             document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('first-login-view').classList.add('hidden');
             document.getElementById('app-shell').classList.remove('hidden');
-            document.getElementById('auth-username').textContent = username ? `Signed in: ${username}` : '';
-            init();
-        }
-
-        async function ensurePasswordChanged() {
-            const newPassword = prompt('First login detected. Please set a new password:');
-            if (!newPassword) {
-                return false;
+            document.getElementById('auth-username').textContent = currentUsername ? `Signed in: ${currentUsername}` : '';
+            const authUserInput = document.getElementById('setting-auth-username');
+            if (authUserInput) {
+                authUserInput.value = currentUsername;
             }
-            const res = await fetch('/api/auth/change-password', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ newPassword })
-            });
-            const data = await res.json();
-            return !!data.success;
+            showMessage('');
+            init();
         }
 
         async function checkAuthAndInitialize() {
@@ -708,15 +780,13 @@
                     return;
                 }
 
+                currentUsername = data.username || '';
                 if (data.mustChangePassword) {
-                    const changed = await ensurePasswordChanged();
-                    if (!changed) {
-                        showLogin('Password change required before using the dashboard.');
-                        return;
-                    }
+                    showFirstLoginSetup('', currentUsername);
+                    return;
                 }
 
-                showDashboard(data.username);
+                showDashboard(currentUsername);
             } catch (e) {
                 showLogin('Failed to check auth status. Please try again.');
             }
@@ -740,18 +810,47 @@
                     return;
                 }
 
+                currentUsername = username;
                 if (data.mustChangePassword) {
-                    const changed = await ensurePasswordChanged();
-                    if (!changed) {
-                        showLogin('Password change is required to continue.');
-                        return;
-                    }
+                    showFirstLoginSetup('', username);
+                    return;
                 }
 
                 document.getElementById('login-password').value = '';
-                showDashboard(username);
+                showDashboard(currentUsername);
             } catch (e) {
                 showLogin('Login failed. Please try again.');
+            }
+        }
+
+        async function handleFirstLoginSetup(event) {
+            event.preventDefault();
+            const newUsername = document.getElementById('first-login-username').value.trim();
+            const newPassword = document.getElementById('first-login-password').value;
+
+            if (!newUsername || !newPassword) {
+                showFirstLoginSetup('New username and password are required.', newUsername);
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/change-credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newUsername, newPassword })
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    showFirstLoginSetup(data.error || 'Failed to save credentials.', newUsername);
+                    return;
+                }
+
+                currentUsername = newUsername;
+                showDashboard(currentUsername);
+                showMessage('First-time credentials saved successfully.');
+            } catch (e) {
+                showFirstLoginSetup('Failed to save credentials. Please try again.', newUsername);
             }
         }
 
@@ -973,7 +1072,7 @@
             const appName = document.getElementById('app-password-appname').value;
             const newPassword = document.getElementById('app-password-input').value;
             if (!newPassword) {
-                alert('Password is required');
+                showMessage('Password is required.', 'error');
                 return;
             }
             try {
@@ -986,13 +1085,13 @@
 
                 if (res.ok) {
                     closeAppPasswordModal();
-                    alert('App password updated successfully!');
+                    showMessage('App password updated successfully.');
                 } else {
                     const data = await res.json();
-                    alert('Failed to update app password: ' + (data.error || 'Unknown error'));
+                    showMessage('Failed to update app password: ' + (data.error || 'Unknown error'), 'error');
                 }
             } catch (e) {
-                alert('Failed to update app password');
+                showMessage('Failed to update app password.', 'error');
             }
         }
 
@@ -1035,7 +1134,38 @@
                     console.error('Failed to save setting:', key, e);
                 }
             }
-            alert('Settings saved!');
+            showMessage('Settings saved successfully.');
+        }
+
+        async function changeDashboardCredentials() {
+            const newUsername = document.getElementById('setting-auth-username').value.trim();
+            const newPassword = document.getElementById('setting-auth-password').value;
+
+            if (!newUsername || !newPassword) {
+                showMessage('New username and password are required to update credentials.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/auth/change-credentials', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ newUsername, newPassword })
+                });
+                const data = await res.json();
+
+                if (!data.success) {
+                    showMessage(data.error || 'Failed to update credentials.', 'error');
+                    return;
+                }
+
+                currentUsername = newUsername;
+                document.getElementById('auth-username').textContent = `Signed in: ${currentUsername}`;
+                document.getElementById('setting-auth-password').value = '';
+                showMessage('Dashboard credentials updated successfully.');
+            } catch (e) {
+                showMessage('Failed to update credentials.', 'error');
+            }
         }
 
         function toggleAgentModelInput() {
@@ -1059,7 +1189,7 @@
                 await fetch('/api/context', { method: 'DELETE' });
                 await loadContextTemplate();
             } catch (e) {
-                alert('Failed to reset context template');
+                showMessage('Failed to reset context template.', 'error');
             }
         }
 
@@ -1095,7 +1225,7 @@
             const context = document.getElementById('agent-context').value;
 
             if (!name || !role) {
-                alert('Name and Role are required');
+                showMessage('Name and role are required.', 'error');
                 return;
             }
 
@@ -1119,16 +1249,17 @@
                 if (data.id) {
                     closeCreateAgentModal();
                     loadAgents();
-                    alert('Agent created successfully!');
+                    showMessage('Agent created successfully.');
                 } else {
-                    alert('Failed to create agent: ' + (data.error || 'Unknown error'));
+                    showMessage('Failed to create agent: ' + (data.error || 'Unknown error'), 'error');
                 }
             } catch (e) {
-                alert('Failed to create agent');
+                showMessage('Failed to create agent.', 'error');
             }
         }
 
         document.getElementById('login-form').addEventListener('submit', handleLogin);
+        document.getElementById('first-login-form').addEventListener('submit', handleFirstLoginSetup);
         checkAuthAndInitialize();
     </script>
 </body>

@@ -296,6 +296,18 @@ func (d *DB) ChangePassword(username, newPassword string) error {
 	return err
 }
 
+func (d *DB) UpdateCredentials(currentUsername, newUsername, newPassword string) error {
+	hash := hashPassword(newPassword)
+
+	_, err := d.db.Exec(`
+		UPDATE users
+		SET username = ?, password_hash = ?, must_change_password = 0, updated_at = datetime('now')
+		WHERE username = ?
+	`, newUsername, hash, currentUsername)
+
+	return err
+}
+
 func hashPassword(password string) string {
 	hash := sha256.Sum256([]byte(password))
 	return hex.EncodeToString(hash[:])

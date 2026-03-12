@@ -137,6 +137,46 @@ func (s *Server) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
 }
 
+func (s *Server) HandleChangeCredentials(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	session, err := r.Cookie("session")
+	if err != nil || session.Value == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		NewUsername string `json:"newUsername"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewUsername == "" || req.NewPassword == "" {
+		json.NewEncoder(w).Encode(map[string]string{"error": "New username and password are required"})
+		return
+	}
+
+	var userID int64
+	userID, _ = strconv.ParseInt(session.Value, 10, 64)
+
+	username, _, err := s.db.GetUserByID(userID)
+	if err != nil || username == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if err := s.db.UpdateCredentials(username, req.NewUsername, req.NewPassword); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update credentials"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
 func (s *Server) HandleCheckAuth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 

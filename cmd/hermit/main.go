@@ -137,6 +137,7 @@ func main() {
 	http.HandleFunc("/api/auth/login", apiServer.HandleLogin)
 	http.HandleFunc("/api/auth/logout", apiServer.HandleLogout)
 	http.HandleFunc("/api/auth/change-password", apiServer.HandleChangePassword)
+	http.HandleFunc("/api/auth/change-credentials", apiServer.HandleChangeCredentials)
 	http.HandleFunc("/api/auth/check", apiServer.HandleCheckAuth)
 
 	http.HandleFunc("/api/agent-tests/xml-contract", apiServer.HandleXMLContractTest)
