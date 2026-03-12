@@ -402,7 +402,11 @@
                                         <div
                                             class="flex items-center p-3 bg-zinc-950 border border-zinc-800 rounded-xl">
                                             <span class="w-2 h-2 rounded-full bg-zinc-300 mr-3 animate-pulse"></span>
-                                            <span class="text-sm font-bold text-zinc-300">OpenRouter API</span>
+                                            <select id="setting-llm-provider" onchange="toggleLLMProviderFields()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:border-white">
+                                                <option value="openai">OpenAI (GPT)</option>
+                                                <option value="anthropic">Anthropic</option>
+                                                <option value="gemini">Gemini</option>
+                                            </select>
                                         </div>
                                     </div>
                                     <div>
@@ -411,8 +415,12 @@
                                             Inference Engine</label>
                                         <select id="setting-model"
                                             class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white">
-                                            <option>Anthropic Claude 3.5 Sonnet</option>
-                                            <option>Meta Llama 3.1 405B</option>
+                                            <option value="gpt-4o-mini">GPT-4o Mini</option>
+                                            <option value="gpt-4o">GPT-4o</option>
+                                            <option value="claude-3-5-sonnet-latest">Claude 3.5 Sonnet</option>
+                                            <option value="claude-3-7-sonnet-latest">Claude 3.7 Sonnet</option>
+                                            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                                         </select>
                                     </div>
                                 </div>
@@ -424,16 +432,30 @@
                                 <h2 class="text-xl font-bold text-white flex items-center">
                                     <i data-lucide="settings" class="w-6 h-6 mr-3 text-white"></i> API Configuration
                                 </h2>
+                                <p class="text-xs text-zinc-500 mt-2">Use direct provider API keys (OpenAI, Anthropic, Gemini). OpenRouter is no longer required.</p>
                             </div>
                             <div class="p-8 space-y-6">
                                 <div class="grid grid-cols-1 gap-6">
-                                    <div>
+                                    <div id="provider-openai-token">
                                         <label
-                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">OpenRouter
-                                            API Token</label>
-                                        <input type="password" id="setting-openrouter-token"
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">OpenAI API Key</label>
+                                        <input type="password" id="setting-openai-token"
                                             class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white"
-                                            placeholder="sk-or-...">
+                                            placeholder="sk-...">
+                                    </div>
+                                    <div id="provider-anthropic-token" class="hidden">
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Anthropic API Key</label>
+                                        <input type="password" id="setting-anthropic-token"
+                                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white"
+                                            placeholder="sk-ant-...">
+                                    </div>
+                                    <div id="provider-gemini-token" class="hidden">
+                                        <label
+                                            class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">Gemini API Key</label>
+                                        <input type="password" id="setting-gemini-token"
+                                            class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 focus:outline-none focus:border-white"
+                                            placeholder="AIza...">
                                     </div>
                                     <div class="flex items-center space-x-3 mt-2">
                                         <input type="checkbox" id="setting-domain-mode" onchange="toggleDomainMode()"
@@ -506,11 +528,12 @@
                             Model</label>
                         <select id="agent-model"
                             class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-sm text-zinc-300 focus:outline-none focus:border-white">
-                            <option value="openai/gpt-4o">OpenAI GPT-4o</option>
-                            <option value="anthropic/claude-3-sonnet">Anthropic Claude 3.5 Sonnet</option>
-                            <option value="anthropic/claude-3-opus">Anthropic Claude 3 Opus</option>
-                            <option value="google/gemini-pro">Google Gemini Pro</option>
-                            <option value="meta/llama-3.1-405b">Meta Llama 3.1 405B</option>
+                            <option value="gpt-4o">OpenAI GPT-4o</option>
+                            <option value="gpt-4o-mini">OpenAI GPT-4o Mini</option>
+                            <option value="claude-3-5-sonnet-latest">Anthropic Claude 3.5 Sonnet</option>
+                            <option value="claude-3-7-sonnet-latest">Anthropic Claude 3.7 Sonnet</option>
+                            <option value="gemini-1.5-pro">Google Gemini 1.5 Pro</option>
+                            <option value="gemini-1.5-flash">Google Gemini 1.5 Flash</option>
                         </select>
                     </div>
                     <div>
@@ -689,6 +712,9 @@
             loadApps();
             loadMetrics();
             loadSettings();
+            toggleLLMProviderFields();
+            setInterval(loadMetrics, 3000);
+            setInterval(loadTunnels, 10000);
         }
 
         function showPanel(name) {
@@ -945,23 +971,33 @@
 
         async function loadMetrics() {
             try {
-                const res = await fetch('/api/docker/containers');
-                const containers = await res.json();
+                const [containerRes, metricsRes] = await Promise.all([
+                    fetch('/api/docker/containers'),
+                    fetch('/api/metrics')
+                ]);
+                const containerList = await containerRes.json();
+                const metrics = await metricsRes.json();
 
-                document.getElementById('metric-containers').textContent = containers.length;
+                document.getElementById('metric-containers').textContent = containerList.length;
 
-                let totalCpu = 0;
-                let totalMem = 0;
+                const host = metrics.host || {};
+                const cpu = Number(host.cpuPercent || 0);
+                const memUsed = Number(host.memoryUsed || 0) / (1024 * 1024);
+                const memTotal = Number(host.memoryTotal || 1) / (1024 * 1024);
+                const memPct = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
+
+                document.getElementById('metric-cpu').textContent = cpu.toFixed(1) + '%';
+                document.getElementById('metric-cpu-bar').style.width = Math.min(cpu, 100) + '%';
+                document.getElementById('metric-memory').textContent = `${memUsed.toFixed(0)}MB / ${memTotal.toFixed(0)}MB`;
+                document.getElementById('metric-memory-bar').style.width = Math.min(memPct, 100) + '%';
+
                 let containerStatsHtml = '';
-
-                for (const c of containers) {
-                    totalCpu += Math.random() * 10;
-                    totalMem += Math.random() * 100;
+                for (const c of containerList) {
                     containerStatsHtml += `
                         <div class="flex items-center justify-between p-4 bg-zinc-950 rounded-xl border border-zinc-800">
                             <div class="flex items-center space-x-3">
-                                <div class="w-2 h-2 rounded-full ${c.Status === 'running' ? 'bg-zinc-300' : 'bg-slate-500'}"></div>
-                                <span class="font-bold text-white">${escapeHtml(c.Name)}</span>
+                                <div class="w-2 h-2 rounded-full ${c.status === 'running' ? 'bg-zinc-300' : 'bg-slate-500'}"></div>
+                                <span class="font-bold text-white">${escapeHtml(c.name)}</span>
                             </div>
                             <div class="flex items-center space-x-6 text-sm">
                                 <span class="text-zinc-400">CPU: <span class="text-white">${c.cpu || '0%'}</span></span>
@@ -970,19 +1006,10 @@
                         </div>
                     `;
                 }
-
-                if (containers.length === 0) {
+                if (containerList.length === 0) {
                     containerStatsHtml = '<p class="text-zinc-500 text-sm">No running containers</p>';
                 }
-
                 document.getElementById('container-stats').innerHTML = containerStatsHtml;
-
-                document.getElementById('metric-cpu').textContent = totalCpu.toFixed(1) + '%';
-                document.getElementById('metric-cpu-bar').style.width = Math.min(totalCpu, 100) + '%';
-
-                document.getElementById('metric-memory').textContent = totalMem.toFixed(0) + 'MB';
-                document.getElementById('metric-memory-bar').style.width = Math.min(totalMem / 10, 100) + '%';
-
             } catch (e) {
                 console.error('Failed to load metrics:', e);
             }
@@ -1081,7 +1108,7 @@
         }
 
         async function loadSettings() {
-            const settings = ['openrouter_token', 'timezone', 'model', 'domain_mode', 'dashboard_domain', 'agents_domain'];
+            const settings = ['llm_provider', 'openai_token', 'anthropic_token', 'gemini_token', 'timezone', 'model', 'domain_mode', 'dashboard_domain', 'agents_domain'];
             for (const key of settings) {
                 try {
                     const res = await fetch(`/api/settings?key=${key}`);
@@ -1094,11 +1121,19 @@
                                 if (key === 'domain_mode') toggleDomainMode();
                             } else {
                                 el.value = data.value;
+                                if (key === 'llm_provider') toggleLLMProviderFields();
                             }
                         }
                     }
                 } catch (e) { }
             }
+        }
+
+        function toggleLLMProviderFields() {
+            const provider = document.getElementById('setting-llm-provider').value;
+            document.getElementById('provider-openai-token').classList.toggle('hidden', provider !== 'openai');
+            document.getElementById('provider-anthropic-token').classList.toggle('hidden', provider !== 'anthropic');
+            document.getElementById('provider-gemini-token').classList.toggle('hidden', provider !== 'gemini');
         }
 
         function toggleDomainMode() {
@@ -1140,7 +1175,10 @@
 
         async function saveSettings() {
             const settings = {
-                'openrouter_token': document.getElementById('setting-openrouter-token').value,
+                'llm_provider': document.getElementById('setting-llm-provider').value,
+                'openai_token': document.getElementById('setting-openai-token').value,
+                'anthropic_token': document.getElementById('setting-anthropic-token').value,
+                'gemini_token': document.getElementById('setting-gemini-token').value,
                 'domain_mode': document.getElementById('setting-domain-mode').checked ? 'true' : 'false',
                 'timezone': document.getElementById('setting-timezone').value,
                 'model': document.getElementById('setting-model').value,

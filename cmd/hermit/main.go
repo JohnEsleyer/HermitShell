@@ -7,20 +7,24 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hermit/core/internal/api"
-	"github.com/hermit/core/internal/cloudflare"
-	"github.com/hermit/core/internal/db"
-	"github.com/hermit/core/internal/docker"
-	"github.com/hermit/core/internal/llm"
-	"github.com/hermit/core/internal/telegram"
+	"github.com/JohnEsleyer/hermit/internal/api"
+	"github.com/JohnEsleyer/hermit/internal/cloudflare"
+	"github.com/JohnEsleyer/hermit/internal/db"
+	"github.com/JohnEsleyer/hermit/internal/docker"
+	"github.com/JohnEsleyer/hermit/internal/llm"
+	"github.com/JohnEsleyer/hermit/internal/telegram"
 )
 
 func main() {
 	port := getEnv("PORT", "3000")
 	dbPath := getEnv("DATABASE_PATH", "./data/hermit.db")
 	telegramToken := getEnv("TELEGRAM_BOT_TOKEN", "")
+	llmProvider := getEnv("LLM_PROVIDER", "openai")
+	llmModel := getEnv("LLM_MODEL", "gpt-4o-mini")
 	llmAPIKey := getEnv("LLM_API_KEY", "")
-	llmModel := getEnv("LLM_MODEL", "openai/gpt-4")
+	openAIKey := getEnv("OPENAI_API_KEY", "")
+	anthropicKey := getEnv("ANTHROPIC_API_KEY", "")
+	geminiKey := getEnv("GEMINI_API_KEY", "")
 
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		log.Fatalf("Failed to create database directory: %v", err)
@@ -45,9 +49,46 @@ func main() {
 	}
 
 	var llmClient *llm.Client
-	if llmAPIKey != "" {
-		llmClient = llm.NewClient(llm.WithAPIKey(llmAPIKey), llm.WithModel(llmModel))
-		log.Printf("LLM client initialized: %s", llmModel)
+	provider := llm.Provider(llmProvider)
+	baseURL := ""
+	selectedKey := llmAPIKey
+
+	switch provider {
+	case llm.ProviderAnthropic:
+		if anthropicKey != "" {
+			selectedKey = anthropicKey
+		}
+		if llmModel == "" || llmModel == "gpt-4o-mini" {
+			llmModel = "claude-3-5-sonnet-latest"
+		}
+		baseURL = "https://api.anthropic.com/v1"
+	case llm.ProviderGemini:
+		if geminiKey != "" {
+			selectedKey = geminiKey
+		}
+		if llmModel == "" || llmModel == "gpt-4o-mini" {
+			llmModel = "gemini-1.5-pro"
+		}
+		baseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
+	default:
+		provider = llm.ProviderOpenAI
+		if openAIKey != "" {
+			selectedKey = openAIKey
+		}
+		if llmModel == "" {
+			llmModel = "gpt-4o-mini"
+		}
+		baseURL = "https://api.openai.com/v1"
+	}
+
+	if selectedKey != "" {
+		llmClient = llm.NewClient(
+			llm.WithProvider(provider),
+			llm.WithBaseURL(baseURL),
+			llm.WithAPIKey(selectedKey),
+			llm.WithModel(llmModel),
+		)
+		log.Printf("LLM client initialized: provider=%s model=%s", provider, llmModel)
 	}
 
 	dockerClient := docker.NewClient()
@@ -89,6 +130,7 @@ func main() {
 	http.HandleFunc("/api/workspace/out", apiServer.HandleWorkspaceOut)
 	http.HandleFunc("/api/docker/exec", apiServer.HandleDockerExec)
 	http.HandleFunc("/api/docker/containers", apiServer.HandleDockerContainers)
+	http.HandleFunc("/api/metrics", apiServer.HandleSystemMetrics)
 	http.HandleFunc("/api/docker/files", apiServer.HandleDockerFiles)
 	http.HandleFunc("/api/docker/download", apiServer.HandleDockerDownload)
 	http.HandleFunc("/api/allowlist", apiServer.HandleAllowList)

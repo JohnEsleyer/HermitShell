@@ -25,6 +25,7 @@ const (
 	ProviderOpenAI     Provider = "openai"
 	ProviderOpenRouter Provider = "openrouter"
 	ProviderAnthropic  Provider = "anthropic"
+	ProviderGemini     Provider = "gemini"
 )
 
 type Option func(*Client)
@@ -55,9 +56,9 @@ func WithProvider(p Provider) Option {
 
 func NewClient(opts ...Option) *Client {
 	c := &Client{
-		baseURL:  "https://openrouter.ai/api/v1",
-		model:    "openai/gpt-4",
-		provider: ProviderOpenRouter,
+		baseURL:  "https://api.openai.com/v1",
+		model:    "gpt-4o-mini",
+		provider: ProviderOpenAI,
 		http: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -105,26 +106,55 @@ func FormatMessages(messages []Message) string {
 	return string(b)
 }
 
-func (c *Client) Chat(model string, messages []Message) (string, error) {
-	reqBody := ChatRequest{
-		Model:    model,
-		Messages: messages,
+func (c *Client) chatEndpoint() string {
+	switch c.provider {
+	case ProviderOpenAI:
+		if c.baseURL != "" {
+			return strings.TrimRight(c.baseURL, "/") + "/chat/completions"
+		}
+		return "https://api.openai.com/v1/chat/completions"
+	case ProviderAnthropic:
+		if c.baseURL != "" {
+			return strings.TrimRight(c.baseURL, "/") + "/messages"
+		}
+		return "https://api.anthropic.com/v1/messages"
+	case ProviderGemini:
+		if c.baseURL != "" {
+			return strings.TrimRight(c.baseURL, "/") + "/chat/completions"
+		}
+		return "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+	default:
+		return strings.TrimRight(c.baseURL, "/") + "/chat/completions"
 	}
+}
 
+func (c *Client) setHeaders(req *http.Request, stream bool) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if stream {
+		req.Header.Set("Accept", "text/event-stream")
+	}
+	if c.provider == ProviderOpenRouter {
+		req.Header.Set("HTTP-Referer", "https://hermit.sh")
+		req.Header.Set("X-Title", "Hermit")
+	}
+	if c.provider == ProviderAnthropic {
+		req.Header.Set("anthropic-version", "2023-06-01")
+	}
+}
+
+func (c *Client) Chat(model string, messages []Message) (string, error) {
+	reqBody := ChatRequest{Model: model, Messages: messages}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", c.chatEndpoint(), bytes.NewReader(body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("HTTP-Referer", "https://hermit.sh")
-	req.Header.Set("X-Title", "Hermit")
+	c.setHeaders(req, false)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -141,36 +171,26 @@ func (c *Client) Chat(model string, messages []Message) (string, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
-
 	if len(chatResp.Choices) == 0 {
 		return "", fmt.Errorf("no choices in response")
 	}
-
 	return chatResp.Choices[0].Message.Content, nil
 }
 
 type StreamCallback func(content string) error
 
 func (c *Client) StreamChat(model string, messages []Message, callback StreamCallback) error {
-	reqBody := ChatRequest{
-		Model:    model,
-		Messages: messages,
-		Stream:   true,
-	}
-
+	reqBody := ChatRequest{Model: model, Messages: messages, Stream: true}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/chat/completions", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", c.chatEndpoint(), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.apiKey)
-	req.Header.Set("Accept", "text/event-stream")
+	c.setHeaders(req, true)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -180,13 +200,10 @@ func (c *Client) StreamChat(model string, messages []Message, callback StreamCal
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
-		line := scanner.Text()
-		line = strings.TrimSpace(line)
-
+		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data: ") {
 			continue
 		}
-
 		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
 			break
@@ -198,17 +215,14 @@ func (c *Client) StreamChat(model string, messages []Message, callback StreamCal
 				Index int     `json:"index"`
 			} `json:"choices"`
 		}
-
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
-
 		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
 			if err := callback(chunk.Choices[0].Delta.Content); err != nil {
 				return err
 			}
 		}
 	}
-
 	return scanner.Err()
 }

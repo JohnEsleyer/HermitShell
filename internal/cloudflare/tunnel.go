@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os/exec"
 	"regexp"
 	"sync"
@@ -145,4 +146,20 @@ func (m *TunnelManager) IsRunning(id string) bool {
 	defer m.mu.Unlock()
 	cmd, ok := m.processes[id]
 	return ok && cmd.Process != nil && cmd.ProcessState == nil
+}
+
+func (m *TunnelManager) CheckTunnelHealth(id string, timeout time.Duration) bool {
+	url := m.GetURL(id)
+	if url == "" {
+		return false
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode >= 200 && resp.StatusCode < 500
 }

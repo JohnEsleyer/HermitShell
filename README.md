@@ -16,12 +16,13 @@ hermit/
 │   ├── cloudflare/       # Cloudflare Tunnel integration
 │   ├── db/               # SQLite database layer
 │   ├── docker/           # Docker orchestration (exec, spawn)
-│   ├── llm/              # Proxy client for OpenRouter/OpenAI/etc.
+│   ├── llm/              # Proxy client for OpenAI/Anthropic/Gemini/etc.
 │   ├── parser/           # Regex-based XML contract parser
 │   ├── telegram/         # Bot API and webhook management
 │   └── workspace/        # File I/O, fsnotify (Portal watcher)
 ├── dashboard/public/     # Static HTML/JS/CSS dashboard
 ├── system_prompt.txt    # Core agent instruction
+├── docs/                # Technical docs and scenarios
 └── hermit               # Compiled binary
 ```
 
@@ -86,8 +87,9 @@ Manages container lifecycles natively from the host:
 - CRUD for permitted users
 
 **6. Settings Panel**
-- OpenRouter API token
-- Cloudflare API token + Account ID
+- Direct provider selection (OpenAI, Anthropic, Gemini)
+- Provider API key input
+- Domain mode toggle (custom domains vs cloudflared quick tunnels)
 - Time zone configuration
 
 ### Agent Creation Flow (4-Step Modal)
@@ -104,11 +106,11 @@ Manages container lifecycles natively from the host:
 - Bot verification flow with 6-digit codes
 - Per-agent bot linking with allowlist security
 
-### Cloudflare Tunnel Integration
-- Auto-provision dedicated tunnels per agent
-- Public hostname: `agent-slug.yourdomain.com`
+### Public URL Integration
+- Auto-provision dedicated cloudflared quick tunnels per agent
+- Optional custom domain mode with Let's Encrypt
 - Reverse proxy for apps at `/apps/{appname}`
-- Per-app password protection
+- Tunnel/webhook health monitoring
 
 ## Resource Usage
 
@@ -139,8 +141,12 @@ Server starts on port 3000:
 |----------|---------|-------------|
 | PORT | 3000 | Server port |
 | DATABASE_PATH | ./data/hermit.db | SQLite database path |
-| LLM_API_KEY | - | LLM API key |
-| LLM_MODEL | openai/gpt-4 | LLM model |
+| LLM_PROVIDER | openai | LLM provider (openai, anthropic, gemini) |
+| LLM_API_KEY | - | Fallback LLM API key |
+| OPENAI_API_KEY | - | OpenAI API key |
+| ANTHROPIC_API_KEY | - | Anthropic API key |
+| GEMINI_API_KEY | - | Gemini API key |
+| LLM_MODEL | gpt-4o-mini | LLM model |
 | TELEGRAM_BOT_TOKEN | - | Telegram bot token |
 
 ## Authentication
@@ -161,7 +167,8 @@ Default credentials:
 | `/api/settings` | GET, POST | Get/Set settings |
 | `/api/workspace/out` | GET | List output files |
 | `/api/docker/exec` | POST | Execute docker command |
-| `/api/docker/containers` | GET | List containers |
+| `/api/docker/containers` | GET | List containers with live CPU/memory usage |
+| `/api/metrics` | GET | Host + container real-time metrics |
 | `/api/docker/files` | GET | List workspace files |
 | `/api/docker/download` | GET | Download file |
 | `/api/allowlist` | GET, POST | AllowList CRUD |

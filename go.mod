@@ -1,4 +1,4 @@
-module github.com/hermit/core
+module github.com/JohnEsleyer/hermit
 
 go 1.22
 

@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -233,7 +234,7 @@ func (b *Bot) AnswerCallbackQuery(callbackID, text string) error {
 }
 
 func (b *Bot) SetWebhook(webhookURL string) error {
-	url := fmt.Sprintf("%s/bot%s/setWebhook?url=%s&drop_pending_updates=true", b.apiURL, b.token, webhookURL)
+	url := fmt.Sprintf("%s/bot%s/setWebhook?url=%s&drop_pending_updates=true", b.apiURL, b.token, url.QueryEscape(webhookURL))
 	resp, err := b.http.Get(url)
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
@@ -245,6 +246,39 @@ func (b *Bot) SetWebhook(webhookURL string) error {
 		return fmt.Errorf("API error: %d - %s", resp.StatusCode, string(respBody))
 	}
 	return nil
+}
+
+type WebhookInfo struct {
+	URL                  string `json:"url"`
+	HasCustomCertificate bool   `json:"has_custom_certificate"`
+	PendingUpdateCount   int    `json:"pending_update_count"`
+	LastErrorDate        int64  `json:"last_error_date"`
+	LastErrorMessage     string `json:"last_error_message"`
+	MaxConnections       int    `json:"max_connections"`
+	IPAddress            string `json:"ip_address"`
+}
+
+func (b *Bot) GetWebhookInfo() (*WebhookInfo, error) {
+	endpoint := fmt.Sprintf("%s/bot%s/getWebhookInfo", b.apiURL, b.token)
+	resp, err := b.http.Get(endpoint)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		OK     bool        `json:"ok"`
+		Result WebhookInfo `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	return &result.Result, nil
 }
 
 func (b *Bot) GetFile(fileID string) (string, error) {

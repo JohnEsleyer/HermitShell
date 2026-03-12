@@ -10,22 +10,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hermit/core/internal/cloudflare"
-	"github.com/hermit/core/internal/db"
-	"github.com/hermit/core/internal/docker"
-	"github.com/hermit/core/internal/llm"
-	"github.com/hermit/core/internal/parser"
-	"github.com/hermit/core/internal/telegram"
-	"github.com/hermit/core/internal/workspace"
+	"github.com/JohnEsleyer/hermit/internal/cloudflare"
+	"github.com/JohnEsleyer/hermit/internal/db"
+	"github.com/JohnEsleyer/hermit/internal/docker"
+	"github.com/JohnEsleyer/hermit/internal/llm"
+	"github.com/JohnEsleyer/hermit/internal/parser"
+	"github.com/JohnEsleyer/hermit/internal/telegram"
+	"github.com/JohnEsleyer/hermit/internal/workspace"
 )
 
 type Server struct {
-	db     *db.DB
-	ws     *workspace.Workspace
-	bot      *telegram.Bot
-	llm      *llm.Client
-	docker   *docker.Client
-	tunnels  *cloudflare.TunnelManager
+	db      *db.DB
+	ws      *workspace.Workspace
+	bot     *telegram.Bot
+	llm     *llm.Client
+	docker  *docker.Client
+	tunnels *cloudflare.TunnelManager
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
@@ -181,8 +181,12 @@ func (s *Server) HandleXMLContractTest(w http.ResponseWriter, r *http.Request) {
 	parsed := parser.ParseLLMOutput(req.Payload)
 
 	var effects []string
-	if parsed.Terminal != "" {
-		effects = append(effects, "TERMINAL execution queued: "+parsed.Terminal)
+	if len(parsed.Terminals) > 0 {
+		effects = append(effects, fmt.Sprintf("TERMINAL execution queue size: %d", len(parsed.Terminals)))
+	}
+
+	if parsed.System != "" {
+		effects = append(effects, "SYSTEM lookup requested: "+parsed.System)
 	}
 
 	for _, act := range parsed.Actions {
@@ -300,24 +304,24 @@ func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
 			}
 			agent.ContainerID = containerName
 			agent.Status = "running"
-			
+
 			// Setup Tunnel/Webhook
 			domainMode, _ := s.db.GetSetting("domain_mode")
 			var webhookURL string
 			if domainMode == "true" {
-			    baseDomain, _ := s.db.GetSetting("agents_domain")
-			    webhookURL = fmt.Sprintf("https://%s.%s/webhook/", strings.ToLower(agent.Name), baseDomain)
+				baseDomain, _ := s.db.GetSetting("agents_domain")
+				webhookURL = fmt.Sprintf("https://%s.%s/webhook/", strings.ToLower(agent.Name), baseDomain)
 			} else {
-			    portStr := os.Getenv("PORT")
-			    if portStr == "" {
-			        portStr = "3000"
-			    }
-			    portInt, _ := strconv.Atoi(portStr)
-			    
-			    url, err := s.tunnels.StartQuickTunnel("agent-"+agent.Name, portInt)
-			    if err == nil {
-			        webhookURL = url + "/webhook/"
-			        agent.TunnelURL = url
+				portStr := os.Getenv("PORT")
+				if portStr == "" {
+					portStr = "3000"
+				}
+				portInt, _ := strconv.Atoi(portStr)
+
+				url, err := s.tunnels.StartQuickTunnel("agent-"+agent.Name, portInt)
+				if err == nil {
+					webhookURL = url + "/webhook/"
+					agent.TunnelURL = url
 					// Save tunnel status in DB
 					s.db.CreateTunnel(&db.Tunnel{
 						AgentID:        agent.ID,
@@ -326,13 +330,13 @@ func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
 						PublicHostname: url,
 						Status:         "healthy",
 					})
-			    }
+				}
 			}
-			
+
 			if webhookURL != "" && s.bot != nil {
-			    s.bot.SetWebhook(webhookURL)
+				s.bot.SetWebhook(webhookURL)
 			}
-			
+
 			s.db.UpdateAgent(agent)
 			json.NewEncoder(w).Encode(map[string]bool{"success": true})
 		} else if action == "stop" {
@@ -340,12 +344,12 @@ func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
 				s.docker.Stop(agent.ContainerID)
 				s.docker.Remove(agent.ContainerID)
 			}
-			
+
 			if s.tunnels != nil {
-			    s.tunnels.StopTunnel("agent-"+agent.Name)
+				s.tunnels.StopTunnel("agent-" + agent.Name)
 			}
 			s.db.DeleteTunnelByAgentID(agent.ID)
-			
+
 			agent.ContainerID = ""
 			agent.Status = "stopped"
 			agent.TunnelURL = ""
@@ -643,6 +647,23 @@ func (s *Server) HandleTunnels(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		for _, tunnel := range tunnels {
+			healthy := true
+			if strings.Contains(tunnel.TunnelUUID, "quick-") {
+				healthy = s.tunnels != nil && s.tunnels.CheckTunnelHealth(tunnel.TunnelName, 5*time.Second)
+			}
+			if healthy && s.bot != nil {
+				if info, err := s.bot.GetWebhookInfo(); err == nil && info.LastErrorMessage != "" {
+					healthy = false
+				}
+			}
+			status := "healthy"
+			if !healthy {
+				status = "degraded"
+			}
+			tunnel.Status = status
+			_ = s.db.UpdateTunnelStatus(tunnel.ID, status)
+		}
 		json.NewEncoder(w).Encode(tunnels)
 
 	case http.MethodPost:
@@ -696,6 +717,26 @@ type ContainerInfo struct {
 	Disk   string `json:"disk"`
 }
 
+func (s *Server) HandleSystemMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	host, err := s.docker.HostStats()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	containerStats, _ := s.docker.Stats()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"host":       host,
+		"containers": containerStats,
+	})
+}
+
 func (s *Server) HandleDockerContainers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -704,19 +745,19 @@ func (s *Server) HandleDockerContainers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	containers, err := s.docker.List()
+	containerStats, err := s.docker.Stats()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	var infos []ContainerInfo
-	for _, name := range containers {
+	for _, c := range containerStats {
 		infos = append(infos, ContainerInfo{
-			Name:   name,
+			Name:   c.Name,
 			Status: "running",
-			CPU:    "0%",
-			Memory: "0MB",
+			CPU:    fmt.Sprintf("%.1f%%", c.CPUPercent),
+			Memory: fmt.Sprintf("%.1fMB", c.MemUsageMB),
 		})
 	}
 
