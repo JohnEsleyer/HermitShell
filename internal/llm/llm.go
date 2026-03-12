@@ -56,9 +56,9 @@ func WithProvider(p Provider) Option {
 
 func NewClient(opts ...Option) *Client {
 	c := &Client{
-		baseURL:  "https://api.openai.com/v1",
-		model:    "gpt-4o-mini",
-		provider: ProviderOpenAI,
+		baseURL:  "https://openrouter.ai/api/v1",
+		model:    "openai/gpt-5.2",
+		provider: ProviderOpenRouter,
 		http: &http.Client{
 			Timeout: 120 * time.Second,
 		},

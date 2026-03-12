@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -14,23 +15,24 @@ type DB struct {
 }
 
 type Agent struct {
-	ID            int64
-	Name          string
-	Role          string
-	Personality   string
-	Model         string
-	SystemPrompt  string
-	TelegramID    string
-	TelegramToken string
-	ProfilePic    string
-	TunnelID      string
-	TunnelURL     string
-	AllowedUsers  string
-	ContainerID   string
-	Status        string
-	Active        bool
-	CreatedAt     string
-	UpdatedAt     string
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	Role          string `json:"role"`
+	Personality   string `json:"personality"`
+	Provider      string `json:"provider"`
+	Model         string `json:"model"`
+	Context       string `json:"context"`
+	TelegramID    string `json:"telegram_id"`
+	TelegramToken string `json:"telegram_token"`
+	ProfilePic    string `json:"profile_pic"`
+	TunnelID      string `json:"tunnel_id"`
+	TunnelURL     string `json:"tunnel_url"`
+	AllowedUsers  string `json:"allowed_users"`
+	ContainerID   string `json:"container_id"`
+	Status        string `json:"status"`
+	Active        bool   `json:"active"`
+	CreatedAt     string `json:"created_at"`
+	UpdatedAt     string `json:"updated_at"`
 }
 
 type AuditLog struct {
@@ -68,6 +70,7 @@ func (d *DB) migrate() error {
 		name TEXT NOT NULL UNIQUE,
 		role TEXT NOT NULL DEFAULT 'assistant',
 		personality TEXT NOT NULL DEFAULT '',
+		provider TEXT NOT NULL DEFAULT 'openrouter',
 		model TEXT NOT NULL DEFAULT 'openai/gpt-4',
 		system_prompt TEXT NOT NULL DEFAULT '',
 		telegram_id TEXT NOT NULL DEFAULT '',
@@ -151,15 +154,22 @@ func (d *DB) migrate() error {
 	);
 	`
 
-	_, err := d.db.Exec(schema)
-	return err
+	if _, err := d.db.Exec(schema); err != nil {
+		return err
+	}
+
+	if _, err := d.db.Exec("ALTER TABLE agents ADD COLUMN provider TEXT NOT NULL DEFAULT 'openrouter'"); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return err
+	}
+
+	return nil
 }
 
 func (d *DB) CreateAgent(a *Agent) (int64, error) {
 	res, err := d.db.Exec(`
-		INSERT INTO agents (name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, a.Name, a.Role, a.Personality, a.Model, a.SystemPrompt, a.TelegramID, a.TelegramToken, a.ProfilePic, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active)
+		INSERT INTO agents (name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, a.Name, a.Role, a.Personality, a.Provider, a.Model, a.Context, a.TelegramID, a.TelegramToken, a.ProfilePic, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active)
 	if err != nil {
 		return 0, err
 	}
@@ -170,9 +180,9 @@ func (d *DB) CreateAgent(a *Agent) (int64, error) {
 func (d *DB) GetAgent(id int64) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
 		FROM agents WHERE id = ?
-	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -182,9 +192,9 @@ func (d *DB) GetAgent(id int64) (*Agent, error) {
 func (d *DB) GetAgentByName(name string) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
 		FROM agents WHERE name = ?
-	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +203,7 @@ func (d *DB) GetAgentByName(name string) (*Agent, error) {
 
 func (d *DB) ListAgents() ([]*Agent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
 		FROM agents ORDER BY id DESC
 	`)
 	if err != nil {
@@ -204,7 +214,7 @@ func (d *DB) ListAgents() ([]*Agent, error) {
 	var agents []*Agent
 	for rows.Next() {
 		a := &Agent{}
-		if err := rows.Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		agents = append(agents, a)
@@ -214,9 +224,9 @@ func (d *DB) ListAgents() ([]*Agent, error) {
 
 func (d *DB) UpdateAgent(a *Agent) error {
 	_, err := d.db.Exec(`
-		UPDATE agents SET name=?, role=?, personality=?, model=?, system_prompt=?, telegram_id=?, telegram_token=?, profile_pic=?, tunnel_id=?, tunnel_url=?, allowed_users=?, container_id=?, status=?, active=?, updated_at=datetime('now')
+		UPDATE agents SET name=?, role=?, personality=?, provider=?, model=?, system_prompt=?, telegram_id=?, telegram_token=?, profile_pic=?, tunnel_id=?, tunnel_url=?, allowed_users=?, container_id=?, status=?, active=?, updated_at=datetime('now')
 		WHERE id=?
-	`, a.Name, a.Role, a.Personality, a.Model, a.SystemPrompt, a.TelegramID, a.TelegramToken, a.ProfilePic, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active, a.ID)
+	`, a.Name, a.Role, a.Personality, a.Provider, a.Model, a.Context, a.TelegramID, a.TelegramToken, a.ProfilePic, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active, a.ID)
 	return err
 }
 

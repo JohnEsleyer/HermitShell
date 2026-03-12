@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -194,6 +195,8 @@ func (s *Server) HandleXMLContractTest(w http.ResponseWriter, r *http.Request) {
 			effects = append(effects, "FILE DELIVERY queued for: /app/workspace/out/"+act.Value)
 		} else if act.Type == "APP" {
 			effects = append(effects, "WEB APP published at endpoint: "+act.Value)
+		} else if act.Type == "SKILL" {
+			effects = append(effects, "SKILL CONTEXT queued for loading: "+act.Value)
 		} else {
 			effects = append(effects, "UNKNOWN ACTION mapped: "+act.Type+" -> "+act.Value)
 		}
@@ -233,6 +236,16 @@ func (s *Server) HandleAgents(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
 			http.Error(w, "Invalid JSON", http.StatusBadRequest)
 			return
+		}
+		if agent.Provider == "" {
+			agent.Provider = "openrouter"
+		}
+		if agent.Model == "" {
+			if agent.Provider == "gemini" {
+				agent.Model = "gemini-2.5-pro"
+			} else {
+				agent.Model = "openai/gpt-5.2"
+			}
 		}
 		id, err := s.db.CreateAgent(&agent)
 		if err != nil {
@@ -399,6 +412,68 @@ func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (s *Server) HandleContext(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	sourcePath := "./context.md"
+	runtimePath := filepath.Join(filepath.Dir(getEnv("DATABASE_PATH", "./data/hermit.db")), "skills", "context.md")
+
+	switch r.Method {
+	case http.MethodGet:
+		content, err := os.ReadFile(runtimePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"content": string(content)})
+
+	case http.MethodPost:
+		var req struct {
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		if err := os.WriteFile(runtimePath, []byte(req.Content), 0o644); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	case http.MethodDelete:
+		src, err := os.Open(sourcePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer src.Close()
+
+		dst, err := os.Create(runtimePath)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, src); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return defaultValue
 }
 
 func (s *Server) HandleWorkspaceOut(w http.ResponseWriter, r *http.Request) {
