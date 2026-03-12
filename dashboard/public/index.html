@@ -6,117 +6,886 @@
     <title>Hermit Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.263.1/umd/lucide.min.js">
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest"></script>
+    <style>
+        .panel { display: none; }
+        .panel.active { display: block; }
+        .nav-item.active { background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5); }
+        .step-indicator .step { opacity: 0.5; }
+        .step-indicator .step.active { opacity: 1; }
+        .step-indicator .step.completed { opacity: 1; color: #22c55e; }
+    </style>
 </head>
 <body class="bg-slate-950 text-slate-200 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <h1 class="text-3xl font-bold text-white mb-2">Hermit Dashboard</h1>
-        <p class="text-slate-400 mb-8">Agent Test Environment</p>
-        
-        <button onclick="openAgentLogsModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold">
-            Open Agent Simulator
-        </button>
+    <div class="flex min-h-screen">
+        <nav class="w-64 bg-slate-900 border-r border-slate-800 p-4 flex flex-col">
+            <h1 class="text-2xl font-bold text-white mb-6 flex items-center gap-2">
+                <i data-lucide="ghost" class="w-6 h-6 text-purple-400"></i>
+                Hermit
+            </h1>
+            <div class="space-y-1 flex-1">
+                <button onclick="showPanel('agents')" class="nav-item active w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
+                    <i data-lucide="bot" class="w-5 h-5"></i> Agents
+                </button>
+                <button onclick="showPanel('containers')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
+                    <i data-lucide="box" class="w-5 h-5"></i> Containers
+                </button>
+                <button onclick="showPanel('calendar')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
+                    <i data-lucide="calendar-days" class="w-5 h-5"></i> Calendar
+                </button>
+                <button onclick="showPanel('tunnels')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
+                    <i data-lucide="network" class="w-5 h-5"></i> Tunnels
+                </button>
+                <button onclick="showPanel('allowlist')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
+                    <i data-lucide="shield-check" class="w-5 h-5"></i> AllowLists
+                </button>
+                <button onclick="showPanel('settings')" class="nav-item w-full text-left px-4 py-3 rounded-lg border border-transparent hover:border-purple-500/30 flex items-center gap-3 transition-all">
+                    <i data-lucide="settings" class="w-5 h-5"></i> Settings
+                </button>
+            </div>
+            <div class="pt-4 border-t border-slate-800">
+                <p class="text-xs text-slate-500">Hermit v1.0</p>
+            </div>
+        </nav>
+
+        <main class="flex-1 p-6 overflow-auto">
+            <div id="panel-agents" class="panel active">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white">Agents</h2>
+                        <p class="text-slate-400 text-sm">Manage your AI agents</p>
+                    </div>
+                    <button onclick="openCreateAgentModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Create Agent
+                    </button>
+                </div>
+                <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+            </div>
+
+            <div id="panel-containers" class="panel">
+                <h2 class="text-2xl font-bold text-white mb-6">Containers</h2>
+                <div id="containers-table" class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-slate-800">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Agent</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Container</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">CPU</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Memory</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="containers-body" class="divide-y divide-slate-800"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="panel-calendar" class="panel">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white">Calendar</h2>
+                        <p class="text-slate-400 text-sm">Scheduled events across all agents</p>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="lg:col-span-2 bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <div id="calendar-month" class="text-center mb-4">
+                            <h3 class="text-lg font-bold text-white" id="calendar-month-title">March 2026</h3>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-2">
+                            <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div>
+                        </div>
+                        <div id="calendar-grid" class="grid grid-cols-7 gap-1"></div>
+                    </div>
+                    <div class="bg-slate-900 rounded-xl p-4 border border-slate-800">
+                        <h3 class="text-lg font-bold text-white mb-4">Upcoming Events</h3>
+                        <div id="calendar-events" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panel-tunnels" class="panel">
+                <h2 class="text-2xl font-bold text-white mb-6">Tunnels</h2>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-slate-800">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Name</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Agent</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">UUID</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Public Hostname</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Status</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tunnels-body" class="divide-y divide-slate-800"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="panel-allowlist" class="panel">
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-2xl font-bold text-white">AllowLists</h2>
+                        <p class="text-slate-400 text-sm">Telegram users permitted to interact with agents</p>
+                    </div>
+                    <button onclick="openAllowListModal()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2">
+                        <i data-lucide="plus" class="w-4 h-4"></i> Add User
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead class="bg-slate-800">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Telegram User ID</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Friendly Name</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Notes</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Date Added</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="allowlist-body" class="divide-y divide-slate-800"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="panel-settings" class="panel">
+                <h2 class="text-2xl font-bold text-white mb-6">Settings</h2>
+                <div class="max-w-2xl space-y-6">
+                    <div class="bg-slate-900 rounded-xl p-6 border border-slate-800">
+                        <h3 class="text-lg font-bold text-white mb-4">API Configuration</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">OpenRouter API Token</label>
+                                <input type="password" id="setting-openrouter-token" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="sk-or-...">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">Cloudflare API Token</label>
+                                <input type="password" id="setting-cloudflare-token" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="Your Cloudflare API token">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">Cloudflare Account ID</label>
+                                <input type="text" id="setting-cloudflare-account" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="Your Cloudflare Account ID">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">Time Zone</label>
+                                <select id="setting-timezone" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white">
+                                    <option value="Asia/Manila">Asia/Manila (PH)</option>
+                                    <option value="UTC">UTC</option>
+                                    <option value="America/New_York">America/New_York</option>
+                                    <option value="Europe/London">Europe/London</option>
+                                </select>
+                            </div>
+                            <button onclick="saveSettings()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold">Save Settings</button>
+                        </div>
+                    </div>
+                    <div class="bg-slate-900 rounded-xl p-6 border border-slate-800">
+                        <h3 class="text-lg font-bold text-white mb-4">Authentication</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-slate-400 mb-1">Auth File Path</label>
+                                <input type="text" id="setting-auth-path" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white" placeholder="./auth.txt">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
 
-    <div id="agent-logs-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
-        <div class="bg-slate-900 border border-slate-700 w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+    <div id="create-agent-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
             <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
                 <div>
-                    <h3 id="agent-logs-title" class="text-lg font-bold text-white">Agent Simulator (0 LLM Credits)</h3>
-                    <p class="text-xs text-slate-400">Test parser extraction & side-effects safely.</p>
+                    <h3 class="text-lg font-bold text-white">Create Agent</h3>
+                    <p class="text-xs text-slate-400">Step <span id="agent-step-num">1</span> of 4</p>
                 </div>
-                <button onclick="closeAgentLogsModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+                <button onclick="closeCreateAgentModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
             </div>
             
-            <div class="flex-1 grid grid-cols-1 lg:grid-cols-2 min-h-0">
-                <div id="agent-logs-content" class="overflow-y-auto p-4 space-y-3 text-sm border-b lg:border-b-0 lg:border-r border-slate-700"></div>
-                
-                <div class="p-4 space-y-3 overflow-y-auto">
-                    <div>
-                        <label class="block text-xs text-purple-300 mb-1">Simulate AI Response (New XML Contract)</label>
-                        <textarea id="agent-xml-test-input" class="w-full h-[55vh] bg-slate-800 border border-purple-700/70 rounded-lg p-3 text-xs text-purple-100 font-mono" spellcheck="false">
-<thought>Plan to generate data and deliver the report</thought>
-
-<message>Sending the parsed CSV report now.</message>
-
-<terminal>
-cd /app/workspace/work
-python3 generate.py > /app/workspace/out/report.csv
-</terminal>
-
-<action type="GIVE">report.csv</action>
-<action type="APP">my-dashboard</action>
-
-<calendar>
-  <datetime>2026-03-10T08:00:00Z</datetime>
-  <prompt>Follow up on the report</prompt>
-</calendar>
-</textarea>
+            <div class="p-4 border-b border-slate-800">
+                <div class="flex justify-between step-indicator">
+                    <div class="step flex items-center gap-2 active" data-step="1">
+                        <div class="w-6 h-6 rounded-full bg-purple-600 flex items-center justify-center text-xs">1</div>
+                        <span class="text-sm">Agent Details</span>
                     </div>
-                    <button onclick="runXmlContractTest()" class="bg-purple-600 hover:bg-purple-500 text-white px-3 py-2 rounded-lg text-sm font-bold w-full">Run Simulation</button>
+                    <div class="step flex items-center gap-2" data-step="2">
+                        <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">2</div>
+                        <span class="text-sm">Telegram Bot</span>
+                    </div>
+                    <div class="step flex items-center gap-2" data-step="3">
+                        <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">3</div>
+                        <span class="text-sm">Allowed Users</span>
+                    </div>
+                    <div class="step flex items-center gap-2" data-step="4">
+                        <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs">4</div>
+                        <span class="text-sm">Cloudflare Tunnel</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-6">
+                <div id="agent-step-1" class="agent-step">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-purple-300 mb-1">Agent Name *</label>
+                            <input type="text" id="agent-name" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., RalphTheResearcher">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-purple-300 mb-1">Role *</label>
+                            <input type="text" id="agent-role" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., Code assistant, Creative writer">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-purple-300 mb-1">Personality</label>
+                            <input type="text" id="agent-personality" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., witty pirate, formal researcher">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-purple-300 mb-1">LLM Model</label>
+                            <select id="agent-model" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white">
+                                <option value="openai/gpt-4">OpenAI GPT-4</option>
+                                <option value="openai/gpt-4o">OpenAI GPT-4o</option>
+                                <option value="openai/gpt-4-turbo">OpenAI GPT-4 Turbo</option>
+                                <option value="anthropic/claude-3-opus">Anthropic Claude 3 Opus</option>
+                                <option value="anthropic/claude-3-sonnet">Anthropic Claude 3 Sonnet</option>
+                                <option value="google/gemini-pro">Google Gemini Pro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-purple-300 mb-1">Profile Picture URL</label>
+                            <input type="text" id="agent-profile-pic" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="https://...">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="agent-step-2" class="agent-step hidden">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-purple-300 mb-1">Telegram Bot Token</label>
+                            <input type="text" id="agent-telegram-token" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white font-mono" placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz">
+                            <p class="text-xs text-slate-500 mt-1">Get this from @BotFather on Telegram</p>
+                        </div>
+                        <button onclick="verifyTelegramBot()" class="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2 rounded-lg font-bold w-full">Send Verification Code</button>
+                        <div id="telegram-verify-section" class="hidden">
+                            <label class="block text-sm text-purple-300 mb-1">Verification Code</label>
+                            <input type="text" id="agent-verify-code" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white font-mono text-center text-2xl tracking-widest" placeholder="000000" maxlength="6">
+                            <p class="text-xs text-slate-500 mt-1">Enter the 6-digit code sent to your bot</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="agent-step-3" class="agent-step hidden">
+                    <div class="space-y-4">
+                        <p class="text-sm text-slate-400">Select Telegram users allowed to interact with this agent:</p>
+                        <div id="allowed-users-list" class="max-h-64 overflow-y-auto space-y-2 border border-slate-700 rounded-lg p-2"></div>
+                        <p class="text-xs text-slate-500">Only selected users can message this agent (security boundary)</p>
+                    </div>
+                </div>
+
+                <div id="agent-step-4" class="agent-step hidden">
+                    <div class="space-y-4">
+                        <div id="cloudflare-status" class="bg-slate-800 rounded-lg p-4">
+                            <p class="text-sm text-slate-400">Cloudflare Tunnel Configuration</p>
+                            <p class="text-xs text-slate-500 mt-1">A dedicated public endpoint will be created for this agent</p>
+                        </div>
+                        <div id="tunnel-result" class="hidden">
+                            <label class="block text-sm text-green-400 mb-1">Tunnel URL</label>
+                            <input type="text" id="agent-tunnel-url" readonly class="w-full bg-slate-800 border border-green-700/50 rounded-lg px-4 py-2 text-green-400 font-mono">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-slate-700/80 bg-slate-900/70 flex justify-between">
+                <button onclick="prevAgentStep()" id="agent-prev-btn" class="text-slate-400 hover:text-white px-4 py-2 rounded-lg">Back</button>
+                <button onclick="nextAgentStep()" id="agent-next-btn" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="allowlist-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
+                <h3 class="text-lg font-bold text-white">Add Telegram User</h3>
+                <button onclick="closeAllowListModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div>
+                    <label class="block text-sm text-purple-300 mb-1">Telegram User ID *</label>
+                    <input type="text" id="allowlist-user-id" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., 123456789">
+                </div>
+                <div>
+                    <label class="block text-sm text-purple-300 mb-1">Friendly Name</label>
+                    <input type="text" id="allowlist-friendly-name" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="e.g., John Doe">
+                </div>
+                <div>
+                    <label class="block text-sm text-purple-300 mb-1">Notes</label>
+                    <input type="text" id="allowlist-notes" class="w-full bg-slate-800 border border-purple-700/50 rounded-lg px-4 py-2 text-white" placeholder="Optional notes">
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-700/80 bg-slate-900/70 flex justify-end">
+                <button onclick="saveAllowListEntry()" class="bg-purple-600 hover:bg-purple-500 text-white px-6 py-2 rounded-lg font-bold">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="file-manager-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-4xl h-[80vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+            <div class="p-4 border-b border-slate-700/80 bg-slate-900/70 flex items-center justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-white">File Manager</h3>
+                    <p class="text-xs text-slate-400" id="file-manager-agent">Container files</p>
+                </div>
+                <button onclick="closeFileManagerModal()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="flex-1 flex">
+                <div class="w-48 border-r border-slate-800 p-2 space-y-1">
+                    <button onclick="loadWorkspaceFiles('in')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                        <i data-lucide="folder-input" class="w-4 h-4"></i> in/
+                    </button>
+                    <button onclick="loadWorkspaceFiles('work')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                        <i data-lucide="wrench" class="w-4 h-4"></i> work/
+                    </button>
+                    <button onclick="loadWorkspaceFiles('out')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                        <i data-lucide="folder-output" class="w-4 h-4"></i> out/
+                    </button>
+                    <button onclick="loadWorkspaceFiles('apps')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-800 flex items-center gap-2">
+                        <i data-lucide="app-window" class="w-4 h-4"></i> apps/
+                    </button>
+                </div>
+                <div class="flex-1 p-4 overflow-auto">
+                    <div id="file-list" class="space-y-1"></div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        function openAgentLogsModal() {
-            document.getElementById('agent-logs-modal').classList.remove('hidden');
-            document.getElementById('agent-logs-modal').classList.add('flex');
+        let currentAgentStep = 1;
+        let agentData = {};
+        let allowList = [];
+        let agents = [];
+        let calendarEvents = [];
+        let tunnels = [];
+        let containers = [];
+        let currentFileManagerAgent = null;
+        let currentFolder = 'in';
+
+        function init() {
+            lucide.createIcons();
+            loadAgents();
+            loadAllowList();
+            loadCalendar();
+            loadTunnels();
+            loadContainers();
+            loadSettings();
         }
 
-        function closeAgentLogsModal() {
-            document.getElementById('agent-logs-modal').classList.add('hidden');
-            document.getElementById('agent-logs-modal').classList.remove('flex');
+        function showPanel(name) {
+            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+            document.getElementById('panel-' + name).classList.add('active');
+            event.target.closest('.nav-item')?.classList.add('active');
+            lucide.createIcons();
+        }
+
+        async function loadAgents() {
+            try {
+                const res = await fetch('/api/agents');
+                agents = await res.json();
+                renderAgents();
+            } catch (e) {
+                console.error('Failed to load agents:', e);
+            }
+        }
+
+        function renderAgents() {
+            const grid = document.getElementById('agents-grid');
+            if (agents.length === 0) {
+                grid.innerHTML = '<p class="text-slate-400 col-span-3 text-center py-8">No agents yet. Create one to get started.</p>';
+                return;
+            }
+            grid.innerHTML = agents.map(agent => `
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-purple-500/30 transition-all">
+                    <div class="flex items-start gap-3 mb-3">
+                        <div class="w-12 h-12 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-lg overflow-hidden">
+                            ${agent.profile_pic ? `<img src="${agent.profile_pic}" class="w-full h-full object-cover">` : agent.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="font-bold text-white">${escapeHtml(agent.name)}</h3>
+                            <p class="text-sm text-slate-400">${escapeHtml(agent.role)}</p>
+                        </div>
+                        <span class="px-2 py-1 rounded-full text-xs font-bold ${agent.status === 'running' ? 'bg-green-600/20 text-green-400' : 'bg-slate-700 text-slate-400'}">${agent.status}</span>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-3">${escapeHtml(agent.personality || 'No personality set')}</p>
+                    ${agent.tunnel_url ? `<a href="${escapeHtml(agent.tunnel_url)}" target="_blank" class="text-xs text-purple-400 hover:underline">${escapeHtml(agent.tunnel_url)}</a>` : ''}
+                    <div class="flex gap-2 mt-3 pt-3 border-t border-slate-800">
+                        <button onclick="startAgent(${agent.id})" class="flex-1 bg-green-600/20 hover:bg-green-600/30 text-green-400 px-3 py-1.5 rounded text-xs font-bold">Start</button>
+                        <button onclick="stopAgent(${agent.id})" class="flex-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 px-3 py-1.5 rounded text-xs font-bold">Stop</button>
+                        <button onclick="deleteAgent(${agent.id})" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-1.5 rounded text-xs">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        async function loadAllowList() {
+            try {
+                const res = await fetch('/api/allowlist');
+                allowList = await res.json();
+                renderAllowList();
+            } catch (e) {
+                console.error('Failed to load allowlist:', e);
+            }
+        }
+
+        function renderAllowList() {
+            const tbody = document.getElementById('allowlist-body');
+            if (allowList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-slate-400">No entries yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = allowList.map(entry => `
+                <tr>
+                    <td class="px-4 py-3 font-mono text-sm">${escapeHtml(entry.telegram_user_id)}</td>
+                    <td class="px-4 py-3">${escapeHtml(entry.friendly_name)}</td>
+                    <td class="px-4 py-3 text-slate-400">${escapeHtml(entry.notes)}</td>
+                    <td class="px-4 py-3 text-slate-400 text-sm">${entry.created_at}</td>
+                    <td class="px-4 py-3">
+                        <button onclick="deleteAllowListEntry(${entry.id})" class="text-red-400 hover:text-red-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        async function loadCalendar() {
+            try {
+                const res = await fetch('/api/calendar');
+                calendarEvents = await res.json();
+                renderCalendar();
+            } catch (e) {
+                console.error('Failed to load calendar:', e);
+            }
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('calendar-grid');
+            const eventsList = document.getElementById('calendar-events');
+            const monthTitle = document.getElementById('calendar-month-title');
+            
+            const now = new Date();
+            monthTitle.textContent = now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+            const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            const startPadding = firstDay.getDay();
+            
+            let html = '';
+            for (let i = 0; i < startPadding; i++) {
+                html += '<div class="p-2"></div>';
+            }
+            for (let d = 1; d <= lastDay.getDate(); d++) {
+                const dateStr = `${String(now.getMonth()+1).padStart(2,'0')}/${String(d).padStart(2,'0')}/${now.getFullYear()}`;
+                const hasEvent = calendarEvents.some(e => e.date === dateStr);
+                html += `<div class="p-2 text-center rounded ${hasEvent ? 'bg-purple-600/20 text-purple-400' : 'text-slate-300'}">${d}</div>`;
+            }
+            grid.innerHTML = html;
+            
+            const tz = document.getElementById('setting-timezone')?.value || 'Asia/Manila';
+            eventsList.innerHTML = calendarEvents.map(event => {
+                const agent = agents.find(a => a.id === event.agent_id);
+                return `
+                    <div class="bg-slate-800 rounded-lg p-3">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-sm font-bold text-white">${event.time} - ${event.date}</p>
+                                <p class="text-xs text-slate-400">${agent?.name || 'Unknown Agent'}</p>
+                            </div>
+                            <button onclick="deleteCalendarEvent(${event.id})" class="text-slate-500 hover:text-red-400"><i data-lucide="x" class="w-4 h-4"></i></button>
+                        </div>
+                        <p class="text-xs text-slate-300 mt-2">${escapeHtml(event.prompt)}</p>
+                    </div>
+                `;
+            }).join('') || '<p class="text-slate-400 text-sm">No upcoming events</p>';
+            lucide.createIcons();
+        }
+
+        async function loadTunnels() {
+            try {
+                const res = await fetch('/api/tunnels');
+                tunnels = await res.json();
+                renderTunnels();
+            } catch (e) {
+                console.error('Failed to load tunnels:', e);
+            }
+        }
+
+        function renderTunnels() {
+            const tbody = document.getElementById('tunnels-body');
+            if (tunnels.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No tunnels yet</td></tr>';
+                return;
+            }
+            tbody.innerHTML = tunnels.map(tunnel => {
+                const agent = agents.find(a => a.id === tunnel.agent_id);
+                return `
+                    <tr>
+                        <td class="px-4 py-3 font-bold text-white">${escapeHtml(tunnel.tunnel_name)}</td>
+                        <td class="px-4 py-3">${agent?.name || 'Unknown'}</td>
+                        <td class="px-4 py-3 font-mono text-xs text-slate-400">${escapeHtml(tunnel.tunnel_uuid)}</td>
+                        <td class="px-4 py-3"><a href="${escapeHtml(tunnel.public_hostname)}" target="_blank" class="text-purple-400 hover:underline text-sm">${escapeHtml(tunnel.public_hostname)}</a></td>
+                        <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs ${tunnel.status === 'healthy' ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'}">${tunnel.status}</span></td>
+                        <td class="px-4 py-3">
+                            <button onclick="deleteTunnel(${tunnel.id})" class="text-red-400 hover:text-red-300"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        async function loadContainers() {
+            try {
+                const res = await fetch('/api/docker/containers');
+                containers = await res.json();
+                renderContainers();
+            } catch (e) {
+                console.error('Failed to load containers:', e);
+            }
+        }
+
+        function renderContainers() {
+            const tbody = document.getElementById('containers-body');
+            if (containers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">No running containers</td></tr>';
+                return;
+            }
+            tbody.innerHTML = containers.map(c => {
+                const agent = agents.find(a => a.container_id === c.name);
+                return `
+                    <tr>
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">${agent?.name?.charAt(0).toUpperCase() || '?'}</div>
+                                <span class="font-bold text-white">${agent?.name || 'Unknown'}</span>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3 font-mono text-sm text-slate-400">${escapeHtml(c.name)}</td>
+                        <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs ${c.status === 'running' ? 'bg-green-600/20 text-green-400' : 'bg-slate-700 text-slate-400'}">${c.status}</span></td>
+                        <td class="px-4 py-3 text-slate-400">${c.cpu || '0%'}</td>
+                        <td class="px-4 py-3 text-slate-400">${c.memory || '0MB'}</td>
+                        <td class="px-4 py-3">
+                            <button onclick="openFileManager('${c.name}')" class="text-purple-400 hover:text-purple-300 text-sm flex items-center gap-1"><i data-lucide="folder-open" class="w-4 h-4"></i> Files</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            lucide.createIcons();
+        }
+
+        async function loadSettings() {
+            const settings = ['openrouter_token', 'cloudflare_token', 'cloudflare_account', 'timezone', 'auth_path'];
+            for (const key of settings) {
+                try {
+                    const res = await fetch(`/api/settings?key=${key}`);
+                    const data = await res.json();
+                    if (data.value) {
+                        const el = document.getElementById('setting-' + key.replace(/_/g, '-'));
+                        if (el) el.value = data.value;
+                    }
+                } catch (e) {}
+            }
+        }
+
+        async function saveSettings() {
+            const settings = {
+                'openrouter_token': document.getElementById('setting-openrouter-token').value,
+                'cloudflare_token': document.getElementById('setting-cloudflare-token').value,
+                'cloudflare_account': document.getElementById('setting-cloudflare-account').value,
+                'timezone': document.getElementById('setting-timezone').value,
+                'auth_path': document.getElementById('setting-auth-path').value,
+            };
+            for (const [key, value] of Object.entries(settings)) {
+                try {
+                    await fetch('/api/settings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key, value })
+                    });
+                } catch (e) {
+                    console.error('Failed to save setting:', key, e);
+                }
+            }
+            alert('Settings saved!');
+        }
+
+        function openCreateAgentModal() {
+            document.getElementById('create-agent-modal').classList.remove('hidden');
+            document.getElementById('create-agent-modal').classList.add('flex');
+            currentAgentStep = 1;
+            agentData = {};
+            updateAgentStepUI();
+            loadAllowListForSelection();
+            lucide.createIcons();
+        }
+
+        function closeCreateAgentModal() {
+            document.getElementById('create-agent-modal').classList.add('hidden');
+            document.getElementById('create-agent-modal').classList.remove('flex');
+        }
+
+        function updateAgentStepUI() {
+            document.querySelectorAll('.agent-step').forEach((el, i) => {
+                el.classList.toggle('hidden', i + 1 !== currentAgentStep);
+            });
+            document.getElementById('agent-step-num').textContent = currentAgentStep;
+            document.querySelectorAll('.step-indicator .step').forEach((el, i) => {
+                el.classList.remove('active', 'completed');
+                if (i + 1 < currentAgentStep) el.classList.add('completed');
+                if (i + 1 === currentAgentStep) el.classList.add('active');
+            });
+            document.getElementById('agent-prev-btn').classList.toggle('hidden', currentAgentStep === 1);
+            document.getElementById('agent-next-btn').textContent = currentAgentStep === 4 ? 'Create Agent' : 'Next';
+        }
+
+        function nextAgentStep() {
+            if (currentAgentStep === 1) {
+                agentData.name = document.getElementById('agent-name').value;
+                agentData.role = document.getElementById('agent-role').value;
+                agentData.personality = document.getElementById('agent-personality').value;
+                agentData.model = document.getElementById('agent-model').value;
+                agentData.profile_pic = document.getElementById('agent-profile-pic').value;
+                if (!agentData.name || !agentData.role) {
+                    alert('Name and Role are required');
+                    return;
+                }
+            }
+            if (currentAgentStep === 2) {
+                agentData.telegram_token = document.getElementById('agent-telegram-token').value;
+            }
+            if (currentAgentStep === 3) {
+                const checked = document.querySelectorAll('#allowed-users-list input:checked');
+                agentData.allowed_users = Array.from(checked).map(c => c.value).join(',');
+            }
+            if (currentAgentStep === 4) {
+                createAgent();
+                return;
+            }
+            currentAgentStep++;
+            updateAgentStepUI();
+        }
+
+        function prevAgentStep() {
+            if (currentAgentStep > 1) {
+                currentAgentStep--;
+                updateAgentStepUI();
+            }
+        }
+
+        function loadAllowListForSelection() {
+            const container = document.getElementById('allowed-users-list');
+            container.innerHTML = allowList.map(entry => `
+                <label class="flex items-center gap-2 p-2 hover:bg-slate-800 rounded cursor-pointer">
+                    <input type="checkbox" value="${entry.telegram_user_id}" class="rounded bg-slate-700 border-slate-600">
+                    <span class="text-sm">${escapeHtml(entry.friendly_name || entry.telegram_user_id)}</span>
+                </label>
+            `).join('') || '<p class="text-slate-400 text-sm p-2">No users in allowlist. Add users first.</p>';
+        }
+
+        async function verifyTelegramBot() {
+            const token = document.getElementById('agent-telegram-token').value;
+            if (!token) {
+                alert('Please enter a Telegram bot token');
+                return;
+            }
+            try {
+                const res = await fetch('/api/telegram/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('telegram-verify-section').classList.remove('hidden');
+                } else {
+                    alert('Verification failed: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to verify bot');
+            }
+        }
+
+        async function createAgent() {
+            try {
+                const res = await fetch('/api/agents', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: agentData.name,
+                        role: agentData.role,
+                        personality: agentData.personality,
+                        model: agentData.model,
+                        profile_pic: agentData.profile_pic,
+                        telegram_token: agentData.telegram_token,
+                        allowed_users: agentData.allowed_users,
+                        status: 'stopped',
+                        active: true
+                    })
+                });
+                const data = await res.json();
+                if (data.id) {
+                    closeCreateAgentModal();
+                    loadAgents();
+                    alert('Agent created successfully!');
+                } else {
+                    alert('Failed to create agent: ' + (data.error || 'Unknown error'));
+                }
+            } catch (e) {
+                alert('Failed to create agent');
+            }
+        }
+
+        async function startAgent(id) {
+            try {
+                await fetch(`/api/agents/${id}?action=start`, { method: 'POST' });
+                loadAgents();
+                loadContainers();
+            } catch (e) {
+                alert('Failed to start agent');
+            }
+        }
+
+        async function stopAgent(id) {
+            try {
+                await fetch(`/api/agents/${id}?action=stop`, { method: 'POST' });
+                loadAgents();
+                loadContainers();
+            } catch (e) {
+                alert('Failed to stop agent');
+            }
+        }
+
+        async function deleteAgent(id) {
+            if (!confirm('Are you sure you want to delete this agent?')) return;
+            try {
+                await fetch(`/api/agents/${id}`, { method: 'DELETE' });
+                loadAgents();
+            } catch (e) {
+                alert('Failed to delete agent');
+            }
+        }
+
+        function openAllowListModal() {
+            document.getElementById('allowlist-modal').classList.remove('hidden');
+            document.getElementById('allowlist-modal').classList.add('flex');
+            lucide.createIcons();
+        }
+
+        function closeAllowListModal() {
+            document.getElementById('allowlist-modal').classList.add('hidden');
+            document.getElementById('allowlist-modal').classList.remove('flex');
+        }
+
+        async function saveAllowListEntry() {
+            const entry = {
+                telegram_user_id: document.getElementById('allowlist-user-id').value,
+                friendly_name: document.getElementById('allowlist-friendly-name').value,
+                notes: document.getElementById('allowlist-notes').value
+            };
+            if (!entry.telegram_user_id) {
+                alert('Telegram User ID is required');
+                return;
+            }
+            try {
+                await fetch('/api/allowlist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(entry)
+                });
+                closeAllowListModal();
+                loadAllowList();
+            } catch (e) {
+                alert('Failed to save entry');
+            }
+        }
+
+        async function deleteAllowListEntry(id) {
+            if (!confirm('Delete this entry?')) return;
+            try {
+                await fetch(`/api/allowlist/${id}`, { method: 'DELETE' });
+                loadAllowList();
+            } catch (e) {
+                alert('Failed to delete entry');
+            }
+        }
+
+        async function deleteCalendarEvent(id) {
+            try {
+                await fetch(`/api/calendar/${id}`, { method: 'DELETE' });
+                loadCalendar();
+            } catch (e) {
+                alert('Failed to delete event');
+            }
+        }
+
+        async function deleteTunnel(id) {
+            if (!confirm('Delete this tunnel?')) return;
+            try {
+                await fetch(`/api/tunnels/${id}`, { method: 'DELETE' });
+                loadTunnels();
+            } catch (e) {
+                alert('Failed to delete tunnel');
+            }
+        }
+
+        function openFileManager(containerName) {
+            currentFileManagerAgent = containerName;
+            document.getElementById('file-manager-agent').textContent = 'Container: ' + containerName;
+            document.getElementById('file-manager-modal').classList.remove('hidden');
+            document.getElementById('file-manager-modal').classList.add('flex');
+            loadWorkspaceFiles('in');
+            lucide.createIcons();
+        }
+
+        function closeFileManagerModal() {
+            document.getElementById('file-manager-modal').classList.add('hidden');
+            document.getElementById('file-manager-modal').classList.remove('flex');
+        }
+
+        async function loadWorkspaceFiles(folder) {
+            currentFolder = folder;
+            if (!currentFileManagerAgent) return;
+            try {
+                const res = await fetch(`/api/docker/files?container=${currentFileManagerAgent}&folder=${folder}`);
+                const data = await res.json();
+                const list = document.getElementById('file-list');
+                list.innerHTML = (data.files || []).map(f => `
+                    <div class="flex items-center justify-between p-2 hover:bg-slate-800 rounded">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="${f.isDir ? 'folder' : 'file'}" class="w-4 h-4 text-slate-400"></i>
+                            <span class="text-sm">${escapeHtml(f.name)}</span>
+                        </div>
+                        ${!f.isDir ? `<button onclick="downloadFile('${f.name}')" class="text-purple-400 hover:text-purple-300 text-xs">Download</button>` : ''}
+                    </div>
+                `).join('') || '<p class="text-slate-400 text-sm">Empty folder</p>';
+                lucide.createIcons();
+            } catch (e) {
+                console.error('Failed to load files:', e);
+            }
+        }
+
+        async function downloadFile(filename) {
+            window.open(`/api/docker/download?container=${currentFileManagerAgent}&folder=${currentFolder}&file=${filename}`);
         }
 
         function escapeHtml(text) {
             const div = document.createElement('div');
-            div.textContent = text;
+            div.textContent = text || '';
             return div.innerHTML;
         }
 
-        function showToast(message) {
-            alert(message);
-        }
-
-        async function runXmlContractTest() {
-            const payload = document.getElementById('agent-xml-test-input').value;
-            if (!payload?.trim()) return showToast('XML payload is required.');
-            
-            const out = document.getElementById('agent-logs-content');
-            out.insertAdjacentHTML('afterbegin', '<div class="text-slate-300 text-xs">Running simulation...</div>');
-            
-            try {
-                const res = await fetch(`/api/agent-tests/xml-contract`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: "0", payload })
-                });
-                const data = await res.json();
-                
-                if (data.error) {
-                    out.insertAdjacentHTML('afterbegin', `<div class="text-red-400 text-xs">Simulation failed: ${escapeHtml(data.error)}</div>`);
-                    return;
-                }
-
-                const parsed = data?.parsed || {};
-                const effects = (data?.actionEffects || []).map((e) => `<li class="mb-1">${escapeHtml(String(e))}</li>`).join('');
-                
-                const inserted = `<div class="bg-slate-800/70 border border-green-600/50 rounded-lg p-3 space-y-2 agent-log-insert">
-                    <div class="flex justify-between text-xs text-slate-400"><span>Parsed Safely by Go Regex</span><span>Success</span></div>
-                    <pre class="text-[11px] text-green-300 whitespace-pre-wrap bg-black/40 p-2 rounded border border-slate-700">${escapeHtml(JSON.stringify(parsed, null, 2))}</pre>
-                    <div class="mt-2"><span class="text-slate-400 text-xs font-bold uppercase tracking-wider">Simulated Effects:</span><ul class="list-disc ml-5 text-slate-200 text-xs mt-1">${effects}</ul></div>
-                </div>`;
-                
-                out.insertAdjacentHTML('afterbegin', inserted);
-            } catch (err) {
-                out.insertAdjacentHTML('afterbegin', `<div class="text-red-400 text-xs">Network error: ${escapeHtml(err.message)}</div>`);
-            }
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeAgentLogsModal();
-        });
+        init();
     </script>
 </body>
 </html>

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/hermit/core/internal/db"
 	"github.com/hermit/core/internal/docker"
@@ -155,6 +156,38 @@ func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	case http.MethodPost:
+		agent, err := s.db.GetAgent(idNum)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		action := r.URL.Query().Get("action")
+		if action == "start" {
+			containerName := "hermit-" + strings.ToLower(agent.Name)
+			err := s.docker.Run(containerName, "alpine:latest", true)
+			if err != nil {
+				json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+				return
+			}
+			agent.ContainerID = containerName
+			agent.Status = "running"
+			s.db.UpdateAgent(agent)
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		} else if action == "stop" {
+			if agent.ContainerID != "" {
+				s.docker.Stop(agent.ContainerID)
+				s.docker.Remove(agent.ContainerID)
+			}
+			agent.ContainerID = ""
+			agent.Status = "stopped"
+			s.db.UpdateAgent(agent)
+			json.NewEncoder(w).Encode(map[string]bool{"success": true})
+		} else {
+			http.Error(w, "Unknown action", http.StatusBadRequest)
+		}
 
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -312,4 +345,293 @@ func (s *Server) DeliverFile(chatID, filename string) error {
 
 	s.db.LogAction(1, chatID, "deliver", filename)
 	return nil
+}
+
+func (s *Server) HandleAllowList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		entries, err := s.db.ListAllowList()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(entries)
+
+	case http.MethodPost:
+		var entry db.AllowListEntry
+		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		id, err := s.db.CreateAllowListEntry(&entry)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) HandleAllowListDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	id := strings.TrimPrefix(r.URL.Path, "/api/allowlist/")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	var idNum int64
+	fmt.Sscanf(id, "%d", &idNum)
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := s.db.DeleteAllowListEntry(idNum); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) HandleCalendar(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		events, err := s.db.ListCalendarEvents()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(events)
+
+	case http.MethodPost:
+		var event db.CalendarEvent
+		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		id, err := s.db.CreateCalendarEvent(&event)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) HandleCalendarDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	id := strings.TrimPrefix(r.URL.Path, "/api/calendar/")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	var idNum int64
+	fmt.Sscanf(id, "%d", &idNum)
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := s.db.DeleteCalendarEvent(idNum); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) HandleTunnels(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		tunnels, err := s.db.ListTunnels()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(tunnels)
+
+	case http.MethodPost:
+		var tunnel db.Tunnel
+		if err := json.NewDecoder(r.Body).Decode(&tunnel); err != nil {
+			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			return
+		}
+		id, err := s.db.CreateTunnel(&tunnel)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) HandleTunnelDetail(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	id := strings.TrimPrefix(r.URL.Path, "/api/tunnels/")
+	if id == "" {
+		http.Error(w, "ID required", http.StatusBadRequest)
+		return
+	}
+
+	var idNum int64
+	fmt.Sscanf(id, "%d", &idNum)
+
+	switch r.Method {
+	case http.MethodDelete:
+		if err := s.db.DeleteTunnel(idNum); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]bool{"success": true})
+
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+type ContainerInfo struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+	CPU    string `json:"cpu"`
+	Memory string `json:"memory"`
+	Disk   string `json:"disk"`
+}
+
+func (s *Server) HandleDockerContainers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	containers, err := s.docker.List()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var infos []ContainerInfo
+	for _, name := range containers {
+		infos = append(infos, ContainerInfo{
+			Name:   name,
+			Status: "running",
+			CPU:    "0%",
+			Memory: "0MB",
+		})
+	}
+
+	json.NewEncoder(w).Encode(infos)
+}
+
+func (s *Server) HandleDockerFiles(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	container := r.URL.Query().Get("container")
+	folder := r.URL.Query().Get("folder")
+	if container == "" || folder == "" {
+		http.Error(w, "container and folder required", http.StatusBadRequest)
+		return
+	}
+
+	output, err := s.docker.Exec(container, "ls -la /app/workspace/"+folder+" 2>/dev/null || echo 'empty'")
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string][]string{"files": {}})
+		return
+	}
+
+	var files []map[string]interface{}
+	lines := strings.Split(output, "\n")
+	for _, line := range lines[1:] {
+		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "total") {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 9 {
+			name := strings.Join(parts[8:], " ")
+			isDir := strings.HasPrefix(parts[0], "d")
+			files = append(files, map[string]interface{}{
+				"name":  name,
+				"isDir": isDir,
+			})
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
+}
+
+func (s *Server) HandleDockerDownload(w http.ResponseWriter, r *http.Request) {
+	container := r.URL.Query().Get("container")
+	folder := r.URL.Query().Get("folder")
+	filename := r.URL.Query().Get("file")
+
+	if container == "" || folder == "" || filename == "" {
+		http.Error(w, "Missing parameters", http.StatusBadRequest)
+		return
+	}
+
+	output, err := s.docker.Exec(container, "cat /app/workspace/"+folder+"/"+filename)
+	if err != nil {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+	w.Write([]byte(output))
+}
+
+type TelegramVerifyRequest struct {
+	Token string `json:"token"`
+	Code  string `json:"code"`
+}
+
+func (s *Server) HandleTelegramVerify(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req TelegramVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"code":    code,
+	})
 }

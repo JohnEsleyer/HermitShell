@@ -12,15 +12,23 @@ type DB struct {
 }
 
 type Agent struct {
-	ID           int64
-	Name         string
-	Role         string
-	Model        string
-	SystemPrompt string
-	TelegramID   string
-	Active       bool
-	CreatedAt    string
-	UpdatedAt    string
+	ID            int64
+	Name          string
+	Role          string
+	Personality   string
+	Model         string
+	SystemPrompt  string
+	TelegramID    string
+	TelegramToken string
+	ProfilePic    string
+	TunnelID      string
+	TunnelURL     string
+	AllowedUsers  string
+	ContainerID   string
+	Status        string
+	Active        bool
+	CreatedAt     string
+	UpdatedAt     string
 }
 
 type AuditLog struct {
@@ -57,9 +65,17 @@ func (d *DB) migrate() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		name TEXT NOT NULL UNIQUE,
 		role TEXT NOT NULL DEFAULT 'assistant',
+		personality TEXT NOT NULL DEFAULT '',
 		model TEXT NOT NULL DEFAULT 'openai/gpt-4',
 		system_prompt TEXT NOT NULL DEFAULT '',
 		telegram_id TEXT NOT NULL DEFAULT '',
+		telegram_token TEXT NOT NULL DEFAULT '',
+		profile_pic TEXT NOT NULL DEFAULT '',
+		tunnel_id TEXT NOT NULL DEFAULT '',
+		tunnel_url TEXT NOT NULL DEFAULT '',
+		allowed_users TEXT NOT NULL DEFAULT '',
+		container_id TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'stopped',
 		active INTEGER NOT NULL DEFAULT 1,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -90,6 +106,37 @@ func (d *DB) migrate() error {
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
+
+	CREATE TABLE IF NOT EXISTS allowlist (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		telegram_user_id TEXT NOT NULL UNIQUE,
+		friendly_name TEXT NOT NULL DEFAULT '',
+		notes TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS calendar (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id INTEGER NOT NULL,
+		date TEXT NOT NULL,
+		time TEXT NOT NULL,
+		prompt TEXT NOT NULL DEFAULT '',
+		executed INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS tunnels (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id INTEGER NOT NULL,
+		tunnel_uuid TEXT NOT NULL UNIQUE,
+		tunnel_name TEXT NOT NULL,
+		public_hostname TEXT NOT NULL DEFAULT '',
+		status TEXT NOT NULL DEFAULT 'disconnected',
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
 	`
 
 	_, err := d.db.Exec(schema)
@@ -98,9 +145,9 @@ func (d *DB) migrate() error {
 
 func (d *DB) CreateAgent(a *Agent) (int64, error) {
 	res, err := d.db.Exec(`
-		INSERT INTO agents (name, role, model, system_prompt, telegram_id, active)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, a.Name, a.Role, a.Model, a.SystemPrompt, a.TelegramID, a.Active)
+		INSERT INTO agents (name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, a.Name, a.Role, a.Personality, a.Model, a.SystemPrompt, a.TelegramID, a.TelegramToken, a.ProfilePic, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active)
 	if err != nil {
 		return 0, err
 	}
@@ -111,9 +158,9 @@ func (d *DB) CreateAgent(a *Agent) (int64, error) {
 func (d *DB) GetAgent(id int64) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, model, system_prompt, telegram_id, active, created_at, updated_at
+		SELECT id, name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
 		FROM agents WHERE id = ?
-	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +170,9 @@ func (d *DB) GetAgent(id int64) (*Agent, error) {
 func (d *DB) GetAgentByName(name string) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, model, system_prompt, telegram_id, active, created_at, updated_at
+		SELECT id, name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
 		FROM agents WHERE name = ?
-	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +181,7 @@ func (d *DB) GetAgentByName(name string) (*Agent, error) {
 
 func (d *DB) ListAgents() ([]*Agent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, name, role, model, system_prompt, telegram_id, active, created_at, updated_at
+		SELECT id, name, role, personality, model, system_prompt, telegram_id, telegram_token, profile_pic, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
 		FROM agents ORDER BY id DESC
 	`)
 	if err != nil {
@@ -145,7 +192,7 @@ func (d *DB) ListAgents() ([]*Agent, error) {
 	var agents []*Agent
 	for rows.Next() {
 		a := &Agent{}
-		if err := rows.Scan(&a.ID, &a.Name, &a.Role, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.Active, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Model, &a.SystemPrompt, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		agents = append(agents, a)
@@ -155,9 +202,9 @@ func (d *DB) ListAgents() ([]*Agent, error) {
 
 func (d *DB) UpdateAgent(a *Agent) error {
 	_, err := d.db.Exec(`
-		UPDATE agents SET name=?, role=?, model=?, system_prompt=?, telegram_id=?, active=?, updated_at=datetime('now')
+		UPDATE agents SET name=?, role=?, personality=?, model=?, system_prompt=?, telegram_id=?, telegram_token=?, profile_pic=?, tunnel_id=?, tunnel_url=?, allowed_users=?, container_id=?, status=?, active=?, updated_at=datetime('now')
 		WHERE id=?
-	`, a.Name, a.Role, a.Model, a.SystemPrompt, a.TelegramID, a.Active, a.ID)
+	`, a.Name, a.Role, a.Personality, a.Model, a.SystemPrompt, a.TelegramID, a.TelegramToken, a.ProfilePic, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active, a.ID)
 	return err
 }
 
@@ -252,5 +299,258 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 
 func (d *DB) ClearHistory(agentID int64) error {
 	_, err := d.db.Exec("DELETE FROM history WHERE agent_id = ?", agentID)
+	return err
+}
+
+type AllowListEntry struct {
+	ID             int64
+	TelegramUserID string
+	FriendlyName   string
+	Notes          string
+	CreatedAt      string
+}
+
+func (d *DB) CreateAllowListEntry(e *AllowListEntry) (int64, error) {
+	res, err := d.db.Exec(`
+		INSERT INTO allowlist (telegram_user_id, friendly_name, notes)
+		VALUES (?, ?, ?)
+	`, e.TelegramUserID, e.FriendlyName, e.Notes)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) GetAllowListEntry(id int64) (*AllowListEntry, error) {
+	e := &AllowListEntry{}
+	err := d.db.QueryRow(`
+		SELECT id, telegram_user_id, friendly_name, notes, created_at
+		FROM allowlist WHERE id = ?
+	`, id).Scan(&e.ID, &e.TelegramUserID, &e.FriendlyName, &e.Notes, &e.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+func (d *DB) ListAllowList() ([]*AllowListEntry, error) {
+	rows, err := d.db.Query(`
+		SELECT id, telegram_user_id, friendly_name, notes, created_at
+		FROM allowlist ORDER BY id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []*AllowListEntry
+	for rows.Next() {
+		e := &AllowListEntry{}
+		if err := rows.Scan(&e.ID, &e.TelegramUserID, &e.FriendlyName, &e.Notes, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+func (d *DB) UpdateAllowListEntry(e *AllowListEntry) error {
+	_, err := d.db.Exec(`
+		UPDATE allowlist SET telegram_user_id=?, friendly_name=?, notes=?
+		WHERE id=?
+	`, e.TelegramUserID, e.FriendlyName, e.Notes, e.ID)
+	return err
+}
+
+func (d *DB) DeleteAllowListEntry(id int64) error {
+	_, err := d.db.Exec("DELETE FROM allowlist WHERE id = ?", id)
+	return err
+}
+
+type CalendarEvent struct {
+	ID        int64
+	AgentID   int64
+	Date      string
+	Time      string
+	Prompt    string
+	Executed  bool
+	CreatedAt string
+}
+
+func (d *DB) CreateCalendarEvent(e *CalendarEvent) (int64, error) {
+	res, err := d.db.Exec(`
+		INSERT INTO calendar (agent_id, date, time, prompt, executed)
+		VALUES (?, ?, ?, ?, ?)
+	`, e.AgentID, e.Date, e.Time, e.Prompt, e.Executed)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) GetCalendarEvent(id int64) (*CalendarEvent, error) {
+	e := &CalendarEvent{}
+	var executed int
+	err := d.db.QueryRow(`
+		SELECT id, agent_id, date, time, prompt, executed, created_at
+		FROM calendar WHERE id = ?
+	`, id).Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt)
+	e.Executed = executed == 1
+	if err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
+	rows, err := d.db.Query(`
+		SELECT id, agent_id, date, time, prompt, executed, created_at
+		FROM calendar ORDER BY date ASC, time ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []*CalendarEvent
+	for rows.Next() {
+		e := &CalendarEvent{}
+		var executed int
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		e.Executed = executed == 1
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
+	rows, err := d.db.Query(`
+		SELECT id, agent_id, date, time, prompt, executed, created_at
+		FROM calendar WHERE executed = 0 ORDER BY date ASC, time ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []*CalendarEvent
+	for rows.Next() {
+		e := &CalendarEvent{}
+		var executed int
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		e.Executed = executed == 1
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+func (d *DB) MarkCalendarEventExecuted(id int64) error {
+	_, err := d.db.Exec("UPDATE calendar SET executed = 1 WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) DeleteCalendarEvent(id int64) error {
+	_, err := d.db.Exec("DELETE FROM calendar WHERE id = ?", id)
+	return err
+}
+
+type Tunnel struct {
+	ID             int64
+	AgentID        int64
+	TunnelUUID     string
+	TunnelName     string
+	PublicHostname string
+	Status         string
+	CreatedAt      string
+	LastSeen       string
+}
+
+func (d *DB) CreateTunnel(t *Tunnel) (int64, error) {
+	res, err := d.db.Exec(`
+		INSERT INTO tunnels (agent_id, tunnel_uuid, tunnel_name, public_hostname, status)
+		VALUES (?, ?, ?, ?, ?)
+	`, t.AgentID, t.TunnelUUID, t.TunnelName, t.PublicHostname, t.Status)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) GetTunnel(id int64) (*Tunnel, error) {
+	t := &Tunnel{}
+	err := d.db.QueryRow(`
+		SELECT id, agent_id, tunnel_uuid, tunnel_name, public_hostname, status, created_at, last_seen
+		FROM tunnels WHERE id = ?
+	`, id).Scan(&t.ID, &t.AgentID, &t.TunnelUUID, &t.TunnelName, &t.PublicHostname, &t.Status, &t.CreatedAt, &t.LastSeen)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (d *DB) GetTunnelByUUID(uuid string) (*Tunnel, error) {
+	t := &Tunnel{}
+	err := d.db.QueryRow(`
+		SELECT id, agent_id, tunnel_uuid, tunnel_name, public_hostname, status, created_at, last_seen
+		FROM tunnels WHERE tunnel_uuid = ?
+	`, uuid).Scan(&t.ID, &t.AgentID, &t.TunnelUUID, &t.TunnelName, &t.PublicHostname, &t.Status, &t.CreatedAt, &t.LastSeen)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (d *DB) GetTunnelByAgentID(agentID int64) (*Tunnel, error) {
+	t := &Tunnel{}
+	err := d.db.QueryRow(`
+		SELECT id, agent_id, tunnel_uuid, tunnel_name, public_hostname, status, created_at, last_seen
+		FROM tunnels WHERE agent_id = ?
+	`, agentID).Scan(&t.ID, &t.AgentID, &t.TunnelUUID, &t.TunnelName, &t.PublicHostname, &t.Status, &t.CreatedAt, &t.LastSeen)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func (d *DB) ListTunnels() ([]*Tunnel, error) {
+	rows, err := d.db.Query(`
+		SELECT id, agent_id, tunnel_uuid, tunnel_name, public_hostname, status, created_at, last_seen
+		FROM tunnels ORDER BY id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tunnels []*Tunnel
+	for rows.Next() {
+		t := &Tunnel{}
+		if err := rows.Scan(&t.ID, &t.AgentID, &t.TunnelUUID, &t.TunnelName, &t.PublicHostname, &t.Status, &t.CreatedAt, &t.LastSeen); err != nil {
+			return nil, err
+		}
+		tunnels = append(tunnels, t)
+	}
+	return tunnels, nil
+}
+
+func (d *DB) UpdateTunnelStatus(id int64, status string) error {
+	_, err := d.db.Exec(`
+		UPDATE tunnels SET status = ?, last_seen = datetime('now')
+		WHERE id = ?
+	`, status, id)
+	return err
+}
+
+func (d *DB) DeleteTunnel(id int64) error {
+	_, err := d.db.Exec("DELETE FROM tunnels WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) DeleteTunnelByAgentID(agentID int64) error {
+	_, err := d.db.Exec("DELETE FROM tunnels WHERE agent_id = ?", agentID)
 	return err
 }
