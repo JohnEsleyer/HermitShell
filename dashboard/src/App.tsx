@@ -55,9 +55,10 @@ export default function App() {
     try {
       const res = await fetch(`${API_BASE}/api/agents`);
       const data = await res.json();
-      setAgents(data);
+      setAgents(data || []);
     } catch (err) {
       console.error('Failed to fetch agents:', err);
+      setAgents([]);
     }
   };
 
