@@ -1,524 +1,128 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hermit Dashboard</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/lucide@latest"></script>
-    <style>
-        .panel { display: none; }
-        .panel.active { display: block; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #0B0F19; }
-        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #475569; }
-        .slide-in { animation: slideIn 0.3s ease-out forwards; }
-        @keyframes slideIn {
-            from { transform: translateY(-20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>hermit os</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <style>
+    body { background:#000; color:#fff; font-family: Inter, system-ui, sans-serif; }
+    [x-cloak]{ display:none !important; }
+  </style>
 </head>
-<body class="bg-black text-zinc-200 font-sans overflow-hidden h-screen flex">
-    
-    <!-- Sidebar -->
-    <aside class="w-64 bg-zinc-950 border-r border-zinc-800 flex flex-col z-20">
-        <div class="p-8 flex items-center space-x-3 text-white">
-            <i data-lucide="cpu" class="w-8 h-8"></i>
-            <span class="text-2xl font-black tracking-tight">HERMIT</span>
-        </div>
-        <nav class="flex-1 px-4 space-y-1 overflow-y-auto">
-            <button onclick="showPanel('agents')" class="nav-item active w-full flex items-center space-x-3 px-3 py-3 rounded-xl hover:bg-zinc-900 transition-colors text-white bg-white/10 ring-1 ring-white/30"><i data-lucide="bot" class="w-5 h-5 text-zinc-500"></i><span class="text-sm">Agents</span></button>
-            <button onclick="showPanel('containers')" class="nav-item w-full flex items-center space-x-3 px-3 py-3 rounded-xl hover:bg-zinc-900 transition-colors text-zinc-400"><i data-lucide="box" class="w-5 h-5 text-zinc-500"></i><span class="text-sm">Containers</span></button>
-            <button onclick="showPanel('apps')" class="nav-item w-full flex items-center space-x-3 px-3 py-3 rounded-xl hover:bg-zinc-900 transition-colors text-zinc-400"><i data-lucide="app-window" class="w-5 h-5 text-zinc-500"></i><span class="text-sm">Apps</span></button>
-            <button onclick="showPanel('metrics')" class="nav-item w-full flex items-center space-x-3 px-3 py-3 rounded-xl hover:bg-zinc-900 transition-colors text-zinc-400"><i data-lucide="activity" class="w-5 h-5 text-zinc-500"></i><span class="text-sm">Metrics</span></button>
-            <button onclick="showPanel('settings')" class="nav-item w-full flex items-center space-x-3 px-3 py-3 rounded-xl hover:bg-zinc-900 transition-colors text-zinc-400"><i data-lucide="settings" class="w-5 h-5 text-zinc-500"></i><span class="text-sm">Settings</span></button>
-        </nav>
-    </aside>
+<body class="min-h-screen p-6" x-data="hermitApp()">
+  <header class="flex items-center justify-between mb-6">
+    <h1 class="text-3xl font-black lowercase">hermit dashboard</h1>
+    <div class="text-sm" :class="wsConnected ? 'text-zinc-300' : 'text-red-400'" x-text="wsConnected ? 'live connection active' : 'reconnecting...'" ></div>
+  </header>
 
-    <!-- Main Content -->
-    <main class="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header class="h-20 border-b border-zinc-800 flex items-center justify-between px-10 bg-black/90 backdrop-blur-md z-10">
-            <div><h1 id="panel-title" class="text-2xl font-bold text-white capitalize">Agents</h1></div>
-            <button id="deploy-btn" onclick="openAgentModal()" class="bg-white hover:bg-zinc-200 text-black px-5 py-2 rounded-xl text-sm font-bold shadow-lg shadow-white/20">DEPLOY AGENT</button>
-        </header>
-
-        <div class="flex-1 overflow-y-auto p-10 bg-black relative">
-            
-            <!-- Agents Panel -->
-            <div id="panel-agents" class="panel active">
-                <div id="agents-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    <!-- Skeleton UI -->
-                    <div class="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 animate-pulse">
-                        <div class="w-14 h-14 bg-zinc-800 rounded-2xl mb-4"></div>
-                        <div class="h-4 bg-zinc-800 w-1/2 rounded mb-2"></div>
-                        <div class="h-3 bg-zinc-800 w-1/3 rounded"></div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Apps Panel -->
-            <div id="panel-apps" class="panel">
-                <div id="apps-list" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="col-span-full rounded-2xl border border-zinc-800 bg-zinc-950/40 p-10 text-center">
-                        <i data-lucide="layout-grid" class="w-8 h-8 mx-auto mb-4 text-zinc-600"></i>
-                        <p class="text-zinc-400 font-semibold">No apps deployed yet.</p>
-                        <p class="text-zinc-600 text-xs mt-2">Deploy an agent and create apps in workspace/apps to see them here.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Metrics Panel -->
-            <div id="panel-metrics" class="panel">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
-                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-8 shadow-xl">
-                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">CPU Usage</span>
-                        <div class="text-3xl font-black text-white mt-4" id="metric-cpu">--%</div>
-                    </div>
-                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-8 shadow-xl">
-                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Memory Left</span>
-                        <div class="text-3xl font-black text-white mt-4" id="metric-mem">--</div>
-                    </div>
-                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-8 shadow-xl">
-                        <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Storage Used</span>
-                        <div class="text-3xl font-black text-white mt-4" id="metric-disk">--</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Containers Panel -->
-            <div id="panel-containers" class="panel">
-                <div id="containers-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    <div class="col-span-full rounded-2xl border border-zinc-800 bg-zinc-950/40 p-10 text-center">
-                        <i data-lucide="box" class="w-8 h-8 mx-auto mb-4 text-zinc-600"></i>
-                        <p class="text-zinc-400 font-semibold">No containers running.</p>
-                        <p class="text-zinc-600 text-xs mt-2">Deploy an agent to create a container.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Settings Panel -->
-            <div id="panel-settings" class="panel">
-                <div class="space-y-6">
-                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-6">
-                        <h3 class="text-lg font-bold text-white mb-4">Tunnel Settings</h3>
-                        <div class="space-y-4">
-                            <div>
-                                <label class="text-xs text-zinc-500 uppercase tracking-widest">Public URL</label>
-                                <div id="tunnel-url" class="text-sm text-zinc-300 mt-1">Loading...</div>
-                            </div>
-                            <button onclick="refreshTunnel()" class="px-4 py-2 bg-zinc-800 rounded-xl text-xs font-bold text-white hover:bg-zinc-700">Refresh Tunnel</button>
-                        </div>
-                    </div>
-                    <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-6">
-                        <h3 class="text-lg font-bold text-white mb-4">Domain Mode</h3>
-                        <div class="space-y-4">
-                            <label class="flex items-center space-x-3 cursor-pointer">
-                                <input type="checkbox" id="domain-mode-toggle" class="w-5 h-5 rounded bg-zinc-800 border-zinc-700">
-                                <span class="text-sm text-zinc-300">Enable Domain Mode</span>
-                            </label>
-                            <div id="domain-settings" class="hidden space-y-4">
-                                <input type="text" id="domain-name" placeholder="your-domain.com" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                                <input type="email" id="domain-email" placeholder="email@example.com" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                                <button onclick="setupDomain()" class="px-4 py-2 bg-white text-black rounded-xl text-xs font-bold">Setup Domain</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <!-- Modal: Create Agent (4 Stages) -->
-    <div id="modal-create-agent" class="fixed inset-0 bg-black/80 backdrop-blur flex items-center justify-center z-50 hidden">
-        <div class="bg-zinc-950 border border-zinc-800 w-full max-w-xl rounded-3xl p-8 shadow-2xl relative">
-            <h2 class="text-2xl font-black text-white mb-6">NEW DEPLOYMENT</h2>
-            
-            <!-- Step 1 -->
-            <div id="agent-step-1" class="space-y-4">
-                <p class="text-xs text-zinc-500 uppercase tracking-widest mb-4">Stage 1: Identity</p>
-                <input type="text" id="ag-name" placeholder="Agent Name" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <input type="text" id="ag-role" placeholder="Role (e.g., Engineer)" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <input type="text" id="ag-personality" placeholder="Personality" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <input type="text" id="ag-pic" placeholder="Profile Pic URL" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <div class="flex justify-end mt-4"><button onclick="nextAgentStep(2)" class="bg-white text-black px-6 py-2 rounded-xl font-bold">Next</button></div>
-            </div>
-
-            <!-- Step 2 -->
-            <div id="agent-step-2" class="space-y-4 hidden">
-                <p class="text-xs text-zinc-500 uppercase tracking-widest mb-4">Stage 2: LLM Provider</p>
-                <select id="ag-provider" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                    <option value="openrouter">OpenRouter (Default)</option>
-                    <option value="anthropic">Anthropic</option>
-                </select>
-                <input type="text" id="ag-model" placeholder="Model string" value="openai/gpt-5.2" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <div class="flex justify-between mt-4">
-                    <button onclick="nextAgentStep(1)" class="text-zinc-400 hover:text-white">Back</button>
-                    <button onclick="nextAgentStep(3)" class="bg-white text-black px-6 py-2 rounded-xl font-bold">Next</button>
-                </div>
-            </div>
-
-            <!-- Step 3 -->
-            <div id="agent-step-3" class="space-y-4 hidden">
-                <p class="text-xs text-zinc-500 uppercase tracking-widest mb-4">Stage 3: Telegram Link</p>
-                <input type="text" id="ag-tg-token" placeholder="Bot Token (BotFather)" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <input type="text" id="ag-tg-id" placeholder="Your Telegram User ID" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white">
-                <div class="flex justify-between mt-4">
-                    <button onclick="nextAgentStep(2)" class="text-zinc-400 hover:text-white">Back</button>
-                    <button onclick="sendTgCode()" class="bg-white text-black px-6 py-2 rounded-xl font-bold">Send Code</button>
-                </div>
-            </div>
-
-            <!-- Step 4 -->
-            <div id="agent-step-4" class="space-y-4 hidden">
-                <p class="text-xs text-zinc-500 uppercase tracking-widest mb-4">Stage 4: Verification</p>
-                <input type="text" id="ag-tg-code" placeholder="Enter 6-digit code sent via Telegram" class="w-full bg-black border border-zinc-800 rounded-xl px-4 py-3 text-white text-center tracking-widest font-mono text-xl">
-                <div class="flex justify-between mt-4">
-                    <button onclick="nextAgentStep(3)" class="text-zinc-400 hover:text-white">Back</button>
-                    <button onclick="verifyAndCreateAgent()" class="bg-white text-black px-6 py-2 rounded-xl font-bold">Verify & Deploy</button>
-                </div>
-            </div>
-            
-            <button onclick="closeAgentModal()" class="absolute top-6 right-6 text-zinc-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-        </div>
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <div class="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+      <p class="text-zinc-500 text-sm">cpu</p>
+      <p class="text-4xl font-bold" x-text="(metrics.host?.cpuPercent || 0).toFixed(1) + '%' "></p>
     </div>
-
-    <!-- Modal: Test Console (3 Sections) -->
-    <div id="modal-test" class="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 hidden">
-        <div class="bg-zinc-950 border border-zinc-800 w-full max-w-6xl h-[85vh] rounded-3xl shadow-2xl flex flex-col overflow-hidden">
-            <!-- Top Section: Info and Demo Buttons -->
-            <div class="p-4 border-b border-zinc-800 bg-zinc-900/30">
-                <div class="flex justify-between items-center">
-                    <div>
-                        <h3 class="text-lg font-black text-white">TEST CONSOLE</h3>
-                        <p class="text-xs text-zinc-500">Simulate XML payloads and view system responses. Blue=from Telegram, Yellow=from test input, Green=system feedback.</p>
-                    </div>
-                    <button onclick="closeTestModal()" class="p-2 text-zinc-500 hover:text-white"><i data-lucide="x" class="w-5 h-5"></i></button>
-                </div>
-                <div class="flex gap-2 mt-3 flex-wrap">
-                    <button onclick="seedTest('<terminal>ls -la</terminal>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">Terminal</button>
-                    <button onclick="seedTest('<message>Hello!</message>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">Message</button>
-                    <button onclick="seedTest('<action type=\"GIVE\">file.txt</action>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">Give File</button>
-                    <button onclick="seedTest('<action type=\"APP\">myapp</action>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">Publish App</button>
-                    <button onclick="seedTest('<system>time</system>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">System Time</button>
-                    <button onclick="seedTest('<system>memory</system>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">System Memory</button>
-                    <button onclick="seedTest('<calendar><datetime>2026-03-15T10:00:00</datetime><prompt>Reminder test</prompt></calendar>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">Calendar</button>
-                    <button onclick="seedTest('<skill>example.md</skill>')" class="px-3 py-1.5 bg-zinc-800 rounded-lg text-xs font-bold text-white hover:bg-zinc-700">Skill</button>
-                    <button onclick="clearTestLogs()" class="px-3 py-1.5 bg-rose-900/50 border border-rose-700 rounded-lg text-xs font-bold text-rose-300 hover:bg-rose-900">Clear Logs</button>
-                </div>
-            </div>
-            <div class="flex-1 flex overflow-hidden">
-                <!-- Left Section: Logs (scrollable, color coded) -->
-                <div class="w-1/2 border-r border-zinc-800 p-4 overflow-y-auto space-y-3" id="test-logs">
-                    <div class="text-center text-zinc-600 text-sm py-8">Logs will appear here...</div>
-                </div>
-                <!-- Right Section: XML Input -->
-                <div class="w-1/2 p-4 flex flex-col gap-3">
-                    <textarea id="test-input" class="flex-1 bg-black border border-zinc-800 rounded-xl p-4 text-sm text-zinc-200 font-mono" placeholder="<terminal>ls -la</terminal>
-<message>Hello!</message>
-This text won't be processed.
-
-Click demo buttons above to populate examples."></textarea>
-                    <button onclick="submitTest()" class="bg-white text-black rounded-xl py-3 font-bold">Send Payload</button>
-                </div>
-            </div>
-        </div>
+    <div class="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+      <p class="text-zinc-500 text-sm">memory</p>
+      <p class="text-2xl font-bold"><span x-text="formatBytes(metrics.host?.memoryUsed)"></span> / <span x-text="formatBytes(metrics.host?.memoryTotal)"></span></p>
     </div>
-
-    <!-- Modal: Skills -->
-    <div id="modal-skills" class="fixed inset-0 bg-black/90 flex items-center justify-center z-50 hidden">
-        <div class="bg-zinc-950 border border-zinc-800 w-full max-w-5xl h-[80vh] rounded-3xl flex flex-col overflow-hidden">
-            <div class="p-6 border-b border-zinc-800 flex justify-between items-center">
-                <h3 class="text-xl font-black text-white">SKILL MANAGER</h3>
-                <button onclick="closeSkillsModal()" class="text-zinc-500 hover:text-white"><i data-lucide="x"></i></button>
-            </div>
-            <div class="flex-1 flex overflow-hidden">
-                <div class="w-1/3 border-r border-zinc-800 p-4 space-y-2 overflow-y-auto" id="skills-list"></div>
-                <div class="w-2/3 p-6 flex flex-col gap-4 bg-black">
-                    <input type="text" id="skill-title" placeholder="Skill Title (e.g., nodejs.md)" class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm">
-                    <input type="text" id="skill-desc" placeholder="Short description" class="bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-white text-sm">
-                    <textarea id="skill-content" placeholder="# Skill Content..." class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-200 font-mono"></textarea>
-                    <div class="flex justify-end gap-3">
-                        <button onclick="saveSkill()" class="bg-white text-black px-6 py-2 rounded-xl font-bold">Save Skill</button>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+      <p class="text-zinc-500 text-sm">disk used</p>
+      <p class="text-2xl font-bold" x-text="formatBytes(metrics.host?.diskUsed)"></p>
     </div>
+  </section>
 
-    <script>
-        lucide.createIcons();
+  <section class="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+    <h2 class="font-bold mb-3">agents</h2>
+    <template x-if="loadingAgents">
+      <div class="space-y-2">
+        <div class="h-10 rounded-xl bg-zinc-900 animate-pulse"></div>
+        <div class="h-10 rounded-xl bg-zinc-900 animate-pulse"></div>
+      </div>
+    </template>
+    <template x-if="!loadingAgents && agents.length === 0">
+      <p class="text-zinc-500 text-sm">no agents found</p>
+    </template>
+    <div class="space-y-2" x-show="!loadingAgents">
+      <template x-for="a in agents" :key="a.id">
+        <div class="rounded-xl border border-zinc-800 p-3 flex items-center justify-between">
+          <div>
+            <p class="font-semibold" x-text="a.name"></p>
+            <p class="text-xs text-zinc-500" x-text="a.role"></p>
+          </div>
+          <div class="text-xs uppercase text-zinc-400" x-text="a.status"></div>
+        </div>
+      </template>
+    </div>
+  </section>
 
-        // Panel Navigation
-        function showPanel(id) {
-            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-            document.getElementById('panel-' + id).classList.add('active');
-            
-            const titles = {
-                'agents': 'Agents',
-                'containers': 'Containers',
-                'apps': 'Apps',
-                'metrics': 'Metrics',
-                'settings': 'Settings'
-            };
-            document.getElementById('panel-title').innerText = titles[id] || id;
-            document.getElementById('deploy-btn').style.display = id === 'agents' ? 'block' : 'none';
-            
-            document.querySelectorAll('.nav-item').forEach(el => {
-                el.classList.remove('bg-white/10', 'text-white', 'ring-1', 'ring-white/30');
-                el.classList.add('text-zinc-400');
-            });
-            
-            if (event && event.currentTarget) {
-                event.currentTarget.classList.add('bg-white/10', 'text-white', 'ring-1', 'ring-white/30');
-                event.currentTarget.classList.remove('text-zinc-400');
-            }
+  <div class="fixed bottom-6 right-6 space-y-2">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="bg-white text-black px-4 py-2 rounded-full text-sm font-semibold" x-text="toast.message"></div>
+    </template>
+  </div>
 
-            if (id === 'containers') {
-                loadContainers();
-            }
-        }
+<script>
+document.addEventListener('alpine:init', () => {
+  Alpine.data('hermitApp', () => ({
+    wsConnected: false,
+    metrics: { host: null, containers: [] },
+    agents: [],
+    loadingAgents: true,
+    toasts: [],
+    init() {
+      this.fetchAgents();
+      this.connectWebSocket();
+      this.startMetricsFallback();
+    },
+    async fetchAgents() {
+      try {
+        const r = await fetch('/api/agents');
+        this.agents = await r.json();
+      } catch (_) {
+        this.showToast('failed to load agents');
+      } finally {
+        this.loadingAgents = false;
+      }
+    },
 
-        async function loadContainers() {
-            try {
-                const res = await fetch('/api/containers');
-                const containers = await res.json() || [];
-                const grid = document.getElementById('containers-grid');
-                if (containers.length === 0) {
-                    grid.innerHTML = `<div class="col-span-full rounded-2xl border border-zinc-800 bg-zinc-950/40 p-10 text-center">
-                        <i data-lucide="box" class="w-8 h-8 mx-auto mb-4 text-zinc-600"></i>
-                        <p class="text-zinc-400 font-semibold">No containers running.</p>
-                        <p class="text-zinc-600 text-xs mt-2">Deploy an agent to create a container.</p>
-                    </div>`;
-                } else {
-                    grid.innerHTML = containers.map(c => `
-                        <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-bold text-white">${c.name}</h3>
-                                <span class="px-2 py-1 bg-green-900/30 text-green-400 text-xs rounded">Running</span>
-                            </div>
-                            <div class="space-y-2 text-sm text-zinc-400">
-                                <div>CPU: ${c.cpuPercent?.toFixed(1) || 0}%</div>
-                                <div>Memory: ${c.memUsageMB?.toFixed(0) || 0} / ${c.memLimitMB?.toFixed(0) || 0} MB</div>
-                            </div>
-                        </div>
-                    `).join('');
-                }
-                lucide.createIcons();
-            } catch (e) {
-                console.error('Failed to load containers:', e);
-            }
-        }
-
-        // Real-time Metrics
-        function formatBytes(bytes) {
-            if (!bytes) return '0 B';
-            const k = 1024, sizes = ['B', 'KB', 'MB', 'GB', 'TB'], i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-
-        async function fetchMetrics() {
-            try {
-                const res = await fetch('/api/metrics');
-                const data = await res.json();
-                if(data.host) {
-                    document.getElementById('metric-cpu').innerText = `${data.host.cpuPercent.toFixed(1)}%`;
-                    document.getElementById('metric-mem').innerText = formatBytes(data.host.memoryFree);
-                    document.getElementById('metric-disk').innerText = formatBytes(data.host.diskUsed);
-                }
-            } catch (e) {
-                console.error('Metrics err:', e);
-            }
-        }
-        setInterval(fetchMetrics, 1000);
-        fetchMetrics();
-
-        // Agents
-        async function loadAgents() {
-            const res = await fetch('/api/agents');
-            const agents = await res.json() || [];
-            const grid = document.getElementById('agents-grid');
-            if (agents.length === 0) {
-                grid.innerHTML = `<div class="col-span-full border-2 border-dashed border-zinc-800 rounded-3xl p-16 text-center text-zinc-500">No agents deployed.</div>`;
-                return;
-            }
-            grid.innerHTML = agents.map(a => `
-                <div class="bg-zinc-950 rounded-2xl border border-zinc-800 p-6 flex flex-col group shadow-xl">
-                    <div class="flex-1">
-                        <div class="w-14 h-14 bg-white/10 rounded-2xl mb-4 flex items-center justify-center font-bold text-xl text-white">
-                            ${a.name.charAt(0)}
-                        </div>
-                        <h3 class="text-xl font-bold text-white">${a.name}</h3>
-                        <p class="text-xs text-zinc-500 uppercase tracking-widest mt-1">${a.role}</p>
-                    </div>
-                    <div class="grid grid-cols-4 border-t border-zinc-800 bg-zinc-950/50 mt-6 -mx-6 -mb-6 rounded-b-2xl overflow-hidden">
-                        <button onclick="openTestModal()" class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 border-r border-zinc-800">Test</button>
-                        <button onclick="openSkillsModal()" class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 border-r border-zinc-800">Skills</button>
-                        <button class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 border-r border-zinc-800">Config</button>
-                        <button class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900">Logs</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-        loadAgents();
-
-        // Domain mode toggle
-        document.getElementById('domain-mode-toggle')?.addEventListener('change', function() {
-            const domainSettings = document.getElementById('domain-settings');
-            if (this.checked) {
-                domainSettings.classList.remove('hidden');
-            } else {
-                domainSettings.classList.add('hidden');
-            }
-        });
-
-        function refreshTunnel() {
-            document.getElementById('tunnel-url').innerText = 'Refreshing...';
-            fetch('/api/tunnels/refresh', { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('tunnel-url').innerText = data.url || 'No tunnel available';
-                })
-                .catch(() => {
-                    document.getElementById('tunnel-url').innerText = 'Failed to refresh tunnel';
-                });
-        }
-
-        function setupDomain() {
-            const domain = document.getElementById('domain-name').value;
-            const email = document.getElementById('domain-email').value;
-            if (!domain || !email) {
-                alert('Please enter domain and email');
-                return;
-            }
-            fetch('/api/settings/domain', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ domain, email })
-            }).then(res => res.json())
-              .then(data => {
-                  alert(data.success ? 'Domain configured!' : 'Failed: ' + data.error);
-              });
-        }
-
-        // 4-Stage Agent Modal
-        function openAgentModal() { document.getElementById('modal-create-agent').classList.remove('hidden'); }
-        function closeAgentModal() { document.getElementById('modal-create-agent').classList.add('hidden'); }
-        function nextAgentStep(step) {
-            [1,2,3,4].forEach(s => document.getElementById(`agent-step-${s}`).classList.add('hidden'));
-            document.getElementById(`agent-step-${step}`).classList.remove('hidden');
-        }
-
-        async function sendTgCode() {
-            const token = document.getElementById('ag-tg-token').value;
-            const uid = document.getElementById('ag-tg-id').value;
-            await fetch('/api/telegram/send-code', {
-                method: 'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({token, userId: uid})
-            });
-            nextAgentStep(4);
-        }
-
-        async function verifyAndCreateAgent() {
-            const token = document.getElementById('ag-tg-token').value;
-            const code = document.getElementById('ag-tg-code').value;
-            const uid = document.getElementById('ag-tg-id').value;
-            
-            const res = await fetch('/api/telegram/verify', {
-                method: 'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({token, code, userId: uid})
-            });
-            const data = await res.json();
-            if(!data.success) { alert(data.error); return; }
-
-            await fetch('/api/agents', {
-                method: 'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({
-                    name: document.getElementById('ag-name').value,
-                    role: document.getElementById('ag-role').value,
-                    personality: document.getElementById('ag-personality').value,
-                    provider: document.getElementById('ag-provider').value,
-                    telegram_token: token,
-                    telegram_id: uid,
-                    active: true
-                })
-            });
-            closeAgentModal();
-            loadAgents();
-        }
-
-        // Test Console
-        function openTestModal() { document.getElementById('modal-test').classList.remove('hidden'); lucide.createIcons(); }
-        function closeTestModal() { document.getElementById('modal-test').classList.add('hidden'); }
-        function seedTest(xml) { document.getElementById('test-input').value = xml; }
-        function clearTestLogs() { document.getElementById('test-logs').innerHTML = '<div class="text-center text-zinc-600 text-sm py-8">Logs cleared.</div>'; }
-        
-        function appendLog(type, payload) {
-            const colors = {
-                'telegram': 'border-blue-500/40 bg-blue-500/10 text-blue-200',
-                'dashboard': 'border-amber-500/40 bg-amber-500/10 text-amber-200',
-                'system': 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-            };
-            const div = document.createElement('div');
-            div.className = `border rounded-xl p-3 text-xs font-mono slide-in ${colors[type] || colors['dashboard']}`;
-            
-            let content = '';
-            if (type === 'system') {
-                content = JSON.stringify(payload, null, 2);
-            } else {
-                content = JSON.stringify(payload, null, 2);
-            }
-            div.innerHTML = `<pre class="whitespace-pre-wrap break-words">${content}</pre>`;
-            
-            const container = document.getElementById('test-logs');
-            if (container.querySelector('.text-zinc-600')) {
-                container.innerHTML = '';
-            }
-            container.prepend(div);
-        }
-
-        async function submitTest() {
-            const payload = document.getElementById('test-input').value;
-            appendLog('dashboard', { raw: payload });
-            
-            const res = await fetch('/api/test-contract', {
-                method: 'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({payload})
-            });
-            const data = await res.json();
-            
-            if (data.actionEffects) {
-                data.actionEffects.forEach(effect => appendLog('system', effect));
-            }
-        }
-
-        // Skills Manager
-        function openSkillsModal() { document.getElementById('modal-skills').classList.remove('hidden'); loadSkills(); }
-        function closeSkillsModal() { document.getElementById('modal-skills').classList.add('hidden'); }
-        
-        async function loadSkills() {
-            const res = await fetch('/api/skills');
-            const skills = await res.json() || [];
-            document.getElementById('skills-list').innerHTML = skills.map(s => `
-                <div class="p-3 bg-zinc-900 rounded-xl mb-2 cursor-pointer hover:bg-zinc-800">
-                    <p class="text-sm font-bold text-white">${s.title}</p>
-                    <p class="text-xs text-zinc-500">${s.description}</p>
-                </div>
-            `).join('');
-        }
-
-        async function saveSkill() {
-            await fetch('/api/skills', {
-                method: 'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({
-                    title: document.getElementById('skill-title').value,
-                    description: document.getElementById('skill-desc').value,
-                    content: document.getElementById('skill-content').value,
-                })
-            });
-            loadSkills();
-        }
-    </script>
+    startMetricsFallback() {
+      setInterval(async () => {
+        if (this.wsConnected) return;
+        try {
+          const r = await fetch('/api/metrics');
+          this.metrics = await r.json();
+        } catch (_) {}
+      }, 1000);
+    },
+    connectWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+      ws.onopen = () => this.wsConnected = true;
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'metrics') this.metrics = msg.data;
+        if (msg.type === 'toast' && msg.data?.message) this.showToast(msg.data.message);
+      };
+      ws.onclose = () => {
+        this.wsConnected = false;
+        setTimeout(() => this.connectWebSocket(), 2000);
+      };
+    },
+    showToast(message) {
+      const id = Date.now();
+      this.toasts.push({ id, message });
+      setTimeout(() => this.toasts = this.toasts.filter(t => t.id !== id), 3500);
+    },
+    formatBytes(bytes) {
+      if (!bytes) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0, n = bytes;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return `${n.toFixed(1)} ${units[i]}`;
+    }
+  }))
+})
+</script>
 </body>
 </html>
