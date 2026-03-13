@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/JohnEsleyer/hermit/internal/api"
@@ -135,9 +136,20 @@ func main() {
 				
 				// Initial webhook update with retries
 				go func() {
-					for i := 0; i < 10; i++ {
+					log.Printf("Waiting for tunnel %s to propagate...", url)
+					// Wait for the URL to be reachable from our side first
+					for i := 0; i < 30; i++ {
+						if tunnelManager.CheckTunnelHealth("dashboard", 5*time.Second) {
+							log.Printf("Tunnel %s is reachable, setting up webhooks...", url)
+							break
+						}
+						time.Sleep(5 * time.Second)
+					}
+
+					// Now try to set webhooks with retries
+					for i := 0; i < 20; i++ {
 						updateAgentWebhooks(database, tunnelManager, url)
-						time.Sleep(10 * time.Second)
+						time.Sleep(20 * time.Second)
 					}
 				}()
 			}()
@@ -174,10 +186,15 @@ func updateAgentWebhooks(database *db.DB, tm *cloudflare.TunnelManager, baseURL 
 				continue
 			}
 
+			// Try to set webhook
 			if err := tempBot.SetWebhook(webhookURL); err != nil {
-				log.Printf("Failed to set webhook for agent %d: %v", a.ID, err)
+				// Only log if it's not a resolution error (to avoid noise during propagation)
+				// unless it's been a while.
+				if !strings.Contains(err.Error(), "Failed to resolve host") {
+					log.Printf("Failed to set webhook for agent %d: %v", a.ID, err)
+				}
 			} else {
-				log.Printf("Updated webhook for agent %d: %s", a.ID, webhookURL)
+				log.Printf("SUCCESS: Webhook set for agent %d: %s", a.ID, webhookURL)
 			}
 		}
 	}
