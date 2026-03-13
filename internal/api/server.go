@@ -295,6 +295,7 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 		Status       string `json:"status"`
 		TunnelURL    string `json:"tunnelUrl"`
 		ProfilePic   string `json:"profilePic"`
+		BannerURL    string `json:"bannerUrl"`
 		ContainerID  string `json:"containerId"`
 		AllowedUsers string `json:"allowedUsers"`
 	}
@@ -315,6 +316,7 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 			Status:       a.Status,
 			TunnelURL:    tunnelURL,
 			ProfilePic:   a.ProfilePic,
+			BannerURL:    a.BannerURL,
 			ContainerID:  a.ContainerID,
 			AllowedUsers: a.AllowedUsers,
 		})

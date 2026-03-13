@@ -12,6 +12,14 @@ import (
 	"time"
 )
 
+func (m *TunnelManager) CheckBinary() error {
+	_, err := exec.LookPath("cloudflared")
+	if err != nil {
+		return fmt.Errorf("cloudflared CLI not found. Please install it: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started-guide/run-as-24-7-service/")
+	}
+	return nil
+}
+
 type TunnelManager struct {
 	mu        sync.Mutex
 	processes map[string]*exec.Cmd

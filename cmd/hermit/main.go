@@ -119,16 +119,20 @@ func main() {
 	domainMode, _ := database.GetSetting("domain_mode")
 
 	if domainMode != "true" {
-		go func() {
-			log.Printf("Starting cloudflared tunnel for dashboard...")
-			url, err := tunnelManager.StartQuickTunnel("dashboard", portInt)
-			if err != nil {
-				log.Printf("Failed to start dashboard tunnel: %v", err)
-				return
-			}
-			log.Printf("==> Dashboard Public URL: %s", url)
-			updateAgentWebhooks(database, tunnelManager, url)
-		}()
+		if err := tunnelManager.CheckBinary(); err != nil {
+			log.Printf("WARNING: %v", err)
+		} else {
+			go func() {
+				log.Printf("Starting cloudflared tunnel for dashboard...")
+				url, err := tunnelManager.StartQuickTunnel("dashboard", portInt)
+				if err != nil {
+					log.Printf("Failed to start dashboard tunnel: %v", err)
+					return
+				}
+				log.Printf("==> Dashboard Public URL: %s", url)
+				updateAgentWebhooks(database, tunnelManager, url)
+			}()
+		}
 	}
 
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
