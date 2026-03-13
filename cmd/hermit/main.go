@@ -6,7 +6,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/JohnEsleyer/hermit/internal/api"
 	"github.com/JohnEsleyer/hermit/internal/cloudflare"
@@ -132,6 +134,8 @@ func main() {
 				log.Printf("==> Dashboard Public URL: %s", url)
 				updateAgentWebhooks(database, tunnelManager, url)
 			}()
+
+			go tunnelHealthMonitor(tunnelManager, portInt)
 		}
 	}
 
@@ -161,6 +165,35 @@ func updateAgentWebhooks(database *db.DB, tm *cloudflare.TunnelManager, baseURL 
 				log.Printf("Updated webhook for agent %d: %s", a.ID, webhookURL)
 			}
 		}
+	}
+}
+
+func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		cleanupStaleCloudflaredProcesses()
+
+		if !tm.CheckTunnelHealth("dashboard", 5*time.Second) {
+			log.Printf("Tunnel health check failed, restarting tunnel...")
+
+			tm.StopTunnel("dashboard")
+			time.Sleep(2 * time.Second)
+
+			url, err := tm.StartQuickTunnel("dashboard", port)
+			if err != nil {
+				log.Printf("Failed to restart tunnel: %v", err)
+			} else {
+				log.Printf("Tunnel restarted: %s", url)
+			}
+		}
+	}
+}
+
+func cleanupStaleCloudflaredProcesses() {
+	cmd := exec.Command("pkill", "-f", "cloudflared.*localhost:3000")
+	if err := cmd.Run(); err != nil {
 	}
 }
 
