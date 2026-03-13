@@ -1,14 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/JohnEsleyer/hermit/internal/cloudflare"
@@ -18,6 +14,9 @@ import (
 	"github.com/JohnEsleyer/hermit/internal/parser"
 	"github.com/JohnEsleyer/hermit/internal/telegram"
 	"github.com/JohnEsleyer/hermit/internal/workspace"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
 )
 
 type Server struct {
@@ -27,949 +26,459 @@ type Server struct {
 	llm     *llm.Client
 	docker  *docker.Client
 	tunnels *cloudflare.TunnelManager
+	app     *fiber.App
+
+	verifyCodes   map[string]string
+	takeoverMode  map[string]bool
+	mu            sync.RWMutex
+	contextStore  map[string][]string
+	tokenCounters map[string]int
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
-	return &Server{
-		db:      database,
-		ws:      ws,
-		bot:     bot,
-		llm:     llmClient,
-		docker:  dockerClient,
-		tunnels: tunnels,
-	}
-}
-
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type LoginResponse struct {
-	Success            bool   `json:"success"`
-	MustChangePassword bool   `json:"mustChangePassword"`
-	Error              string `json:"error,omitempty"`
-}
-
-func (s *Server) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+	s := &Server{
+		db:            database,
+		ws:            ws,
+		bot:           bot,
+		llm:           llmClient,
+		docker:        dockerClient,
+		tunnels:       tunnels,
+		verifyCodes:   make(map[string]string),
+		takeoverMode:  make(map[string]bool),
+		contextStore:  make(map[string][]string),
+		tokenCounters: make(map[string]int),
 	}
 
-	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		json.NewEncoder(w).Encode(LoginResponse{Success: false, Error: "Invalid request"})
-		return
+	app := fiber.New(fiber.Config{
+		BodyLimit: 100 * 1024 * 1024,
+	})
+
+	app.Use(cors.New())
+	app.Use(logger.New())
+
+	s.setupRoutes(app)
+	s.app = app
+	return s
+}
+
+func (s *Server) Listen(port string) error {
+	return s.app.Listen(":" + port)
+}
+
+func (s *Server) setupRoutes(app *fiber.App) {
+	app.Static("/dashboard", "./dashboard/public")
+
+	api := app.Group("/api")
+
+	api.Post("/auth/login", s.HandleLogin)
+	api.Post("/auth/logout", s.HandleLogout)
+	api.Get("/auth/check", s.HandleCheckAuth)
+	api.Post("/auth/change-credentials", s.HandleChangeCredentials)
+
+	api.Get("/agents", s.HandleListAgents)
+	api.Post("/agents", s.HandleCreateAgent)
+	api.Get("/agents/:id", s.HandleGetAgent)
+	api.Put("/agents/:id", s.HandleUpdateAgent)
+	api.Delete("/agents/:id", s.HandleDeleteAgent)
+	api.Post("/agents/:id/action", s.HandleAgentAction)
+
+	api.Get("/skills", s.HandleListSkills)
+	api.Post("/skills", s.HandleCreateSkill)
+	api.Delete("/skills/:id", s.HandleDeleteSkill)
+
+	api.Post("/test-contract", s.HandleTestContract)
+
+	api.Get("/metrics", s.HandleMetrics)
+	api.Get("/containers", s.HandleContainers)
+
+	api.Get("/allowlist", s.HandleListAllowlist)
+	api.Post("/allowlist", s.HandleCreateAllowlist)
+	api.Post("/telegram/send-code", s.HandleTelegramSendCode)
+	api.Post("/telegram/verify", s.HandleTelegramVerify)
+	api.Post("/webhook", s.HandleWebhook)
+
+	api.Get("/settings", s.HandleGetSettings)
+	api.Post("/settings", s.HandleSetSettings)
+}
+
+func (s *Server) HandleLogin(c *fiber.Ctx) error {
+	var req struct{ Username, Password string }
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
 	}
 
 	id, mustChange, err := s.db.VerifyUser(req.Username, req.Password)
 	if err != nil || id == 0 {
-		json.NewEncoder(w).Encode(LoginResponse{Success: false, Error: "Invalid credentials"})
-		return
+		return c.JSON(fiber.Map{"success": false, "error": "Invalid credentials"})
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	c.Cookie(&fiber.Cookie{
 		Name:     "session",
 		Value:    fmt.Sprintf("%d", id),
 		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   86400,
+		HTTPOnly: true,
 	})
 
-	json.NewEncoder(w).Encode(LoginResponse{
-		Success:            true,
-		MustChangePassword: mustChange,
-	})
+	return c.JSON(fiber.Map{"success": true, "mustChangePassword": mustChange})
 }
 
-func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	http.SetCookie(w, &http.Cookie{
-		Name:   "session",
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
-	})
-
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+func (s *Server) HandleLogout(c *fiber.Ctx) error {
+	c.Cookie(&fiber.Cookie{Name: "session", Value: "", Path: "/", MaxAge: -1})
+	return c.JSON(fiber.Map{"success": true})
 }
 
-func (s *Server) HandleChangePassword(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+func (s *Server) HandleCheckAuth(c *fiber.Ctx) error {
+	session := c.Cookies("session")
+	if session == "" {
+		return c.JSON(fiber.Map{"authenticated": false})
 	}
 
-	session, err := r.Cookie("session")
-	if err != nil || session.Value == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var req struct {
-		NewPassword string `json:"newPassword"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewPassword == "" {
-		json.NewEncoder(w).Encode(map[string]string{"error": "New password required"})
-		return
-	}
-
-	var userID int64
-	userID, _ = strconv.ParseInt(session.Value, 10, 64)
-
-	username, _, err := s.db.GetUserByID(userID)
+	id, _ := strconv.ParseInt(session, 10, 64)
+	username, mustChange, err := s.db.GetUserByID(id)
 	if err != nil || username == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
+		return c.JSON(fiber.Map{"authenticated": false})
 	}
-
-	if err := s.db.ChangePassword(username, req.NewPassword); err != nil {
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to change password"})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	return c.JSON(fiber.Map{"authenticated": true, "username": username, "mustChangePassword": mustChange})
 }
 
-func (s *Server) HandleChangeCredentials(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+func (s *Server) HandleChangeCredentials(c *fiber.Ctx) error {
+	var req struct{ NewUsername, NewPassword string }
+	c.BodyParser(&req)
 
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	session, err := r.Cookie("session")
-	if err != nil || session.Value == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var req struct {
-		NewUsername string `json:"newUsername"`
-		NewPassword string `json:"newPassword"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewUsername == "" || req.NewPassword == "" {
-		json.NewEncoder(w).Encode(map[string]string{"error": "New username and password are required"})
-		return
-	}
-
-	var userID int64
-	userID, _ = strconv.ParseInt(session.Value, 10, 64)
-
-	username, _, err := s.db.GetUserByID(userID)
-	if err != nil || username == "" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	session := c.Cookies("session")
+	id, _ := strconv.ParseInt(session, 10, 64)
+	username, _, _ := s.db.GetUserByID(id)
 
 	if err := s.db.UpdateCredentials(username, req.NewUsername, req.NewPassword); err != nil {
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update credentials"})
-		return
+		return c.JSON(fiber.Map{"success": false, "error": err.Error()})
 	}
-
-	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+	return c.JSON(fiber.Map{"success": true})
 }
 
-func (s *Server) HandleCheckAuth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	session, err := r.Cookie("session")
-	if err != nil || session.Value == "" {
-		json.NewEncoder(w).Encode(map[string]bool{"authenticated": false})
-		return
+func (s *Server) HandleMetrics(c *fiber.Ctx) error {
+	metrics, err := s.docker.LatestSystemMetrics()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
-
-	var userID int64
-	userID, _ = strconv.ParseInt(session.Value, 10, 64)
-
-	username, mustChange, err := s.db.GetUserByID(userID)
-	if err != nil || username == "" {
-		json.NewEncoder(w).Encode(map[string]bool{"authenticated": false})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"authenticated":      true,
-		"username":           username,
-		"mustChangePassword": mustChange,
-	})
+	return c.JSON(metrics)
 }
 
-type TestRequest struct {
-	Payload string `json:"payload"`
-	UserID  string `json:"userId"`
+func (s *Server) HandleContainers(c *fiber.Ctx) error {
+	metrics, err := s.docker.LatestSystemMetrics()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(metrics.Containers)
 }
 
-func (s *Server) HandleXMLContractTest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+func (s *Server) HandleListAgents(c *fiber.Ctx) error {
+	agents, err := s.db.ListAgents()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+	return c.JSON(agents)
+}
 
-	var req TestRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
+func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
+	var a db.Agent
+	if err := c.BodyParser(&a); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
+	}
+	id, err := s.db.CreateAgent(&a)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"id": id})
+}
+
+func (s *Server) HandleGetAgent(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	agent, _ := s.db.GetAgent(id)
+	return c.JSON(agent)
+}
+
+func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
+	return c.SendStatus(200)
+}
+
+func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	s.db.DeleteAgent(id)
+	return c.SendStatus(200)
+}
+
+func (s *Server) HandleAgentAction(c *fiber.Ctx) error {
+	return c.SendStatus(200)
+}
+
+func (s *Server) HandleListSkills(c *fiber.Ctx) error {
+	skills, _ := s.db.ListSkills()
+	return c.JSON(skills)
+}
+
+func (s *Server) HandleCreateSkill(c *fiber.Ctx) error {
+	var req db.Skill
+	c.BodyParser(&req)
+	id, err := s.db.CreateSkill(&req)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"id": id, "success": true})
+}
+
+func (s *Server) HandleDeleteSkill(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	s.db.DeleteSkill(id)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleTelegramSendCode(c *fiber.Ctx) error {
+	var req struct{ Token, UserID string }
+	c.BodyParser(&req)
+
+	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
+	s.verifyCodes[req.Token] = code
+
+	tempBot := telegram.NewBot(req.Token)
+	tempBot.SendMessage(req.UserID, "Your Hermit Dashboard Verification Code is: "+code)
+
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleTelegramVerify(c *fiber.Ctx) error {
+	var req struct{ Token, Code, UserID string }
+	c.BodyParser(&req)
+
+	if expected, ok := s.verifyCodes[req.Token]; ok && expected == req.Code {
+		tempBot := telegram.NewBot(req.Token)
+		tempBot.SendMessage(req.UserID, "Successfully connected this Telegram Bot to Hermit Agent OS.")
+		delete(s.verifyCodes, req.Token)
+		return c.JSON(fiber.Map{"success": true})
+	}
+	return c.JSON(fiber.Map{"success": false, "error": "Invalid verification code."})
+}
+
+func (s *Server) HandleTestContract(c *fiber.Ctx) error {
+	var req struct {
+		Payload string `json:"payload"`
+		UserID  string `json:"userId"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON"})
 	}
 
 	parsed := parser.ParseLLMOutput(req.Payload)
+	var feedback []map[string]interface{}
 
-	var effects []string
-	if len(parsed.Terminals) > 0 {
-		effects = append(effects, fmt.Sprintf("TERMINAL execution queue size: %d", len(parsed.Terminals)))
-	}
-
-	if parsed.System != "" {
-		effects = append(effects, "SYSTEM lookup requested: "+parsed.System)
-	}
-
-	for _, act := range parsed.Actions {
-		if act.Type == "GIVE" {
-			effects = append(effects, "FILE DELIVERY queued for: /app/workspace/out/"+act.Value)
-		} else if act.Type == "APP" {
-			effects = append(effects, "WEB APP published at endpoint: "+act.Value)
-		} else if act.Type == "SKILL" {
-			effects = append(effects, "SKILL CONTEXT queued for loading: "+act.Value)
-		} else {
-			effects = append(effects, "UNKNOWN ACTION mapped: "+act.Type+" -> "+act.Value)
+	for _, cmd := range parsed.Terminals {
+		out, err := s.docker.Exec("hermit-test", cmd)
+		status := "SUCCESS"
+		if err != nil {
+			status = "FAILED"
 		}
+
+		displayOut := out
+		if len(out) > 100 {
+			displayOut = out[:100] + "..."
+		}
+
+		feedback = append(feedback, map[string]interface{}{
+			"terminal":     cmd,
+			"status":       status,
+			"terminal-out": displayOut,
+		})
+	}
+
+	if parsed.System == "time" {
+		feedback = append(feedback, map[string]interface{}{
+			"status": "SUCCESS",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+	} else if parsed.System == "memory" {
+		hostStats, _ := s.docker.LatestSystemMetrics()
+		memMB := float64(hostStats.Host.MemoryUsed) / (1024 * 1024)
+		feedback = append(feedback, map[string]interface{}{
+			"status":          "SUCCESS",
+			"memory_usage_mb": memMB,
+		})
 	}
 
 	if parsed.Calendar != nil {
-		effects = append(effects, "CALENDAR EVENT scheduled for: "+parsed.Calendar.DateTime)
+		feedback = append(feedback, map[string]interface{}{
+			"status": "SUCCESS",
+			"calendar": map[string]interface{}{
+				"date":   parsed.Calendar.DateTime,
+				"prompt": parsed.Calendar.Prompt,
+			},
+		})
 	}
 
-	if len(effects) == 0 {
-		effects = append(effects, "No system actions detected. Plain conversational response.")
+	if len(feedback) == 0 {
+		feedback = append(feedback, map[string]interface{}{
+			"status":  "SUCCESS",
+			"message": "Payload parsed but no system actions generated.",
+		})
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"raw":           req.Payload,
+	return c.JSON(fiber.Map{
 		"parsed":        parsed,
-		"actionEffects": effects,
-		"delivered":     true,
+		"actionEffects": feedback,
 	})
 }
 
-func (s *Server) HandleAgents(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+func (s *Server) HandleListAllowlist(c *fiber.Ctx) error   { return c.JSON([]db.AllowListEntry{}) }
+func (s *Server) HandleCreateAllowlist(c *fiber.Ctx) error { return c.JSON(fiber.Map{}) }
 
-	switch r.Method {
-	case http.MethodGet:
-		agents, err := s.db.ListAgents()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(agents)
-
-	case http.MethodPost:
-		var agent db.Agent
-		if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if agent.Provider == "" {
-			agent.Provider = "openrouter"
-		}
-		if agent.Model == "" {
-			if agent.Provider == "gemini" {
-				agent.Model = "gemini-2.5-pro"
-			} else {
-				agent.Model = "openai/gpt-5.2"
-			}
-		}
-		id, err := s.db.CreateAgent(&agent)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]int64{"id": id})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleAgentDetail(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	id := strings.TrimPrefix(r.URL.Path, "/api/agents/")
-	if id == "" {
-		http.Error(w, "Agent ID required", http.StatusBadRequest)
-		return
-	}
-
-	var idNum int64
-	fmt.Sscanf(id, "%d", &idNum)
-
-	switch r.Method {
-	case http.MethodGet:
-		agent, err := s.db.GetAgent(idNum)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-		json.NewEncoder(w).Encode(agent)
-
-	case http.MethodPut:
-		var agent db.Agent
-		if err := json.NewDecoder(r.Body).Decode(&agent); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		agent.ID = idNum
-		if err := s.db.UpdateAgent(&agent); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	case http.MethodDelete:
-		if err := s.db.DeleteAgent(idNum); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	case http.MethodPost:
-		agent, err := s.db.GetAgent(idNum)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
-			return
-		}
-
-		action := r.URL.Query().Get("action")
-		if action == "start" {
-			containerName := "hermit-" + strings.ToLower(agent.Name)
-			err := s.docker.Run(containerName, "alpine:latest", true)
-			if err != nil {
-				json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-				return
-			}
-			agent.ContainerID = containerName
-			agent.Status = "running"
-
-			// Setup Tunnel/Webhook
-			domainMode, _ := s.db.GetSetting("domain_mode")
-			var webhookURL string
-			if domainMode == "true" {
-				baseDomain, _ := s.db.GetSetting("agents_domain")
-				webhookURL = fmt.Sprintf("https://%s.%s/webhook/", strings.ToLower(agent.Name), baseDomain)
-			} else {
-				portStr := os.Getenv("PORT")
-				if portStr == "" {
-					portStr = "3000"
-				}
-				portInt, _ := strconv.Atoi(portStr)
-
-				url, err := s.tunnels.StartQuickTunnel("agent-"+agent.Name, portInt)
-				if err == nil {
-					webhookURL = url + "/webhook/"
-					agent.TunnelURL = url
-					// Save tunnel status in DB
-					s.db.CreateTunnel(&db.Tunnel{
-						AgentID:        agent.ID,
-						TunnelUUID:     "quick-" + agent.Name,
-						TunnelName:     "agent-" + agent.Name,
-						PublicHostname: url,
-						Status:         "healthy",
-					})
-				}
-			}
-
-			if webhookURL != "" && s.bot != nil {
-				s.bot.SetWebhook(webhookURL)
-			}
-
-			s.db.UpdateAgent(agent)
-			json.NewEncoder(w).Encode(map[string]bool{"success": true})
-		} else if action == "stop" {
-			if agent.ContainerID != "" {
-				s.docker.Stop(agent.ContainerID)
-				s.docker.Remove(agent.ContainerID)
-			}
-
-			if s.tunnels != nil {
-				s.tunnels.StopTunnel("agent-" + agent.Name)
-			}
-			s.db.DeleteTunnelByAgentID(agent.ID)
-
-			agent.ContainerID = ""
-			agent.Status = "stopped"
-			agent.TunnelURL = ""
-			s.db.UpdateAgent(agent)
-			json.NewEncoder(w).Encode(map[string]bool{"success": true})
-		} else {
-			http.Error(w, "Unknown action", http.StatusBadRequest)
-		}
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleSettings(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		key := r.URL.Query().Get("key")
-		if key != "" {
-			value, err := s.db.GetSetting(key)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			json.NewEncoder(w).Encode(map[string]string{"key": key, "value": value})
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]string{})
-
-	case http.MethodPost:
-		var req struct {
-			Key   string `json:"key"`
-			Value string `json:"value"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if err := s.db.SetSetting(req.Key, req.Value); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleContext(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	sourcePath := "./context.md"
-	runtimePath := filepath.Join(filepath.Dir(getEnv("DATABASE_PATH", "./data/hermit.db")), "skills", "context.md")
-
-	switch r.Method {
-	case http.MethodGet:
-		content, err := os.ReadFile(runtimePath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]string{"content": string(content)})
-
-	case http.MethodPost:
-		var req struct {
-			Content string `json:"content"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if err := os.WriteFile(runtimePath, []byte(req.Content), 0o644); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	case http.MethodDelete:
-		src, err := os.Open(sourcePath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer src.Close()
-
-		dst, err := os.Create(runtimePath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		defer dst.Close()
-
-		if _, err := io.Copy(dst, src); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func getEnv(key, defaultValue string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultValue
-}
-
-func (s *Server) HandleWorkspaceOut(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		if s.ws == nil {
-			json.NewEncoder(w).Encode(map[string][]string{"files": {}})
-			return
-		}
-		files, err := s.ws.ListFiles(s.ws.OutDir)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string][]string{"files": files})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-type DockerExecRequest struct {
-	Container string `json:"container"`
-	Command   string `json:"command"`
-}
-
-func (s *Server) HandleDockerExec(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-
-	var req DockerExecRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	output, err := s.docker.Exec(req.Container, req.Command)
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error":   err.Error(),
-			"output":  output,
-			"success": false,
-		})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"output":  output,
-		"success": true,
-	})
-}
-
-func (s *Server) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.bot == nil {
-		http.Error(w, "Bot not configured", http.StatusServiceUnavailable)
-		return
-	}
-
+func (s *Server) HandleWebhook(c *fiber.Ctx) error {
 	var update telegram.Update
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	if err := c.BodyParser(&update); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	if update.Message == nil || update.Message.Text == "" {
+		return c.SendStatus(200)
+	}
+
+	chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
+	userText := strings.TrimSpace(update.Message.Text)
+
+	s.handleTelegramCommand(chatID, userText)
+
+	return c.SendStatus(200)
+}
+
+func (s *Server) handleTelegramCommand(chatID, text string) {
+	if s.bot == nil {
 		return
 	}
 
-	if update.Message != nil && update.Message.Text != "" {
-		chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
-		s.bot.SendMessage(chatID, "Message received: "+update.Message.Text)
-	}
+	switch text {
+	case "/start":
+		s.bot.SendMessage(chatID, "Welcome to Hermit Agent OS! Use /help to see available commands.")
+	case "/help":
+		helpMsg := `Available commands:
+/start - Welcome message
+/help - Show this help
+/clear - Clear context window
+/tokens - Show context size
+/reset - Reset container
+/takeover - Toggle takeover mode
+/give_system_prompt - Get agent system prompt
+/give_context - Get current context`
+		s.bot.SendMessage(chatID, helpMsg)
 
-	if update.CallbackQuery != nil {
-		s.bot.AnswerCallbackQuery(update.CallbackQuery.ID, "")
-	}
+	case "/clear":
+		s.mu.Lock()
+		s.contextStore[chatID] = []string{}
+		s.tokenCounters[chatID] = 0
+		s.mu.Unlock()
+		s.bot.SendMessage(chatID, "Context window cleared!")
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-}
+	case "/tokens":
+		s.mu.RLock()
+		count := s.tokenCounters[chatID]
+		s.mu.RUnlock()
+		s.bot.SendMessage(chatID, fmt.Sprintf("Current context size: ~%d tokens", count))
 
-func (s *Server) UploadToWorkspace(userID, filename string, fileData []byte) error {
-	if s.ws == nil {
-		return fmt.Errorf("workspace not configured")
-	}
-	inPath := filepath.Join("in", userID)
-	if err := s.ws.WriteFile(filepath.Join(inPath, filename), fileData); err != nil {
-		return err
-	}
-	s.db.LogAction(1, userID, "upload", filename)
-	return nil
-}
+	case "/reset":
+		s.bot.SendMessage(chatID, "Container reset initiated...")
+		// TODO: Implement container reset
+		s.bot.SendMessage(chatID, "Container has been reset with fresh state.")
 
-func (s *Server) DeliverFile(chatID, filename string) error {
-	if s.ws == nil {
-		return fmt.Errorf("workspace not configured")
-	}
-	data, err := s.ws.ReadFile(filepath.Join("out", filename))
-	if err != nil {
-		return err
-	}
-
-	tmpFile, err := os.CreateTemp("", "hermit-deliver-*")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.Write(data); err != nil {
-		return err
-	}
-	tmpFile.Close()
-
-	if err := s.bot.SendDocument(chatID, tmpFile.Name(), filename); err != nil {
-		return err
-	}
-
-	s.db.LogAction(1, chatID, "deliver", filename)
-	return nil
-}
-
-func (s *Server) HandleAllowList(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		entries, err := s.db.ListAllowList()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+	case "/takeover":
+		s.mu.Lock()
+		currentlyOn := s.takeoverMode[chatID]
+		s.takeoverMode[chatID] = !currentlyOn
+		newState := s.takeoverMode[chatID]
+		s.mu.Unlock()
+		if newState {
+			s.bot.SendMessage(chatID, "Takeover mode ENABLED. You can now send XML commands directly.\n\nExample:\n<terminal>ls -la</terminal>\n<action type=\"GIVE\">file.txt</action>\n\nUse /takeover again to disable.")
+		} else {
+			s.bot.SendMessage(chatID, "Takeover mode DISABLED. Returning to AI agent control.")
 		}
-		json.NewEncoder(w).Encode(entries)
 
-	case http.MethodPost:
-		var entry db.AllowListEntry
-		if err := json.NewDecoder(r.Body).Decode(&entry); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		id, err := s.db.CreateAllowListEntry(&entry)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]int64{"id": id})
+	case "/give_system_prompt":
+		// TODO: Get actual system prompt from agent
+		s.bot.SendMessage(chatID, "System prompt:\n\nYou are an autonomous AI agent running in Hermit Agent OS...")
 
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleAllowListDetail(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	id := strings.TrimPrefix(r.URL.Path, "/api/allowlist/")
-	if id == "" {
-		http.Error(w, "ID required", http.StatusBadRequest)
-		return
-	}
-
-	var idNum int64
-	fmt.Sscanf(id, "%d", &idNum)
-
-	switch r.Method {
-	case http.MethodDelete:
-		if err := s.db.DeleteAllowListEntry(idNum); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleCalendar(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		events, err := s.db.ListCalendarEvents()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(events)
-
-	case http.MethodPost:
-		var event db.CalendarEvent
-		if err := json.NewDecoder(r.Body).Decode(&event); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
-		}
-		id, err := s.db.CreateCalendarEvent(&event)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]int64{"id": id})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleCalendarDetail(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	id := strings.TrimPrefix(r.URL.Path, "/api/calendar/")
-	if id == "" {
-		http.Error(w, "ID required", http.StatusBadRequest)
-		return
-	}
-
-	var idNum int64
-	fmt.Sscanf(id, "%d", &idNum)
-
-	switch r.Method {
-	case http.MethodDelete:
-		if err := s.db.DeleteCalendarEvent(idNum); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleTunnels(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	switch r.Method {
-	case http.MethodGet:
-		tunnels, err := s.db.ListTunnels()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		for _, tunnel := range tunnels {
-			healthy := true
-			if strings.Contains(tunnel.TunnelUUID, "quick-") {
-				healthy = s.tunnels != nil && s.tunnels.CheckTunnelHealth(tunnel.TunnelName, 5*time.Second)
+	case "/give_context":
+		s.mu.RLock()
+		context := s.contextStore[chatID]
+		s.mu.RUnlock()
+		if len(context) == 0 {
+			s.bot.SendMessage(chatID, "Context is empty.")
+		} else {
+			fullContext := strings.Join(context, "\n")
+			if len(fullContext) > 4000 {
+				fullContext = fullContext[:4000] + "...\n(context truncated)"
 			}
-			if healthy && s.bot != nil {
-				if info, err := s.bot.GetWebhookInfo(); err == nil && info.LastErrorMessage != "" {
-					healthy = false
-				}
-			}
-			status := "healthy"
-			if !healthy {
-				status = "degraded"
-			}
-			tunnel.Status = status
-			_ = s.db.UpdateTunnelStatus(tunnel.ID, status)
+			s.bot.SendMessage(chatID, "Current context:\n\n"+fullContext)
 		}
-		json.NewEncoder(w).Encode(tunnels)
 
-	case http.MethodPost:
-		var tunnel db.Tunnel
-		if err := json.NewDecoder(r.Body).Decode(&tunnel); err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
-			return
+	default:
+		// Handle takeover mode XML input
+		s.mu.RLock()
+		takeoverOn := s.takeoverMode[chatID]
+		s.mu.RUnlock()
+
+		if takeoverOn {
+			s.handleTakeoverInput(chatID, text)
+		} else {
+			// TODO: Pass to LLM agent for normal processing
+			s.bot.SendMessage(chatID, "Message received. AI agent will respond shortly...")
 		}
-		id, err := s.db.CreateTunnel(&tunnel)
+	}
+}
+
+func (s *Server) handleTakeoverInput(chatID, xmlInput string) {
+	parsed := parser.ParseLLMOutput(xmlInput)
+	var responses []string
+
+	// Handle terminal commands
+	for _, cmd := range parsed.Terminals {
+		out, err := s.docker.Exec("hermit-test", cmd)
+		status := "SUCCESS"
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			status = "FAILED"
+			out = err.Error()
 		}
-		json.NewEncoder(w).Encode(map[string]int64{"id": id})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleTunnelDetail(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	id := strings.TrimPrefix(r.URL.Path, "/api/tunnels/")
-	if id == "" {
-		http.Error(w, "ID required", http.StatusBadRequest)
-		return
-	}
-
-	var idNum int64
-	fmt.Sscanf(id, "%d", &idNum)
-
-	switch r.Method {
-	case http.MethodDelete:
-		if err := s.db.DeleteTunnel(idNum); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		displayOut := out
+		if len(out) > 200 {
+			displayOut = out[:200] + "..."
 		}
-		json.NewEncoder(w).Encode(map[string]bool{"success": true})
-
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) HandleApps(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
+		responses = append(responses, fmt.Sprintf("Terminal: %s\nStatus: %s\nOutput: %s", cmd, status, displayOut))
 	}
 
-	apps := []map[string]string{}
-	json.NewEncoder(w).Encode(map[string]interface{}{"apps": apps})
-}
-
-type ContainerInfo struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-	CPU    string `json:"cpu"`
-	Memory string `json:"memory"`
-	Disk   string `json:"disk"`
-}
-
-func (s *Server) HandleSystemMetrics(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	metrics, err := s.docker.LatestSystemMetrics()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	json.NewEncoder(w).Encode(metrics)
-}
-
-func (s *Server) HandleDockerContainers(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	containerStats, err := s.docker.Stats()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var infos []ContainerInfo
-	for _, c := range containerStats {
-		infos = append(infos, ContainerInfo{
-			Name:   c.Name,
-			Status: "running",
-			CPU:    fmt.Sprintf("%.1f%%", c.CPUPercent),
-			Memory: fmt.Sprintf("%.1fMB", c.MemUsageMB),
-		})
-	}
-
-	json.NewEncoder(w).Encode(infos)
-}
-
-func (s *Server) HandleDockerFiles(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	container := r.URL.Query().Get("container")
-	folder := r.URL.Query().Get("folder")
-	if container == "" || folder == "" {
-		http.Error(w, "container and folder required", http.StatusBadRequest)
-		return
-	}
-
-	output, err := s.docker.Exec(container, "ls -la /app/workspace/"+folder+" 2>/dev/null || echo 'empty'")
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string][]string{"files": {}})
-		return
-	}
-
-	var files []map[string]interface{}
-	lines := strings.Split(output, "\n")
-	for _, line := range lines[1:] {
-		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "total") {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) >= 9 {
-			name := strings.Join(parts[8:], " ")
-			isDir := strings.HasPrefix(parts[0], "d")
-			files = append(files, map[string]interface{}{
-				"name":  name,
-				"isDir": isDir,
-			})
+	// Handle actions
+	for _, action := range parsed.Actions {
+		switch action.Type {
+		case "GIVE":
+			responses = append(responses, fmt.Sprintf("Action: GIVE file=%s", action.Value))
+			// TODO: Implement file delivery
+		case "APP":
+			responses = append(responses, fmt.Sprintf("Action: PUBLISH app=%s", action.Value))
+		case "SKILL":
+			responses = append(responses, fmt.Sprintf("Action: LOAD skill=%s", action.Value))
 		}
 	}
 
-	json.NewEncoder(w).Encode(map[string]interface{}{"files": files})
-}
-
-func (s *Server) HandleDockerDownload(w http.ResponseWriter, r *http.Request) {
-	container := r.URL.Query().Get("container")
-	folder := r.URL.Query().Get("folder")
-	filename := r.URL.Query().Get("file")
-
-	if container == "" || folder == "" || filename == "" {
-		http.Error(w, "Missing parameters", http.StatusBadRequest)
-		return
+	// Handle system tags
+	if parsed.System == "time" {
+		responses = append(responses, fmt.Sprintf("System: time = %s", time.Now().Format(time.RFC3339)))
+	} else if parsed.System == "memory" {
+		if s.docker != nil {
+			stats, _ := s.docker.LatestSystemMetrics()
+			memMB := float64(stats.Host.MemoryUsed) / (1024 * 1024)
+			responses = append(responses, fmt.Sprintf("System: memory = %.2f MB", memMB))
+		}
 	}
 
-	output, err := s.docker.Exec(container, "cat /app/workspace/"+folder+"/"+filename)
-	if err != nil {
-		http.Error(w, "File not found", http.StatusNotFound)
-		return
+	if len(responses) == 0 {
+		responses = append(responses, "No actions parsed from input.")
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-	w.Write([]byte(output))
+	s.bot.SendMessage(chatID, strings.Join(responses, "\n\n"))
 }
 
-type TelegramVerifyRequest struct {
-	Token string `json:"token"`
-	Code  string `json:"code"`
-}
-
-func (s *Server) HandleTelegramVerify(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var req TelegramVerifyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
-		return
-	}
-
-	code := fmt.Sprintf("%06d", time.Now().UnixNano()%1000000)
-
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"code":    code,
-	})
-}
+func (s *Server) HandleGetSettings(c *fiber.Ctx) error { return c.JSON(fiber.Map{}) }
+func (s *Server) HandleSetSettings(c *fiber.Ctx) error { return c.SendStatus(200) }

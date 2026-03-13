@@ -35,6 +35,15 @@ type Agent struct {
 	UpdatedAt     string `json:"updated_at"`
 }
 
+type Skill struct {
+	ID          int64  `json:"id"`
+	AgentID     int64  `json:"agent_id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Content     string `json:"content"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type AuditLog struct {
 	ID        int64
 	AgentID   int64
@@ -151,6 +160,15 @@ func (d *DB) migrate() error {
 		must_change_password INTEGER NOT NULL DEFAULT 1,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+	);
+
+	CREATE TABLE IF NOT EXISTS skills (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id INTEGER NOT NULL DEFAULT 0,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL DEFAULT '',
+		content TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 	`
 
@@ -655,5 +673,34 @@ func (d *DB) DeleteTunnel(id int64) error {
 
 func (d *DB) DeleteTunnelByAgentID(agentID int64) error {
 	_, err := d.db.Exec("DELETE FROM tunnels WHERE agent_id = ?", agentID)
+	return err
+}
+
+func (d *DB) CreateSkill(s *Skill) (int64, error) {
+	res, err := d.db.Exec("INSERT INTO skills (agent_id, title, description, content) VALUES (?, ?, ?, ?)", s.AgentID, s.Title, s.Description, s.Content)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+func (d *DB) ListSkills() ([]*Skill, error) {
+	rows, err := d.db.Query("SELECT id, agent_id, title, description, content, created_at FROM skills")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var skills []*Skill
+	for rows.Next() {
+		s := &Skill{}
+		rows.Scan(&s.ID, &s.AgentID, &s.Title, &s.Description, &s.Content, &s.CreatedAt)
+		skills = append(skills, s)
+	}
+	return skills, nil
+}
+
+func (d *DB) DeleteSkill(id int64) error {
+	_, err := d.db.Exec("DELETE FROM skills WHERE id = ?", id)
 	return err
 }

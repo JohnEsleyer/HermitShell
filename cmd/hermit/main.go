@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 
@@ -107,7 +106,10 @@ func main() {
 		log.Printf("LLM client initialized: provider=%s model=%s", provider, llmModel)
 	}
 
-	dockerClient := docker.NewClient()
+	dockerClient, err := docker.NewClient()
+	if err != nil {
+		log.Fatalf("Failed to initialize Docker client: %v", err)
+	}
 	log.Printf("Docker client initialized")
 
 	tunnelManager := cloudflare.NewTunnelManager()
@@ -130,41 +132,11 @@ func main() {
 
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
-	fs := http.FileServer(http.Dir("./dashboard/public"))
-	http.Handle("/dashboard/", http.StripPrefix("/dashboard/", fs))
-	http.Handle("/", fs)
-
-	http.HandleFunc("/api/auth/login", apiServer.HandleLogin)
-	http.HandleFunc("/api/auth/logout", apiServer.HandleLogout)
-	http.HandleFunc("/api/auth/change-password", apiServer.HandleChangePassword)
-	http.HandleFunc("/api/auth/change-credentials", apiServer.HandleChangeCredentials)
-	http.HandleFunc("/api/auth/check", apiServer.HandleCheckAuth)
-
-	http.HandleFunc("/api/agent-tests/xml-contract", apiServer.HandleXMLContractTest)
-	http.HandleFunc("/api/agents", apiServer.HandleAgents)
-	http.HandleFunc("/api/agents/", apiServer.HandleAgentDetail)
-	http.HandleFunc("/api/settings", apiServer.HandleSettings)
-	http.HandleFunc("/api/context", apiServer.HandleContext)
-	http.HandleFunc("/api/workspace/out", apiServer.HandleWorkspaceOut)
-	http.HandleFunc("/api/docker/exec", apiServer.HandleDockerExec)
-	http.HandleFunc("/api/docker/containers", apiServer.HandleDockerContainers)
-	http.HandleFunc("/api/metrics", apiServer.HandleSystemMetrics)
-	http.HandleFunc("/api/docker/files", apiServer.HandleDockerFiles)
-	http.HandleFunc("/api/docker/download", apiServer.HandleDockerDownload)
-	http.HandleFunc("/api/allowlist", apiServer.HandleAllowList)
-	http.HandleFunc("/api/allowlist/", apiServer.HandleAllowListDetail)
-	http.HandleFunc("/api/calendar", apiServer.HandleCalendar)
-	http.HandleFunc("/api/calendar/", apiServer.HandleCalendarDetail)
-	http.HandleFunc("/api/tunnels", apiServer.HandleTunnels)
-	http.HandleFunc("/api/tunnels/", apiServer.HandleTunnelDetail)
-	http.HandleFunc("/api/telegram/verify", apiServer.HandleTelegramVerify)
-	http.HandleFunc("/webhook/", apiServer.HandleWebhook)
-
-	log.Printf("Hermit (Go) starting on :%s ...", port)
+	log.Printf("Hermit (Go Fiber) starting on :%s ...", port)
 	log.Printf("Dashboard available at: http://localhost:%s/dashboard/", port)
 	log.Printf("Optimized for 1GB VPS. Memory footprint < 15MB.")
 
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	if err := apiServer.Listen(port); err != nil {
 		log.Fatal(err)
 	}
 }

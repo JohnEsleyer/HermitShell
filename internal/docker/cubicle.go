@@ -1,17 +1,23 @@
 package docker
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"os/exec"
-	"strconv"
+	"encoding/json"
+	"io"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 type Client struct {
+	cli              *client.Client
 	timeout          time.Duration
 	mu               sync.RWMutex
 	latestSystem     SystemMetrics
@@ -43,10 +49,18 @@ type SystemMetrics struct {
 	Containers []ContainerStats `json:"containers"`
 }
 
-func NewClient() *Client {
-	c := &Client{timeout: 2 * time.Minute}
+func NewClient() (*Client, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, err
+	}
+
+	c := &Client{
+		cli:     cli,
+		timeout: 2 * time.Minute,
+	}
 	c.StartMetricsAggregator()
-	return c
+	return c, nil
 }
 
 func (c *Client) StartMetricsAggregator() {
@@ -96,7 +110,7 @@ func (c *Client) collectSystemMetrics() (SystemMetrics, error) {
 	var wg sync.WaitGroup
 	var host HostMetrics
 	var containers []ContainerStats
-	var hostErr error
+	var hostErr, contErr error
 
 	wg.Add(2)
 	go func() {
@@ -105,12 +119,15 @@ func (c *Client) collectSystemMetrics() (SystemMetrics, error) {
 	}()
 	go func() {
 		defer wg.Done()
-		containers, _ = c.collectContainerMetrics()
+		containers, contErr = c.collectContainerMetrics()
 	}()
 	wg.Wait()
 
 	if hostErr != nil {
 		return SystemMetrics{}, hostErr
+	}
+	if contErr != nil {
+		return SystemMetrics{}, contErr
 	}
 	if containers == nil {
 		containers = []ContainerStats{}
@@ -120,145 +137,163 @@ func (c *Client) collectSystemMetrics() (SystemMetrics, error) {
 }
 
 func (c *Client) collectHostMetrics() (HostMetrics, error) {
-	cmd := exec.Command("sh", "-c", "cat /proc/stat | head -n1; cat /proc/meminfo | head -n 3; df -B1 / | tail -n1")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return HostMetrics{}, err
-	}
-
-	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) < 5 {
-		return HostMetrics{}, fmt.Errorf("unexpected host metrics output")
-	}
-
-	cpuPct, err := parseCPUPercent(lines[0])
+	cpuPct, err := cpu.Percent(0, false)
 	if err != nil {
 		return HostMetrics{}, err
 	}
 
-	memTotal := parseMemInfoLine(lines[1]) * 1024
-	memFree := parseMemInfoLine(lines[2]) * 1024
-	memAvailable := parseMemInfoLine(lines[3]) * 1024
-	if memAvailable == 0 {
-		memAvailable = memFree
-	}
-	memUsed := uint64(0)
-	if memTotal > memAvailable {
-		memUsed = memTotal - memAvailable
-	}
-	memPercent := 0.0
-	if memTotal > 0 {
-		memPercent = float64(memUsed) * 100.0 / float64(memTotal)
+	vm, err := mem.VirtualMemory()
+	if err != nil {
+		return HostMetrics{}, err
 	}
 
-	diskTotal, diskUsed, diskFree := parseDFLine(lines[4])
-	diskPercent := 0.0
-	if diskTotal > 0 {
-		diskPercent = float64(diskUsed) * 100.0 / float64(diskTotal)
+	d, err := disk.Usage("/")
+	if err != nil {
+		return HostMetrics{}, err
+	}
+
+	cpuVal := 0.0
+	if len(cpuPct) > 0 {
+		cpuVal = cpuPct[0]
 	}
 
 	return HostMetrics{
-		CPUPercent:    cpuPct,
-		MemoryUsed:    memUsed,
-		MemoryTotal:   memTotal,
-		MemoryFree:    memAvailable,
-		DiskUsed:      diskUsed,
-		DiskTotal:     diskTotal,
-		DiskFree:      diskFree,
-		MemoryPercent: memPercent,
-		DiskPercent:   diskPercent,
+		CPUPercent:    cpuVal,
+		MemoryUsed:    vm.Used,
+		MemoryTotal:   vm.Total,
+		MemoryFree:    vm.Available,
+		DiskUsed:      d.Used,
+		DiskTotal:     d.Total,
+		DiskFree:      d.Free,
+		MemoryPercent: vm.UsedPercent,
+		DiskPercent:   d.UsedPercent,
 		Timestamp:     time.Now().Unix(),
 	}, nil
 }
 
 func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
-	cmd := exec.Command("docker", "stats", "--no-stream", "--format", "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}")
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	containers, err := c.cli.ContainerList(ctx, types.ContainerListOptions{})
+	if err != nil {
 		return nil, err
 	}
 
-	stats := make([]ContainerStats, 0)
-	for _, line := range strings.Split(strings.TrimSpace(out.String()), "\n") {
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		parts := strings.Split(line, "|")
-		if len(parts) < 3 {
-			continue
-		}
-		cpu := strings.TrimSuffix(strings.TrimSpace(parts[1]), "%")
-		cpuF, _ := strconv.ParseFloat(cpu, 64)
-		used, limit := parseMemUsage(parts[2])
-		stats = append(stats, ContainerStats{Name: strings.TrimSpace(parts[0]), CPUPercent: cpuF, MemUsageMB: used, MemLimitMB: limit})
+	var stats []ContainerStats
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for _, cont := range containers {
+		wg.Add(1)
+		go func(containerID, name string) {
+			defer wg.Done()
+
+			statsResp, err := c.cli.ContainerStats(ctx, containerID, false)
+			if err != nil {
+				return
+			}
+			defer statsResp.Body.Close()
+
+			var v *types.StatsJSON
+			if err := json.NewDecoder(statsResp.Body).Decode(&v); err != nil {
+				return
+			}
+
+			var cpuPercent = 0.0
+			cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage - v.PreCPUStats.CPUUsage.TotalUsage)
+			systemDelta := float64(v.CPUStats.SystemUsage - v.PreCPUStats.SystemUsage)
+			if systemDelta > 0.0 && cpuDelta > 0.0 {
+				cpuPercent = (cpuDelta / systemDelta) * float64(len(v.CPUStats.CPUUsage.PercpuUsage)) * 100.0
+			}
+
+			memUsageMB := float64(v.MemoryStats.Usage) / (1024 * 1024)
+			memLimitMB := float64(v.MemoryStats.Limit) / (1024 * 1024)
+
+			cleanName := strings.TrimPrefix(name, "/")
+			mu.Lock()
+			stats = append(stats, ContainerStats{
+				Name:       cleanName,
+				CPUPercent: cpuPercent,
+				MemUsageMB: memUsageMB,
+				MemLimitMB: memLimitMB,
+			})
+			mu.Unlock()
+		}(cont.ID, cont.Names[0])
 	}
+
+	wg.Wait()
 	return stats, nil
 }
 
 func (c *Client) Exec(containerName string, command string) (string, error) {
-	if strings.TrimSpace(command) == "" {
-		return "", nil
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-w", "/app/workspace/work", containerName, "sh", "-c", command)
-
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	err := cmd.Run()
-	output := stdout.String() + stderr.String()
-
-	if err != nil {
-		return output, fmt.Errorf("command failed: %v", err)
+	execCfg := types.ExecConfig{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          []string{"sh", "-c", command},
+		WorkingDir:   "/app/workspace/work",
 	}
 
-	return output, nil
+	idResp, err := c.cli.ContainerExecCreate(ctx, containerName, execCfg)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.cli.ContainerExecAttach(ctx, idResp.ID, types.ExecStartCheck{})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Close()
+
+	out, _ := io.ReadAll(resp.Reader)
+	return string(out), nil
 }
 
 func (c *Client) Run(name, image string, detach bool) error {
-	args := []string{"run"}
-	if detach {
-		args = append(args, "-d")
+	ctx := context.Background()
+	_, err := c.cli.ImagePull(ctx, image, types.ImagePullOptions{})
+	if err != nil {
+		return err
 	}
-	args = append(args, []string{"--name", name, image, "sleep", "infinity"}...)
 
-	cmd := exec.Command("docker", args...)
-	return cmd.Run()
+	resp, err := c.cli.ContainerCreate(ctx, &container.Config{
+		Image: image,
+		Cmd:   []string{"sleep", "infinity"},
+	}, nil, nil, nil, name)
+	if err != nil {
+		return err
+	}
+
+	return c.cli.ContainerStart(ctx, resp.ID, types.ContainerStartOptions{})
 }
 
 func (c *Client) Stop(name string) error {
-	cmd := exec.Command("docker", "stop", name)
-	return cmd.Run()
+	ctx := context.Background()
+	return c.cli.ContainerStop(ctx, name, container.StopOptions{})
 }
 
 func (c *Client) Remove(name string) error {
-	cmd := exec.Command("docker", "rm", "-f", name)
-	return cmd.Run()
+	ctx := context.Background()
+	return c.cli.ContainerRemove(ctx, name, types.ContainerRemoveOptions{})
 }
 
 func (c *Client) List() ([]string, error) {
-	cmd := exec.Command("docker", "ps", "--format", "{{.Names}}")
-	var out bytes.Buffer
-	cmd.Stdout = &out
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 
-	if err := cmd.Run(); err != nil {
+	containers, err := c.cli.ContainerList(ctx, types.ContainerListOptions{})
+	if err != nil {
 		return nil, err
 	}
 
-	var containers []string
-	for _, name := range strings.Split(out.String(), "\n") {
-		name = strings.TrimSpace(name)
-		if name != "" {
-			containers = append(containers, name)
-		}
+	var names []string
+	for _, cont := range containers {
+		names = append(names, cont.Names...)
 	}
-	return containers, nil
+	return names, nil
 }
 
 func (c *Client) Stats() ([]ContainerStats, error) {
@@ -275,72 +310,4 @@ func (c *Client) HostStats() (HostMetrics, error) {
 		return HostMetrics{}, err
 	}
 	return metrics.Host, nil
-}
-
-func parseCPUPercent(line string) (float64, error) {
-	cpuFields := strings.Fields(line)
-	if len(cpuFields) < 5 {
-		return 0, fmt.Errorf("invalid cpu output")
-	}
-	var total, idle uint64
-	for i, v := range cpuFields[1:] {
-		n, _ := strconv.ParseUint(v, 10, 64)
-		total += n
-		if i == 3 {
-			idle = n
-		}
-	}
-	if total == 0 {
-		return 0, nil
-	}
-	return float64(total-idle) * 100 / float64(total), nil
-}
-
-func parseDFLine(line string) (uint64, uint64, uint64) {
-	fields := strings.Fields(line)
-	if len(fields) < 4 {
-		return 0, 0, 0
-	}
-	total, _ := strconv.ParseUint(fields[1], 10, 64)
-	used, _ := strconv.ParseUint(fields[2], 10, 64)
-	free, _ := strconv.ParseUint(fields[3], 10, 64)
-	return total, used, free
-}
-
-func parseMemUsage(v string) (float64, float64) {
-	parts := strings.Split(v, "/")
-	if len(parts) != 2 {
-		return 0, 0
-	}
-	return toMB(parts[0]), toMB(parts[1])
-}
-
-func toMB(v string) float64 {
-	t := strings.TrimSpace(v)
-	t = strings.TrimSuffix(t, "iB")
-	if t == "" {
-		return 0
-	}
-	num := t[:len(t)-1]
-	unit := strings.ToUpper(t[len(t)-1:])
-	f, _ := strconv.ParseFloat(num, 64)
-	switch unit {
-	case "G":
-		return f * 1024
-	case "M":
-		return f
-	case "K":
-		return f / 1024
-	default:
-		return f / (1024 * 1024)
-	}
-}
-
-func parseMemInfoLine(line string) uint64 {
-	fields := strings.Fields(line)
-	if len(fields) < 2 {
-		return 0
-	}
-	v, _ := strconv.ParseUint(fields[1], 10, 64)
-	return v
 }
