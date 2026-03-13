@@ -224,13 +224,14 @@ func (s *Server) HandleContainers(c *fiber.Ctx) error {
 	agents, _ := s.db.ListAgents()
 
 	type ContainerInfo struct {
-		ID          string                `json:"id"`
-		Name        string                `json:"name"`
-		AgentID     string                `json:"agentId"`
-		AgentName   string                `json:"agentName"`
-		Status      string                `json:"status"`
-		Stats       docker.ContainerStats `json:"stats"`
-		ContainerID string                `json:"containerId"`
+		ID          string  `json:"id"`
+		Name        string  `json:"name"`
+		AgentID     string  `json:"agentId"`
+		AgentName   string  `json:"agentName"`
+		Status      string  `json:"status"`
+		CPU         float64 `json:"cpu"`
+		Memory      float64 `json:"memory"`
+		ContainerID string  `json:"containerId"`
 	}
 
 	var containers []ContainerInfo
@@ -254,7 +255,8 @@ func (s *Server) HandleContainers(c *fiber.Ctx) error {
 			AgentID:     agentID,
 			AgentName:   agentName,
 			Status:      status,
-			Stats:       cont,
+			CPU:         cont.CPUPercent,
+			Memory:      cont.MemUsageMB,
 			ContainerID: cont.Name,
 		})
 	}
