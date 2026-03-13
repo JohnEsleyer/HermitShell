@@ -3,6 +3,7 @@ package cloudflare
 import (
 	"context"
 	"regexp"
+	"sync"
 	"testing"
 	"time"
 )
@@ -20,6 +21,14 @@ func TestNewTunnelManager(t *testing.T) {
 	}
 	if mgr.cancels == nil {
 		t.Error("cancels map not initialized")
+	}
+}
+
+func TestCheckBinary(t *testing.T) {
+	mgr := NewTunnelManager()
+	err := mgr.CheckBinary()
+	if err != nil {
+		t.Logf("cloudflared not found (expected on systems without cloudflared): %v", err)
 	}
 }
 
@@ -49,13 +58,11 @@ func TestURLRegex(t *testing.T) {
 func TestGetURL(t *testing.T) {
 	mgr := NewTunnelManager()
 
-	// Test empty case
 	url := mgr.GetURL("nonexistent")
 	if url != "" {
 		t.Errorf("expected empty string for nonexistent tunnel, got %q", url)
 	}
 
-	// Test with URL set
 	mgr.urls["test-tunnel"] = "https://test.trycloudflare.com"
 	url = mgr.GetURL("test-tunnel")
 	if url != "https://test.trycloudflare.com" {
@@ -66,15 +73,12 @@ func TestGetURL(t *testing.T) {
 func TestStopTunnel(t *testing.T) {
 	mgr := NewTunnelManager()
 
-	// Setup a mock tunnel
 	_, cancel := context.WithCancel(context.Background())
 	mgr.cancels["test"] = cancel
 	mgr.urls["test"] = "https://test.trycloudflare.com"
 
-	// Stop the tunnel
 	mgr.StopTunnel("test")
 
-	// Verify cleanup
 	if _, exists := mgr.cancels["test"]; exists {
 		t.Error("cancel should be removed")
 	}
@@ -89,7 +93,6 @@ func TestStopTunnel(t *testing.T) {
 func TestCheckTunnelHealth(t *testing.T) {
 	mgr := NewTunnelManager()
 
-	// Test with no URL
 	healthy := mgr.CheckTunnelHealth("nonexistent", time.Second)
 	if healthy {
 		t.Error("expected false when tunnel doesn't exist")
@@ -143,5 +146,102 @@ func TestGetURLConcurrent(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		<-done
+	}
+}
+
+func TestStartQuickTunnelIdempotent(t *testing.T) {
+	mgr := NewTunnelManager()
+
+	mgr.mu.Lock()
+	mgr.processes["test"] = nil
+	mgr.urls["test"] = "https://existing.trycloudflare.com"
+	mgr.mu.Unlock()
+
+	url, err := mgr.StartQuickTunnel("test", 3000)
+	if err != nil {
+		t.Errorf("expected no error for existing tunnel, got %v", err)
+	}
+	if url != "https://existing.trycloudflare.com" {
+		t.Errorf("expected existing URL, got %q", url)
+	}
+}
+
+func TestTunnelManagerConcurrentAccess(t *testing.T) {
+	mgr := NewTunnelManager()
+	var wg sync.WaitGroup
+
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			mgr.mu.Lock()
+			mgr.urls["test"] = "https://test.trycloudflare.com"
+			mgr.mu.Unlock()
+
+			url := mgr.GetURL("test")
+			if url != "https://test.trycloudflare.com" && url != "" {
+				t.Errorf("unexpected URL: %s", url)
+			}
+		}(i)
+	}
+
+	wg.Wait()
+}
+
+func TestStartQuickTunnelReturnsURL(t *testing.T) {
+	mgr := NewTunnelManager()
+
+	if testing.Short() {
+		t.Skip("skipping tunnel test in short mode")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	urlChan := make(chan string, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		url, err := mgr.StartQuickTunnel("quick-test", 3000)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		urlChan <- url
+	}()
+
+	select {
+	case url := <-urlChan:
+		if url == "" {
+			t.Error("expected non-empty URL")
+		}
+		if url != mgr.GetURL("quick-test") {
+			t.Errorf("URL mismatch: got %q, expected %q", url, mgr.GetURL("quick-test"))
+		}
+	case err := <-errChan:
+		t.Errorf("StartQuickTunnel failed: %v", err)
+	case <-ctx.Done():
+		t.Error("timeout waiting for tunnel URL")
+	}
+
+	mgr.StopTunnel("quick-test")
+}
+
+func TestTunnelManagerMultipleIDs(t *testing.T) {
+	mgr := NewTunnelManager()
+
+	mgr.mu.Lock()
+	mgr.urls["tunnel-1"] = "https://tunnel-1.trycloudflare.com"
+	mgr.urls["tunnel-2"] = "https://tunnel-2.trycloudflare.com"
+	mgr.mu.Unlock()
+
+	if url1 := mgr.GetURL("tunnel-1"); url1 != "https://tunnel-1.trycloudflare.com" {
+		t.Errorf("unexpected URL for tunnel-1: %s", url1)
+	}
+	if url2 := mgr.GetURL("tunnel-2"); url2 != "https://tunnel-2.trycloudflare.com" {
+		t.Errorf("unexpected URL for tunnel-2: %s", url2)
+	}
+	if url3 := mgr.GetURL("tunnel-3"); url3 != "" {
+		t.Errorf("expected empty URL for non-existent tunnel-3, got: %s", url3)
 	}
 }
