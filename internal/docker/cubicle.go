@@ -137,7 +137,7 @@ func (c *Client) collectSystemMetrics() (SystemMetrics, error) {
 }
 
 func (c *Client) collectHostMetrics() (HostMetrics, error) {
-	cpuPct, err := cpu.Percent(0, false)
+	cpuPct, err := cpu.Percent(time.Second, false)
 	if err != nil {
 		return HostMetrics{}, err
 	}
