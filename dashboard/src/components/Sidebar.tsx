@@ -1,11 +1,12 @@
-import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield } from 'lucide-react';
+import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
+  onLogout: () => void;
 }
 
-export function Sidebar({ currentTab, setCurrentTab }: SidebarProps) {
+export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
   const tabs = [
     { id: 'agents', name: 'your agents', icon: Users },
     { id: 'health', name: 'system health', icon: Activity },
@@ -48,10 +49,16 @@ export function Sidebar({ currentTab, setCurrentTab }: SidebarProps) {
         })}
       </nav>
 
-      <button onClick={() => setCurrentTab('settings')} className={`w-14 h-14 rounded-full border flex items-center justify-center transition-all group relative ${currentTab === 'settings' ? 'bg-white text-black border-white' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}>
-        <Settings className="w-6 h-6" />
-        <span className="absolute left-20 bg-white text-black text-xs font-bold px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">settings</span>
-      </button>
+      <div className="flex flex-col gap-3">
+        <button onClick={() => setCurrentTab('settings')} className={`w-14 h-14 rounded-full border flex items-center justify-center transition-all group relative ${currentTab === 'settings' ? 'bg-white text-black border-white' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:bg-zinc-900 hover:text-white'}`}>
+          <Settings className="w-6 h-6" />
+          <span className="absolute left-20 bg-white text-black text-xs font-bold px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">settings</span>
+        </button>
+        <button onClick={onLogout} className="w-14 h-14 rounded-full border bg-zinc-950 border-zinc-800 text-zinc-500 hover:bg-red-950 hover:text-red-400 flex items-center justify-center transition-all group relative">
+          <LogOut className="w-6 h-6" />
+          <span className="absolute left-20 bg-red-500 text-white text-xs font-bold px-4 py-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">logout</span>
+        </button>
+      </div>
     </aside>
   );
 }

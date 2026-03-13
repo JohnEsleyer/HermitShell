@@ -78,6 +78,17 @@ export default function App() {
     checkAuth();
   }, []);
 
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, { method: 'POST' });
+    } catch (err) {
+      console.error('Logout failed:', err);
+    }
+    setIsAuthenticated(false);
+    setShowLogin(true);
+    setAgents([]);
+  };
+
   const handleLogin = async (username: string, password: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -105,18 +116,13 @@ export default function App() {
     return (
       <LoginScreen 
         onLogin={handleLogin} 
-        onSkip={() => {
-          setIsAuthenticated(true);
-          setShowLogin(false);
-          fetchAgents();
-        }}
       />
     );
   }
 
   return (
     <div className="h-screen w-full overflow-hidden flex bg-black text-white selection:bg-white selection:text-black font-sans">
-      <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
+      <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} onLogout={handleLogout} />
       
       <main className="flex-1 h-full py-6 pr-6 pl-0">
         <div className="w-full h-full bg-zinc-950 rounded-[3rem] border border-zinc-800/50 p-12 overflow-y-auto relative flex flex-col shadow-2xl">
@@ -170,7 +176,7 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin, onSkip }: { onLogin: (u: string, p: string) => void; onSkip: () => void }) {
+function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('hermit123');
 
@@ -217,12 +223,6 @@ function LoginScreen({ onLogin, onSkip }: { onLogin: (u: string, p: string) => v
             className="w-full bg-white text-black py-4 rounded-full font-bold mt-4 hover:bg-zinc-200 transition-colors"
           >
             Login
-          </button>
-          <button 
-            onClick={onSkip}
-            className="w-full text-zinc-500 py-2 text-sm hover:text-white transition-colors"
-          >
-            Continue without auth
           </button>
         </div>
       </div>
