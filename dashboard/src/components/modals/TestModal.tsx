@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, Terminal, FileText, Calendar } from 'lucide-react';
+import { X, Send, Terminal } from 'lucide-react';
 import { Agent } from '../../types';
 
 const API_BASE = '';
@@ -76,7 +76,7 @@ export function TestModal({ agent, onClose }: TestModalProps) {
           </div>
           <div className="flex gap-2">
             <button onClick={() => insertExample('<terminal>ls -la</terminal>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">Terminal</button>
-            <button onClick={() => insertExample('<action type="GIVE">report.pdf</action>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">Give File</button>
+            <button onClick={() => insertExample('<action type="GIVE">test.txt</action>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">Give File</button>
             <button onClick={() => insertExample('<system>memory</system>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">System Info</button>
             <button onClick={onClose} className="ml-4 w-10 h-10 bg-zinc-800 rounded-full flex items-center justify-center text-zinc-400 hover:text-white transition-all">
               <X className="w-5 h-5" />
@@ -88,8 +88,8 @@ export function TestModal({ agent, onClose }: TestModalProps) {
           <div className="w-1/2 border-r border-zinc-800 p-6 overflow-y-auto bg-[#0a0a0a] flex flex-col gap-4">
             {logs.map(log => (
               <div key={log.id} className={`p-4 rounded-xl border font-mono text-sm whitespace-pre-wrap animate-in slide-in-from-top-2 duration-300 ${log.source === 'telegram' ? 'bg-blue-950/30 border-blue-900/50 text-blue-200' :
-                  log.source === 'input' ? 'bg-yellow-950/30 border-yellow-900/50 text-yellow-200' :
-                    'bg-emerald-950/30 border-emerald-900/50 text-emerald-200'
+                log.source === 'input' ? 'bg-yellow-950/30 border-yellow-900/50 text-yellow-200' :
+                  'bg-emerald-950/30 border-emerald-900/50 text-emerald-200'
                 }`}>
                 <div className="text-[10px] uppercase tracking-wider opacity-50 mb-2">{log.source}</div>
                 {log.content}

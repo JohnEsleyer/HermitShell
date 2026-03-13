@@ -42,6 +42,7 @@ export interface ContainerItem {
   name: string;
   agentId?: string;
   agentName: string;
+  profilePic?: string;
   status: 'running' | 'stopped';
   cpu: number;
   memory: number;
