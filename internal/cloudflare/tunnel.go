@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 )
@@ -41,26 +42,30 @@ var urlRe = regexp.MustCompile(`https?://[a-zA-Z0-9-]+\.trycloudflare\.com`)
 // It will periodically restart the tunnel if it exits, maintaining the process.
 func (m *TunnelManager) StartQuickTunnel(id string, port int) (string, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if _, exists := m.processes[id]; exists {
-		return m.urls[id], nil
+		url := m.urls[id]
+		m.mu.Unlock()
+		return url, nil
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancels[id] = cancel
+	m.mu.Unlock()
 
 	urlChan := make(chan string, 1)
-
 	go m.runTunnelLoop(ctx, id, port, urlChan)
 
 	select {
 	case url := <-urlChan:
+		m.mu.Lock()
 		m.urls[id] = url
+		m.mu.Unlock()
 		return url, nil
-	case <-time.After(30 * time.Second):
+	case <-time.After(60 * time.Second):
 		cancel()
+		m.mu.Lock()
 		delete(m.cancels, id)
+		m.mu.Unlock()
 		return "", fmt.Errorf("timeout waiting for tunnel URL")
 	}
 }
@@ -76,9 +81,10 @@ func (m *TunnelManager) runTunnelLoop(ctx context.Context, id string, port int, 
 		}
 
 		cmd := exec.CommandContext(ctx, "cloudflared", "tunnel", "--url", fmt.Sprintf("http://localhost:%d", port))
+
 		stderr, err := cmd.StderrPipe()
 		if err != nil {
-			log.Printf("Tunnel %s error creating pipe: %v", id, err)
+			log.Printf("Tunnel %s error creating stderr pipe: %v", id, err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -93,30 +99,56 @@ func (m *TunnelManager) runTunnelLoop(ctx context.Context, id string, port int, 
 		m.processes[id] = cmd
 		m.mu.Unlock()
 
-		scanner := bufio.NewScanner(stderr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if match := urlRe.FindString(line); match != "" {
-				if firstRun {
-					urlChan <- match
-					firstRun = false
-				} else {
-					// URL changed due to restart
-					m.mu.Lock()
-					m.urls[id] = match
-					m.mu.Unlock()
-					log.Printf("Tunnel %s restarted with new URL: %s", id, match)
+		urlFound := false
+		urlMu := sync.Mutex{}
+
+		waitCh := make(chan error, 1)
+		go func() {
+			reader := bufio.NewReader(stderr)
+			for {
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					break
+				}
+				line = strings.TrimSpace(line)
+				if match := urlRe.FindString(line); match != "" {
+					urlMu.Lock()
+					if firstRun {
+						select {
+						case urlChan <- match:
+							firstRun = false
+							urlFound = true
+						default:
+						}
+					} else {
+						m.mu.Lock()
+						m.urls[id] = match
+						m.mu.Unlock()
+					}
+					urlMu.Unlock()
 				}
 			}
+			waitCh <- cmd.Wait()
+		}()
+
+		select {
+		case <-waitCh:
+		case <-time.After(60 * time.Second):
+			log.Printf("Tunnel %s: timeout waiting for process", id)
+			cmd.Wait()
 		}
 
-		cmd.Wait()
-
+		urlMu.Lock()
 		m.mu.Lock()
 		delete(m.processes, id)
 		m.mu.Unlock()
 
-		log.Printf("Tunnel %s exited, restarting in 5s...", id)
+		if !urlFound && firstRun {
+			log.Printf("Tunnel %s exited without URL, restarting in 5s...", id)
+		} else {
+			log.Printf("Tunnel %s exited, restarting in 5s...", id)
+		}
+		urlMu.Unlock()
 
 		select {
 		case <-ctx.Done():
