@@ -7,6 +7,7 @@ export interface Agent {
   status: 'running' | 'standby' | 'stopped';
   tunnelUrl?: string;
   profilePic?: string;
+  bannerUrl?: string;
   containerId?: string;
   allowedUsers?: string;
 }

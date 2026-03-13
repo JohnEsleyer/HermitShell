@@ -81,15 +81,15 @@ export function SkillsModal({ agent, onClose, triggerToast }: SkillsModalProps) 
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-6">
+      <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 sm:p-6">
         <div className="text-white">Loading skills...</div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
-      <div className="bg-zinc-950 border border-zinc-800 w-full max-w-6xl h-[85vh] rounded-[2.5rem] relative flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 sm:p-6 animate-in fade-in duration-300">
+      <div className="bg-zinc-950 border border-zinc-800 w-full max-w-7xl h-[min(88vh,980px)] rounded-[2.5rem] relative flex flex-col shadow-2xl overflow-hidden">
         
         <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
           <div>

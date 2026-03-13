@@ -4,6 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -116,6 +117,8 @@ func (s *Server) setupRoutes(app *fiber.App) {
 
 	api.Post("/test-contract", s.HandleTestContract)
 
+	api.Post("/images/upload", s.HandleImageUpload)
+
 	api.Post("/telegram/send-code", s.HandleTelegramSendCode)
 	api.Post("/telegram/verify", s.HandleTelegramVerify)
 	api.Post("/webhook", s.HandleWebhook)
@@ -127,6 +130,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 func (s *Server) setupStaticRoutes(app *fiber.App) {
 	distPath := "./dashboard/dist"
 
+	app.Static("/data/image", "./data/image")
 	app.Static("/", distPath)
 
 	app.Use(func(c *fiber.Ctx) error {
@@ -326,12 +330,40 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
-	var a db.Agent
-	if err := c.BodyParser(&a); err != nil {
+	var req struct {
+		Name          string `json:"name"`
+		Role          string `json:"role"`
+		Personality   string `json:"personality"`
+		Provider      string `json:"provider"`
+		ProfilePic    string `json:"profilePic"`
+		BannerURL     string `json:"bannerUrl"`
+		TelegramToken string `json:"telegramToken"`
+		TelegramID    string `json:"telegramId"`
+		Status        string `json:"status"`
+	}
+	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
 
-	a.Status = "standby"
+	a := db.Agent{
+		Name:          req.Name,
+		Role:          req.Role,
+		Personality:   req.Personality,
+		Provider:      req.Provider,
+		ProfilePic:    req.ProfilePic,
+		BannerURL:     req.BannerURL,
+		TelegramToken: req.TelegramToken,
+		TelegramID:    req.TelegramID,
+		Status:        "standby",
+		Active:        true,
+	}
+	if a.Role == "" {
+		a.Role = "assistant"
+	}
+	if a.Provider == "" {
+		a.Provider = "openrouter"
+	}
+
 	id, err := s.db.CreateAgent(&a)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -339,10 +371,11 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 
 	go func() {
 		time.Sleep(2 * time.Second)
-		s.db.UpdateAgent(&db.Agent{
-			ID:     id,
-			Status: "running",
-		})
+		existing, err := s.db.GetAgent(id)
+		if err == nil && existing != nil {
+			existing.Status = "running"
+			s.db.UpdateAgent(existing)
+		}
 	}()
 
 	return c.JSON(fiber.Map{"id": id, "success": true})
@@ -356,15 +389,68 @@ func (s *Server) HandleGetAgent(c *fiber.Ctx) error {
 
 func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
-	var a db.Agent
-	if err := c.BodyParser(&a); err != nil {
+	existing, err := s.db.GetAgent(id)
+	if err != nil || existing == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+
+	var req struct {
+		Name        string `json:"name"`
+		Role        string `json:"role"`
+		Personality string `json:"personality"`
+		Provider    string `json:"provider"`
+		ProfilePic  string `json:"profilePic"`
+		BannerURL   string `json:"bannerUrl"`
+	}
+	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
 	}
-	a.ID = id
-	if err := s.db.UpdateAgent(&a); err != nil {
+
+	if req.Name != "" {
+		existing.Name = req.Name
+	}
+	if req.Role != "" {
+		existing.Role = req.Role
+	}
+	existing.Personality = req.Personality
+	if req.Provider != "" {
+		existing.Provider = req.Provider
+	}
+	existing.ProfilePic = req.ProfilePic
+	existing.BannerURL = req.BannerURL
+
+	if err := s.db.UpdateAgent(existing); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleImageUpload(c *fiber.Ctx) error {
+	file, err := c.FormFile("image")
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "missing image file"})
+	}
+
+	kind := c.FormValue("type", "asset")
+	ext := strings.ToLower(path.Ext(file.Filename))
+	if ext == "" {
+		ext = ".png"
+	}
+	if ext != ".png" && ext != ".jpg" && ext != ".jpeg" && ext != ".webp" && ext != ".gif" {
+		return c.Status(400).JSON(fiber.Map{"error": "unsupported image type"})
+	}
+
+	if err := os.MkdirAll("data/image", 0o755); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	filename := fmt.Sprintf("%s-%d%s", kind, time.Now().UnixNano(), ext)
+	dst := filepath.Join("data/image", filename)
+	if err := c.SaveFile(file, dst); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"url": "/data/image/" + filename})
 }
 
 func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
