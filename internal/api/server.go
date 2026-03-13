@@ -839,17 +839,12 @@ func (s *Server) HandleSystemMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host, err := s.docker.HostStats()
+	metrics, err := s.docker.LatestSystemMetrics()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	containerStats, _ := s.docker.Stats()
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"host":       host,
-		"containers": containerStats,
-	})
+	json.NewEncoder(w).Encode(metrics)
 }
 
 func (s *Server) HandleDockerContainers(w http.ResponseWriter, r *http.Request) {

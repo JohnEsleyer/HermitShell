@@ -184,7 +184,7 @@
                 </div>
             </header>
 
-            <div id="global-message" class="hidden mx-10 mt-4 rounded-xl border px-4 py-3 text-xs font-semibold uppercase tracking-widest"></div>
+            <div id="global-message" class="hidden mx-10 mt-4 rounded-xl border px-4 py-3 text-xs font-semibold uppercase tracking-widest transition-all duration-300 opacity-0"></div>
 
             <div class="flex-1 overflow-y-auto p-10 bg-black">
                 <!-- Agents Panel -->
@@ -226,9 +226,12 @@
                                 </h3>
                             </div>
                             <div id="apps-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                <div class="col-span-full text-center py-12 text-zinc-500">
-                                    <i data-lucide="loader-2" class="w-8 h-8 mx-auto mb-4 animate-spin"></i>
-                                    <p>Loading apps from agent containers...</p>
+                                <div class="col-span-full rounded-2xl border border-zinc-800 bg-zinc-950/30 p-8">
+                                    <div class="animate-pulse space-y-3">
+                                        <div class="h-4 w-48 bg-zinc-800 rounded"></div>
+                                        <div class="h-3 w-72 bg-zinc-900 rounded"></div>
+                                        <div class="h-3 w-64 bg-zinc-900 rounded"></div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -525,13 +528,6 @@
                             <option value="gemini-flash-latest">gemini-flash-latest</option>
                         </select>
                     </div>
-                    <div>
-                        <div class="flex items-center justify-between mb-2">
-                            <label class="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Context</label>
-                            <button type="button" onclick="resetContextTemplate()" class="text-[10px] uppercase tracking-widest text-zinc-400 hover:text-white">Reset to default</button>
-                        </div>
-                        <textarea rows="8" id="agent-context" placeholder="Agent context..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-4 text-white focus:outline-none focus:border-white transition-all resize-y"></textarea>
-                    </div>
                 </div>
 
                 <div class="mt-10 flex space-x-4">
@@ -680,6 +676,7 @@
         let currentFolder = 'in';
         let metricsInterval = null;
         let currentUsername = '';
+        let messageTimer = null;
 
         const panelTitles = {
             'agents': 'Agents',
@@ -702,7 +699,6 @@
             loadMetrics();
             loadSettings();
             toggleAgentModelInput();
-            loadContextTemplate();
             if (!metricsInterval) {
                 metricsInterval = setInterval(loadMetrics, 3000);
             }
@@ -710,19 +706,36 @@
 
         function showMessage(message, type = 'success') {
             const el = document.getElementById('global-message');
+            if (messageTimer) {
+                clearTimeout(messageTimer);
+                messageTimer = null;
+            }
+
             if (!message) {
-                el.classList.add('hidden');
-                el.textContent = '';
-                el.className = 'hidden mx-10 mt-4 rounded-xl border px-4 py-3 text-xs font-semibold uppercase tracking-widest';
+                el.classList.add('opacity-0');
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                    el.textContent = '';
+                }, 250);
                 return;
             }
 
             const classes = type === 'error'
-                ? 'mx-10 mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 px-4 py-3 text-xs font-semibold uppercase tracking-widest'
-                : 'mx-10 mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 px-4 py-3 text-xs font-semibold uppercase tracking-widest';
+                ? 'mx-10 mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-300 px-4 py-3 text-xs font-semibold uppercase tracking-widest transition-all duration-300 opacity-0'
+                : 'mx-10 mt-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 px-4 py-3 text-xs font-semibold uppercase tracking-widest transition-all duration-300 opacity-0';
             el.className = classes;
             el.textContent = message;
             el.classList.remove('hidden');
+            requestAnimationFrame(() => el.classList.remove('opacity-0'));
+
+            messageTimer = setTimeout(() => {
+                el.classList.add('opacity-0');
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                    el.textContent = '';
+                }, 250);
+                messageTimer = null;
+            }, 3500);
         }
 
         function showLogin(errorMessage = '') {
@@ -954,7 +967,7 @@
                     
                     <div class="grid grid-cols-4 border-t border-zinc-800 bg-zinc-950/20">
                         ${['Test', 'Skills', 'Config', 'Logs'].map((btn, i) => `
-                            <button class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 transition-colors ${i !== 3 ? 'border-r border-zinc-800' : ''}">
+                            <button onclick="handleAgentAction(${agent.id}, '${btn.toLowerCase()}')" class="py-4 text-[10px] font-bold uppercase tracking-widest text-zinc-500 hover:text-white hover:bg-zinc-900 transition-colors ${i !== 3 ? 'border-r border-zinc-800' : ''}">
                                 ${btn}
                             </button>
                         `).join('')}
@@ -1061,6 +1074,200 @@
             const div = document.createElement('div');
             div.textContent = text || '';
             return div.innerHTML;
+        }
+
+        function formatBytes(bytes) {
+            if (!bytes) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let v = bytes;
+            let i = 0;
+            while (v >= 1024 && i < units.length - 1) {
+                v /= 1024;
+                i++;
+            }
+            return `${v.toFixed(v > 10 ? 1 : 2)} ${units[i]}`;
+        }
+
+        function renderContainers() {
+            const tbody = document.getElementById('containers-body');
+            if (!containers.length) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-8 py-12 text-center text-zinc-500">No running containers found.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = containers.map(c => `
+                <tr class="hover:bg-zinc-900/20 transition-colors">
+                    <td class="px-8 py-5 font-bold text-white">${escapeHtml(c.name)}</td>
+                    <td class="px-8 py-5 text-emerald-300 uppercase text-xs tracking-widest">Running</td>
+                    <td class="px-8 py-5 text-zinc-300">${Number(c.cpuPercent || 0).toFixed(1)}%</td>
+                    <td class="px-8 py-5 text-zinc-300">${Number(c.memUsageMB || 0).toFixed(1)} / ${Number(c.memLimitMB || 0).toFixed(1)} MB</td>
+                    <td class="px-8 py-5 text-zinc-500">-</td>
+                    <td class="px-8 py-5 text-right text-zinc-500 text-xs">Live</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadContainers() {
+            try {
+                const res = await fetch('/api/containers');
+                containers = await res.json();
+                renderContainers();
+            } catch (e) {
+                console.error('Failed to load containers:', e);
+            }
+        }
+
+        function renderApps(apps = []) {
+            const list = document.getElementById('apps-list');
+            if (!apps.length) {
+                list.innerHTML = `
+                    <div class="col-span-full rounded-2xl border border-zinc-800 bg-zinc-950/40 p-10 text-center">
+                        <i data-lucide="app-window" class="w-8 h-8 mx-auto mb-4 text-zinc-600"></i>
+                        <p class="text-zinc-400 font-semibold">No apps to show yet.</p>
+                        <p class="text-zinc-600 text-xs mt-2">Deploy an agent and create apps in workspace/apps to see them here.</p>
+                    </div>
+                `;
+                lucide.createIcons();
+                return;
+            }
+            list.innerHTML = apps.map(app => `
+                <div class="rounded-2xl border border-zinc-800 bg-zinc-950 p-5">
+                    <div class="flex items-center justify-between mb-2">
+                        <h4 class="text-white font-bold">${escapeHtml(app.name || 'App')}</h4>
+                        <button class="text-xs text-zinc-400">Managed</button>
+                    </div>
+                    <p class="text-xs text-zinc-500 break-all">/${escapeHtml(app.path || 'apps/example')}</p>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        async function loadApps() {
+            if (!agents.length) {
+                renderApps([]);
+                return;
+            }
+            renderApps([]);
+        }
+
+        async function loadMetrics() {
+            try {
+                const res = await fetch('/api/metrics');
+                const data = await res.json();
+                const host = data.host || {};
+                const liveContainers = data.containers || [];
+
+                document.getElementById('metric-cpu').textContent = `${Number(host.cpuPercent || 0).toFixed(1)}%`;
+                document.getElementById('metric-cpu-bar').style.width = `${Math.min(100, Number(host.cpuPercent || 0))}%`;
+
+                document.getElementById('metric-memory').textContent = `${formatBytes(host.memoryUsed || 0)} / ${formatBytes(host.memoryTotal || 0)}`;
+                document.getElementById('metric-memory-bar').style.width = `${Math.min(100, Number(host.memoryPercent || 0))}%`;
+
+                document.getElementById('metric-containers').textContent = `${liveContainers.length}`;
+
+                const statsEl = document.getElementById('container-stats');
+                statsEl.innerHTML = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div class="rounded-xl border border-zinc-800 p-4 bg-zinc-900/30">
+                            <p class="text-[10px] uppercase tracking-widest text-zinc-500">Storage</p>
+                            <p class="text-sm text-zinc-200 mt-2">Used ${formatBytes(host.diskUsed || 0)} / ${formatBytes(host.diskTotal || 0)}</p>
+                            <p class="text-xs text-zinc-500 mt-1">Free ${formatBytes(host.diskFree || 0)}</p>
+                        </div>
+                        <div class="rounded-xl border border-zinc-800 p-4 bg-zinc-900/30">
+                            <p class="text-[10px] uppercase tracking-widest text-zinc-500">Memory Left</p>
+                            <p class="text-sm text-zinc-200 mt-2">${formatBytes(host.memoryFree || 0)} available</p>
+                            <p class="text-xs text-zinc-500 mt-1">Updated every second</p>
+                        </div>
+                    </div>
+                    ${liveContainers.length ? liveContainers.map(c => `
+                        <div class="rounded-xl border border-zinc-800 p-4 bg-zinc-900/20 flex items-center justify-between">
+                            <div>
+                                <p class="font-semibold text-white">${escapeHtml(c.name)}</p>
+                                <p class="text-xs text-zinc-500">Memory ${Number(c.memUsageMB || 0).toFixed(1)} / ${Number(c.memLimitMB || 0).toFixed(1)} MB</p>
+                            </div>
+                            <p class="text-sm text-zinc-300">CPU ${Number(c.cpuPercent || 0).toFixed(1)}%</p>
+                        </div>
+                    `).join('') : '<p class="text-zinc-500 text-sm">No running containers.</p>'}
+                `;
+
+                containers = liveContainers;
+                renderContainers();
+            } catch (e) {
+                console.error('Failed to load metrics:', e);
+            }
+        }
+
+        function openAllowListModal() {
+            document.getElementById('allowlist-modal').classList.remove('hidden');
+            document.getElementById('allowlist-modal').classList.add('flex');
+        }
+
+        function closeAllowListModal() {
+            document.getElementById('allowlist-modal').classList.add('hidden');
+            document.getElementById('allowlist-modal').classList.remove('flex');
+            document.getElementById('allowlist-user-id').value = '';
+            document.getElementById('allowlist-friendly-name').value = '';
+            document.getElementById('allowlist-notes').value = '';
+        }
+
+        async function saveAllowListEntry() {
+            const telegram_user_id = document.getElementById('allowlist-user-id').value.trim();
+            const friendly_name = document.getElementById('allowlist-friendly-name').value.trim();
+            const notes = document.getElementById('allowlist-notes').value.trim();
+
+            if (!telegram_user_id) {
+                showMessage('Telegram user ID is required.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/allowlist', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ telegram_user_id, friendly_name, notes })
+                });
+                const data = await res.json();
+                if (!data.id) {
+                    showMessage('Failed to save allowlist entry.', 'error');
+                    return;
+                }
+                closeAllowListModal();
+                await loadAllowList();
+                showMessage('Allowlist user added successfully.');
+            } catch (e) {
+                showMessage('Failed to save allowlist entry.', 'error');
+            }
+        }
+
+        async function deleteAllowListEntry(id) {
+            try {
+                await fetch(`/api/allowlist/${id}`, { method: 'DELETE' });
+                await loadAllowList();
+                showMessage('Allowlist entry removed.');
+            } catch (e) {
+                showMessage('Failed to remove allowlist entry.', 'error');
+            }
+        }
+
+        async function deleteCalendarEvent(id) {
+            try {
+                await fetch(`/api/calendar/${id}`, { method: 'DELETE' });
+                await loadCalendar();
+                showMessage('Calendar event removed.');
+            } catch (e) {
+                showMessage('Failed to remove calendar event.', 'error');
+            }
+        }
+
+        function toggleDomainMode() {
+            const enabled = document.getElementById('setting-domain-mode').checked;
+            document.getElementById('setting-dashboard-domain').disabled = !enabled;
+            document.getElementById('setting-agents-domain').disabled = !enabled;
+        }
+
+        function handleAgentAction(agentID, action) {
+            const actionLabel = action.charAt(0).toUpperCase() + action.slice(1);
+            showMessage(`${actionLabel} for agent #${agentID} is coming soon.`, 'error');
         }
 
         function openAppPasswordModal(appName) {
@@ -1183,37 +1390,6 @@
             document.getElementById('agent-model-gemini-wrap').classList.toggle('hidden', provider !== 'gemini');
         }
 
-        async function loadContextTemplate() {
-            try {
-                const res = await fetch('/api/context');
-                const data = await res.json();
-                document.getElementById('agent-context').value = data.content || '';
-            } catch (e) {
-                console.error('Failed to load context template:', e);
-            }
-        }
-
-        async function resetContextTemplate() {
-            try {
-                await fetch('/api/context', { method: 'DELETE' });
-                await loadContextTemplate();
-            } catch (e) {
-                showMessage('Failed to reset context template.', 'error');
-            }
-        }
-
-        async function saveContextTemplate() {
-            try {
-                await fetch('/api/context', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: document.getElementById('agent-context').value })
-                });
-            } catch (e) {
-                console.error('Failed to save context template:', e);
-            }
-        }
-
         function openCreateAgentModal() {
             document.getElementById('create-agent-modal').classList.remove('hidden');
             document.getElementById('create-agent-modal').classList.add('flex');
@@ -1231,15 +1407,12 @@
             const personality = document.getElementById('agent-personality').value;
             const provider = document.getElementById('agent-provider').value;
             const model = provider === 'gemini' ? document.getElementById('agent-model-gemini').value : document.getElementById('agent-model-openrouter').value;
-            const context = document.getElementById('agent-context').value;
-
             if (!name || !role) {
                 showMessage('Name and role are required.', 'error');
                 return;
             }
 
             try {
-                await saveContextTemplate();
                 const res = await fetch('/api/agents', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -1249,7 +1422,6 @@
                         personality,
                         provider,
                         model,
-                        context,
                         status: 'stopped',
                         active: true
                     })
