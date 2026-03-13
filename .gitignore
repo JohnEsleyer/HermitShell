@@ -38,6 +38,7 @@ build/
 # Environment
 .env
 .env.local
+.env.*
 *.env
 
 # Logs
@@ -47,6 +48,9 @@ build/
 tmp/
 temp/
 
-# Others
+# Cloudflare
+*.cloudflared
+
+# Codebase files
 codebase.txt
 textify.yaml

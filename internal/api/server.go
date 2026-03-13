@@ -130,7 +130,8 @@ func (s *Server) setupStaticRoutes(app *fiber.App) {
 	app.Static("/", distPath)
 
 	app.Use(func(c *fiber.Ctx) error {
-		if c.Path()[:4] == "/api" {
+		path := c.Path()
+		if len(path) >= 4 && path[:4] == "/api" {
 			return c.Status(404).JSON(fiber.Map{"error": "API route not found"})
 		}
 		return c.SendFile(distPath + "/index.html")
