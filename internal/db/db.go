@@ -54,7 +54,8 @@ type AuditLog struct {
 }
 
 func NewDB(path string) (*DB, error) {
-	db, err := sql.Open("sqlite3", path+"?_busy_timeout=5000")
+	connStr := fmt.Sprintf("file:%s?_busy_timeout=5000&_journal_mode=WAL", path)
+	db, err := sql.Open("sqlite3", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open db: %w", err)
 	}

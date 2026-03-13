@@ -34,3 +34,30 @@ func TestParseLLMOutputSkillTag(t *testing.T) {
 		t.Fatalf("expected skill remotion.md, got %q", parsed.Actions[0].Value)
 	}
 }
+
+func TestParseLLMOutputActiveZoneAfterEnd(t *testing.T) {
+	input := `<message>Old</message><terminal>echo old</terminal><end><message>New</message><terminal>echo new</terminal>`
+	parsed := ParseLLMOutput(input)
+
+	if parsed.Message != "New" {
+		t.Fatalf("expected message from active zone, got %q", parsed.Message)
+	}
+	if len(parsed.Terminals) != 1 || parsed.Terminals[0] != "echo new" {
+		t.Fatalf("expected only new terminal, got %#v", parsed.Terminals)
+	}
+}
+
+func TestParseLLMOutputCalendarDateAndTime(t *testing.T) {
+	input := `<calendar><date>2026-03-14</date><time>08:00</time><prompt>Check logs</prompt></calendar>`
+	parsed := ParseLLMOutput(input)
+
+	if parsed.Calendar == nil {
+		t.Fatal("expected calendar to be parsed")
+	}
+	if parsed.Calendar.DateTime != "2026-03-14 08:00" {
+		t.Fatalf("expected datetime join, got %q", parsed.Calendar.DateTime)
+	}
+	if parsed.Calendar.Prompt != "Check logs" {
+		t.Fatalf("expected prompt, got %q", parsed.Calendar.Prompt)
+	}
+}
