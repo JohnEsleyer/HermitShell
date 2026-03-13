@@ -768,7 +768,13 @@
                 authUserInput.value = currentUsername;
             }
             showMessage('');
-            init();
+
+            try {
+                init();
+            } catch (e) {
+                console.error('Failed to initialize dashboard:', e);
+                showMessage('Credentials were saved, but dashboard failed to load. Please refresh.', 'error');
+            }
         }
 
         async function checkAuthAndInitialize() {
@@ -833,25 +839,28 @@
                 return;
             }
 
+            let data;
             try {
                 const res = await fetch('/api/auth/change-credentials', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ newUsername, newPassword })
                 });
-                const data = await res.json();
+                data = await res.json();
 
-                if (!data.success) {
+                if (!res.ok || !data.success) {
                     showFirstLoginSetup(data.error || 'Failed to save credentials.', newUsername);
                     return;
                 }
-
-                currentUsername = newUsername;
-                showDashboard(currentUsername);
-                showMessage('First-time credentials saved successfully.');
             } catch (e) {
+                console.error('Failed to save first-login credentials:', e);
                 showFirstLoginSetup('Failed to save credentials. Please try again.', newUsername);
+                return;
             }
+
+            currentUsername = newUsername;
+            showDashboard(currentUsername);
+            showMessage('First-time credentials saved successfully.');
         }
 
         async function logout() {
