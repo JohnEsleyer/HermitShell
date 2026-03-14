@@ -60,13 +60,16 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       });
-      if (!res.ok) throw new Error();
-      triggerToast(`Container ${action} initiated`, 'success');
-      await fetchContainers();
+      const data = await res.json();
+      if (!res.ok) {
+        triggerToast(`Failed to ${action} container: ${data.error || 'Unknown error'}`, 'error');
+      } else {
+        triggerToast(`Container ${action} initiated`, 'success');
+        await fetchContainers();
+      }
     } catch (err) {
       triggerToast(`Failed to ${action} container`, 'error');
     } finally {
-      // Small artificial delay to let Docker settle
       setTimeout(() => {
         setActionPendingIds(prev => prev.filter(id => id !== container.id));
       }, 1000);

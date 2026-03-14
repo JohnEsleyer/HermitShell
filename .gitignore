@@ -62,3 +62,6 @@ yarn-error.log*
 # Codebase files
 codebase.txt
 textify.yaml
+
+# Docker
+*.dockerignore

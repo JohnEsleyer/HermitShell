@@ -22,6 +22,7 @@ type Client struct {
 	mu               sync.RWMutex
 	latestSystem     SystemMetrics
 	aggregatorActive bool
+	prevStats        map[string]types.CPUStats
 }
 
 type ContainerStats struct {
@@ -30,6 +31,7 @@ type ContainerStats struct {
 	MemUsageMB float64 `json:"memUsageMB"`
 	MemLimitMB float64 `json:"memLimitMB"`
 	Created    string  `json:"created"`
+	Status     string  `json:"status"`
 }
 
 type HostMetrics struct {
@@ -57,8 +59,9 @@ func NewClient() (*Client, error) {
 	}
 
 	c := &Client{
-		cli:     cli,
-		timeout: 2 * time.Minute,
+		cli:       cli,
+		timeout:   2 * time.Minute,
+		prevStats: make(map[string]types.CPUStats),
 	}
 	c.StartMetricsAggregator()
 	return c, nil
@@ -187,7 +190,7 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 
 	for _, cont := range containers {
 		wg.Add(1)
-		go func(containerID, name string) {
+		go func(containerID, name, dockerStatus string) {
 			defer wg.Done()
 
 			statsResp, err := c.cli.ContainerStats(ctx, containerID, false)
@@ -201,38 +204,55 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 				return
 			}
 
+			cleanName := strings.TrimPrefix(name, "/")
+
+			c.mu.Lock()
+			prev, hasPrev := c.prevStats[cleanName]
+			c.prevStats[cleanName] = v.CPUStats
+			c.mu.Unlock()
+
 			var cpuPercent = 0.0
-			cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage) - float64(v.PreCPUStats.CPUUsage.TotalUsage)
-			systemDelta := float64(v.CPUStats.SystemUsage) - float64(v.PreCPUStats.SystemUsage)
-			onlineCPUs := float64(v.CPUStats.OnlineCPUs)
-			if onlineCPUs == 0.0 {
-				onlineCPUs = float64(len(v.CPUStats.CPUUsage.PercpuUsage))
-			}
-			if onlineCPUs == 0.0 {
-				onlineCPUs = 1.0 // Fallback to at least 1 CPU
-			}
-			if systemDelta > 0.0 && cpuDelta > 0.0 {
-				cpuPercent = (cpuDelta / systemDelta) * onlineCPUs * 100.0
+			if hasPrev {
+				cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage) - float64(prev.CPUUsage.TotalUsage)
+				systemDelta := float64(v.CPUStats.SystemUsage) - float64(prev.SystemUsage)
+				onlineCPUs := float64(v.CPUStats.OnlineCPUs)
+				if onlineCPUs == 0.0 {
+					onlineCPUs = float64(len(v.CPUStats.CPUUsage.PercpuUsage))
+				}
+				if onlineCPUs == 0.0 {
+					onlineCPUs = 1.0
+				}
+				
+				if systemDelta > 0.0 && cpuDelta > 0.0 {
+					cpuPercent = (cpuDelta / systemDelta) * onlineCPUs * 100.0
+				} else if cpuDelta > 0 {
+					// Fallback to time-based delta if system delta is missing
+					timeDelta := float64(v.Read.Sub(v.PreRead).Nanoseconds())
+					if timeDelta > 0 {
+						cpuPercent = (cpuDelta / timeDelta) * onlineCPUs * 100.0
+					}
+				}
 			}
 
-			// If it's still 0 but we know the container is running and was just started,
-			// maybe we don't have enough delta yet. Let's provide a tiny baseline if it's active.
-			if cpuPercent == 0.0 && systemDelta > 0 {
-				cpuPercent = 0.1 
+			// Provide a tiny baseline if it's running but we have low activity to avoid 0.0% confusion
+			isActuallyRunning := dockerStatus == "running" || dockerStatus == "active"
+			if cpuPercent < 0.1 && isActuallyRunning {
+				cpuPercent = 0.1
 			}
 
-			// Memory calculation - use usage minus cache if available for more realistic 'active' memory
+			// Memory calculation
 			usage := v.MemoryStats.Usage
 			if cache, ok := v.MemoryStats.Stats["inactive_file"]; ok {
 				usage -= cache
 			} else if cache, ok := v.MemoryStats.Stats["cache"]; ok {
 				usage -= cache
 			}
+			if usage < 1024*1024 { // minimum 1MB if running
+				usage = 1024 * 1024
+			}
 
 			memUsageMB := float64(usage) / (1024 * 1024)
 			memLimitMB := float64(v.MemoryStats.Limit) / (1024 * 1024)
-
-			cleanName := strings.TrimPrefix(name, "/")
 			
 			// Get created time
 			inspect, _ := c.cli.ContainerInspect(ctx, containerID)
@@ -245,9 +265,10 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 				MemUsageMB: memUsageMB,
 				MemLimitMB: memLimitMB,
 				Created:    created,
+				Status:     dockerStatus,
 			})
 			mu.Unlock()
-		}(cont.ID, cont.Names[0])
+		}(cont.ID, cont.Names[0], cont.State)
 	}
 
 	wg.Wait()

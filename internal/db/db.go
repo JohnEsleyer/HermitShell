@@ -395,6 +395,38 @@ func (d *DB) GetAuditLogs(agentID int64, limit int) ([]*AuditLog, error) {
 	}
 	return logs, nil
 }
+
+func (d *DB) GetAllAuditLogs(category string, limit int) ([]*AuditLog, error) {
+	query := `
+		SELECT id, agent_id, user_id, action, details, created_at
+		FROM audit_logs
+	`
+	var args []interface{}
+
+	if category != "" && category != "all" {
+		query += " WHERE action LIKE ?"
+		args = append(args, category+"%")
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var logs []*AuditLog
+	for rows.Next() {
+		l := &AuditLog{}
+		if err := rows.Scan(&l.ID, &l.AgentID, &l.UserID, &l.Action, &l.Details, &l.CreatedAt); err != nil {
+			return nil, err
+		}
+		logs = append(logs, l)
+	}
+	return logs, nil
+}
 func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 	_, err := d.db.Exec(`
 		INSERT INTO history (agent_id, user_id, role, content)

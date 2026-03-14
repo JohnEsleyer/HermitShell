@@ -1,4 +1,5 @@
 import { Agent } from '../types';
+import { RefreshCw } from 'lucide-react';
 
 interface AgentsTabProps {
   agents: Agent[];
@@ -53,8 +54,17 @@ export function AgentsTab({ agents, openModal, triggerToast, fetchAgents }: Agen
                   )}
                 </div>
                 <div className="px-4 py-2 rounded-full text-[10px] font-bold uppercase tracking-widest bg-zinc-900 text-white flex items-center gap-2 border border-zinc-800/50">
-                  <div className={`w-2 h-2 rounded-full ${agent.status === 'running' ? 'bg-emerald-400' : agent.status === 'standby' ? 'bg-yellow-400' : 'bg-zinc-600'}`}></div>
-                  <span>{agent.status}</span>
+                  {agent.status === 'standby' ? (
+                    <>
+                      <RefreshCw className="w-3 h-3 animate-spin text-yellow-400" />
+                      <span className="text-yellow-400">setting up</span>
+                    </>
+                  ) : (
+                    <>
+                      <div className={`w-2 h-2 rounded-full ${agent.status === 'running' ? 'bg-emerald-400' : 'bg-zinc-600'}`}></div>
+                      <span>{agent.status}</span>
+                    </>
+                  )}
                 </div>
               </div>
               <h3 className="text-3xl font-bold tracking-tight mb-2 lowercase">{agent.name}</h3>

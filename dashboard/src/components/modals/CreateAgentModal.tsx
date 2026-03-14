@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { ImagePlus, UploadCloud, X } from 'lucide-react';
 
 interface CreateAgentModalProps {

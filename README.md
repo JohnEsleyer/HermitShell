@@ -114,9 +114,24 @@ Manages container lifecycles natively from the host:
 
 ## Quick Start
 
+### Using Makefile (Recommended)
+
 ```bash
-# Build
+# First-time setup (builds Docker image)
+make setup
+
+# Run the server
+make run
+```
+
+### Manual Setup
+
+```bash
+# Build the Go server
 go build -o hermit ./cmd/hermit/main.go
+
+# Build the Docker image for agents
+docker build -t hermit-agent:latest .
 
 # Run
 ./hermit

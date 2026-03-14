@@ -89,6 +89,7 @@ export interface ContainerStats {
   cpuPercent: number;
   memUsageMB: number;
   memLimitMB: number;
+  status: string;
 }
 
 export interface SystemMetrics {

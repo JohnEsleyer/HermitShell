@@ -1,4 +1,4 @@
-import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield } from 'lucide-react';
+import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield, FileText } from 'lucide-react';
 
 interface SidebarProps {
   currentTab: string;
@@ -12,6 +12,7 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
     { id: 'health', name: 'system health', icon: Activity },
     { id: 'apps', name: 'published apps', icon: LayoutGrid },
     { id: 'containers', name: 'containers', icon: Box },
+    { id: 'logs', name: 'logs', icon: FileText },
     { id: 'calendar', name: 'calendar', icon: Calendar },
     { id: 'allowlist', name: 'allowed users', icon: Shield }
   ];
@@ -19,7 +20,7 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
   return (
     <aside className="w-32 h-full py-8 flex flex-col items-center justify-between z-20">
       <div className="relative group cursor-pointer">
-        <svg viewBox="0 0 100 100" className="w-16 h-16 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-1">
+        <svg viewBox="0 0 100 100" className="w-12 h-12 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)] transition-transform duration-300 group-hover:scale-110 group-hover:-translate-y-1">
           <line x1="25" y1="45" x2="5" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
           <line x1="23" y1="55" x2="5" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
           <line x1="28" y1="65" x2="10" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />

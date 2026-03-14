@@ -62,7 +62,10 @@ export function HealthTab() {
       try {
         const res = await fetch(`${API_BASE}/api/metrics`);
         const data = await res.json();
-        setMetrics(data);
+        setMetrics({
+          ...data,
+          containers: data.containers || []
+        });
       } catch (err) {
         console.error('Failed to fetch metrics:', err);
       } finally {
@@ -81,15 +84,16 @@ export function HealthTab() {
   };
 
   const hermitUsage = useMemo(() => {
-    const cpu = metrics.containers.reduce((sum, c) => sum + c.cpuPercent, 0);
-    const memMB = metrics.containers.reduce((sum, c) => sum + c.memUsageMB, 0);
+    const containers = metrics.containers || [];
+    const cpu = containers.reduce((sum, c) => sum + c.cpuPercent, 0);
+    const memMB = containers.reduce((sum, c) => sum + c.memUsageMB, 0);
     const memoryTotalMB = metrics.host.memoryTotal / (1024 * 1024);
     const memoryPercent = memoryTotalMB > 0 ? (memMB / memoryTotalMB) * 100 : 0;
 
     return {
       cpu,
       memMB,
-      count: metrics.containers.length,
+      count: containers.length,
       cpuPercent: clampPercent(cpu),
       memoryPercent: clampPercent(memoryPercent)
     };
@@ -176,7 +180,7 @@ export function HealthTab() {
       </div>
 
       <h3 className="text-2xl font-bold mt-2 mb-2">Docker Containers</h3>
-      {metrics.containers.length === 0 ? (
+      {!metrics.containers || metrics.containers.length === 0 ? (
         <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-12 flex flex-col items-center justify-center text-zinc-500">
           <Box className="w-12 h-12 mb-4 opacity-50" />
           <p className="text-lg font-medium">No containers running</p>
@@ -184,7 +188,7 @@ export function HealthTab() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {metrics.containers.map((container, idx) => (
+          {(metrics.containers || []).map((container, idx) => (
             <div key={idx} className="bg-black border border-zinc-800 rounded-3xl p-6 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-zinc-900 rounded-full flex items-center justify-center">
@@ -192,7 +196,12 @@ export function HealthTab() {
                 </div>
                 <div>
                   <h4 className="font-bold">{container.name}</h4>
-                  <span className="text-xs text-emerald-400">running</span>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className={`w-1.5 h-1.5 rounded-full ${container.status === 'running' || container.status === 'active' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                    <span className={`text-[10px] uppercase font-bold tracking-wider ${container.status === 'running' || container.status === 'active' ? 'text-emerald-500' : 'text-zinc-500'}`}>
+                      {container.status}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-8 text-right">

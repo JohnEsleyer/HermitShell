@@ -7,6 +7,7 @@ import { SettingsTab } from './components/SettingsTab';
 import { ContainersTab } from './components/ContainersTab';
 import { CalendarTab } from './components/CalendarTab';
 import { AllowlistTab } from './components/AllowlistTab';
+import { LogsTab } from './components/LogsTab';
 import { CreateAgentModal } from './components/modals/CreateAgentModal';
 import { TestModal } from './components/modals/TestModal';
 import { SkillsModal } from './components/modals/SkillsModal';
@@ -134,6 +135,7 @@ export default function App() {
                  currentTab === 'health' ? 'system health' : 
                  currentTab === 'apps' ? 'published apps' : 
                  currentTab === 'containers' ? 'containers' : 
+                 currentTab === 'logs' ? 'system logs' : 
                  currentTab === 'calendar' ? 'calendar' :
                  currentTab === 'allowlist' ? 'allowed users' :
                  currentTab === 'settings' ? 'settings' : ''}
@@ -159,6 +161,7 @@ export default function App() {
           {currentTab === 'health' && <HealthTab />}
           {currentTab === 'apps' && <AppsTab triggerToast={triggerToast} agents={agents} />}
           {currentTab === 'containers' && <ContainersTab openModal={openModal} triggerToast={triggerToast} />}
+          {currentTab === 'logs' && <LogsTab />}
           {currentTab === 'calendar' && <CalendarTab triggerToast={triggerToast} agents={agents} />}
           {currentTab === 'allowlist' && <AllowlistTab triggerToast={triggerToast} />}
           {currentTab === 'settings' && <SettingsTab triggerToast={triggerToast} onLogout={handleLogout} />}
@@ -185,7 +188,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
     <div className="h-screen w-full flex items-center justify-center bg-black">
       <div className="bg-zinc-950 border border-zinc-800 rounded-[3rem] p-12 w-full max-w-md shadow-2xl">
         <div className="text-center mb-8">
-          <svg viewBox="0 0 100 100" className="w-20 h-20 mx-auto mb-4 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">
+          <svg viewBox="0 0 100 100" className="w-16 h-16 mx-auto mb-4 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">
             <line x1="25" y1="45" x2="5" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
             <line x1="23" y1="55" x2="5" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
             <line x1="28" y1="65" x2="10" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />

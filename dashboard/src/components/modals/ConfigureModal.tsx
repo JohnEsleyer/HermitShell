@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings2, UploadCloud, X } from 'lucide-react';
+import { Settings2, UploadCloud, X, RefreshCw } from 'lucide-react';
 import { Agent } from '../../types';
 
 const API_BASE = '';
@@ -24,6 +24,7 @@ export function ConfigureModal({ agent, onClose, triggerToast }: ConfigureModalP
     telegramToken: agent.telegramToken || '',
   });
   const [allowlist, setAllowlist] = useState<{ friendlyName: string, telegramUserId: string }[]>([]);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/api/allowlist`)
@@ -60,6 +61,28 @@ export function ConfigureModal({ agent, onClose, triggerToast }: ConfigureModalP
       onClose();
     } catch (err) {
       triggerToast('Failed to save', 'error');
+    }
+  };
+
+  const handleResetContainer = async () => {
+    if (!confirm(`Reset container for ${agent.name}? This will delete the existing container and create a new one. All data in the container will be lost.`)) return;
+    
+    setResetting(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/agents/${agent.id}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reset' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Reset failed');
+      }
+      triggerToast('Container reset successfully');
+    } catch (err) {
+      triggerToast(`Failed to reset container: ${err}`, 'error');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -146,7 +169,15 @@ export function ConfigureModal({ agent, onClose, triggerToast }: ConfigureModalP
           </div>
         </div>
 
-        <div className="flex justify-end pt-10 mt-auto">
+        <div className="flex justify-between pt-10 mt-auto">
+          <button 
+            onClick={handleResetContainer} 
+            disabled={resetting}
+            className="bg-red-950/30 text-red-400 px-6 py-4 rounded-full font-bold hover:bg-red-900/50 transition-colors flex items-center gap-2 disabled:opacity-50"
+          >
+            {resetting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {resetting ? 'Resetting...' : 'Reset Container'}
+          </button>
           <button onClick={handleSave} className="bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-zinc-200 transition-colors">save changes</button>
         </div>
       </div>
