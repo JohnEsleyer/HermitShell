@@ -1539,8 +1539,17 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	history, _ := s.db.GetHistory(agent.ID, 10)
 	var messages []llm.Message
 
-	// System prompt
-	messages = append(messages, llm.Message{Role: "system", Content: agent.Personality})
+	// System prompt: prepend context.md instructions to agent personality
+	systemPrompt := agent.Personality
+	contextPath := "./context.md"
+	if content, err := os.ReadFile(contextPath); err == nil {
+		contextStr := string(content)
+		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
+	}
+	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
 
 	// Add history (reversed because GetHistory returns DESC)
 	for i := len(history) - 1; i >= 0; i-- {
