@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Box, Terminal, Trash2, HardDrive, RefreshCw, Cpu, Database, Activity } from 'lucide-react';
+import { Box, Trash2, HardDrive, RefreshCw, Cpu, Database, Activity } from 'lucide-react';
 import { ContainerItem } from '../types';
 
 const API_BASE = '';
@@ -56,7 +56,7 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
         <div className="w-32 h-32 rounded-full border-2 border-dashed border-zinc-800 flex items-center justify-center mb-8 animate-spin duration-[3000ms]">
           <Box className="w-10 h-10 opacity-20" />
         </div>
-        <p className="text-xl font-bold tracking-tighter text-zinc-400 animate-pulse">synchronizing with docker engine...</p>
+        <p className="text-xl font-bold tracking-tighter text-zinc-400 animate-pulse">connecting to docker engine...</p>
       </div>
     );
   }
@@ -68,10 +68,10 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
     <div className="flex-1 flex flex-col gap-12 animate-in fade-in duration-700">
       {/* Stats Header */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 px-2">
-        <StatCard icon={<Box className="w-5 h-5 text-white" />} label="Active Enclaves" value={containers.length.toString()} color="bg-zinc-900" />
-        <StatCard icon={<Cpu className="w-5 h-5 text-emerald-400" />} label="Total CPU Load" value={`${totalCpu.toFixed(1)}%`} color="bg-emerald-950/20" />
-        <StatCard icon={<Database className="w-5 h-5 text-blue-400" />} label="Memory Footprint" value={`${totalMem.toFixed(0)} MB`} color="bg-blue-950/20" />
-        <StatCard icon={<Activity className="w-5 h-5 text-purple-400" />} label="System Status" value="Healthy" color="bg-purple-950/20" />
+        <StatCard icon={<Box className="w-5 h-5 text-white" />} label="Active Containers" value={containers.length.toString()} color="bg-zinc-900" />
+        <StatCard icon={<Cpu className="w-5 h-5 text-emerald-400" />} label="Total CPU Usage" value={`${totalCpu.toFixed(1)}%`} color="bg-emerald-950/20" />
+        <StatCard icon={<Database className="w-5 h-5 text-blue-400" />} label="Total Memory Usage" value={`${totalMem.toFixed(0)} MB`} color="bg-blue-950/20" />
+        <StatCard icon={<Activity className="w-5 h-5 text-purple-400" />} label="Docker Status" value="Healthy" color="bg-purple-950/20" />
       </div>
 
       {containers.length === 0 ? (
@@ -79,8 +79,8 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
           <div className="w-24 h-24 rounded-full bg-zinc-900 flex items-center justify-center mb-6">
             <Box className="w-8 h-8 opacity-50" />
           </div>
-          <p className="text-2xl font-black tracking-tight text-white mb-2">no active isolations</p>
-          <p className="text-zinc-500 max-w-xs text-center">deploy an agent to spin up a new secure execution environment</p>
+          <p className="text-2xl font-black tracking-tight text-white mb-2">no containers found</p>
+          <p className="text-zinc-500 max-w-xs text-center">deploy an agent to start a new container</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
@@ -121,7 +121,7 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
               <div className="grid grid-cols-3 gap-6 mb-10 bg-black/40 p-8 rounded-[2rem] border border-zinc-800/30 relative z-10 group-hover:bg-black/60 transition-colors duration-500">
                 <Metric label="CPU" value={`${container.cpu.toFixed(1)}%`} progress={container.cpu} />
                 <Metric label="RAM" value={`${container.memory.toFixed(0)}mb`} progress={(container.memory / 1024) * 100} />
-                <Metric label="State" value={container.status} status={container.status} />
+                <Metric label="Status" value={container.status} status={container.status} />
               </div>
 
               <div className="mt-auto grid grid-cols-2 gap-4 relative z-10">
@@ -129,19 +129,19 @@ export function ContainersTab({ openModal, triggerToast }: ContainersTabProps) {
                   onClick={() => openModal('workspace', container)}
                   className="bg-white text-black hover:bg-zinc-200 rounded-full py-5 text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg hover:-translate-y-1"
                 >
-                  <HardDrive className="w-4 h-4" /> explore workspace
+                  <HardDrive className="w-4 h-4" /> workspace
                 </button>
                 <button
                   onClick={() => handleReset(container)}
                   className="bg-zinc-900 text-white hover:bg-zinc-800 rounded-full py-5 text-xs font-black transition-all flex items-center justify-center gap-2 border border-zinc-800 shadow-inner hover:-translate-y-1"
                 >
-                  <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-700" /> reset stack
+                  <RefreshCw className="w-4 h-4 group-hover:rotate-180 transition-transform duration-700" /> reset
                 </button>
                 <button
-                  onClick={() => triggerToast('Terminate Agent to permanently shard this container', 'info')}
+                  onClick={() => triggerToast('Delete the agent to remove this container permanently', 'info')}
                   className="col-span-2 bg-red-950/10 hover:bg-red-950/30 text-red-500/60 hover:text-red-400 rounded-full py-4 text-[10px] font-black uppercase tracking-widest transition-all border border-red-900/10 flex items-center justify-center gap-2 mt-2"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> destroy isolation
+                  <Trash2 className="w-3.5 h-3.5" /> terminate container
                 </button>
               </div>
             </div>

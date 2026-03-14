@@ -300,25 +300,33 @@ func (s *Server) HandleContainers(c *fiber.Ctx) error {
 
 	var containers []ContainerInfo
 	for _, cont := range metrics.Containers {
-		agentName := cont.Name
+		displayName := cont.Name
 		agentID := ""
 		status := "running"
-
 		var profilePic string
+		isAgent := false
+
 		for _, a := range agents {
-			if a.ContainerID == cont.Name || strings.Contains(cont.Name, strings.ToLower(a.Name)) {
-				agentName = a.Name
+			// Match by explicit ContainerID or Name
+			if (a.ContainerID != "" && a.ContainerID == cont.Name) || strings.EqualFold(cont.Name, a.Name) || strings.EqualFold(cont.Name, "agent-"+strings.ToLower(a.Name)) {
+				displayName = a.Name
 				agentID = fmt.Sprintf("%d", a.ID)
 				status = a.Status
 				profilePic = a.ProfilePic
+				isAgent = true
 				break
 			}
+		}
+
+		if !isAgent {
+			displayName = "System: " + cont.Name
+			status = "active"
 		}
 
 		containers = append(containers, ContainerInfo{
 			ID:          cont.Name,
 			AgentID:     agentID,
-			AgentName:   agentName,
+			AgentName:   displayName,
 			ProfilePic:  profilePic,
 			Status:      status,
 			CPU:         cont.CPUPercent,
@@ -1341,8 +1349,15 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 	agent, _ := s.db.GetAgent(agentID)
 	containerName := "hermit-test"
-	if agent != nil && agent.ContainerID != "" {
-		containerName = agent.ContainerID
+	if agent != nil {
+		if agent.ContainerID != "" {
+			containerName = agent.ContainerID
+		} else {
+			// Assign a default container name if none exists
+			containerName = "agent-" + strings.ToLower(agent.Name)
+			agent.ContainerID = containerName
+			s.db.UpdateAgent(agent)
+		}
 	}
 
 	// 1. Handle Thought (Internal only, no feedback needed)
