@@ -56,6 +56,11 @@ var modelContextWindowSize = map[string]int{
 	"claude-2.1":                           200000,
 	"claude-2.0":                           100000,
 	"claude-instant":                       100000,
+	"gemini-3.1-pro":                       1048576,
+	"gemini-3.1-flash":                     1048576,
+	"gemini-2.5-pro":                       1048576,
+	"gemini-2.5-flash":                     1048576,
+	"gemini-2.5-flash-lite":                1048576,
 	"gemini-1.5-pro":                       200000,
 	"gemini-1.5-pro-002":                   200000,
 	"gemini-1.5-flash":                     1000000,
@@ -93,8 +98,30 @@ var geminiPricing = map[string]ModelPricing{
 	"gemini-pro":            {InputPricePerMillion: 0.50, OutputPricePerMillion: 1.50},
 }
 
+var geminiContextWindowSize = map[string]int{
+	"gemini-3.1-pro":        1048576,
+	"gemini-3.1-flash":      1048576,
+	"gemini-2.5-pro":        1048576,
+	"gemini-2.5-flash":      1048576,
+	"gemini-2.5-flash-lite": 1048576,
+	"gemini-1.5-pro":        200000,
+	"gemini-1.5-flash":      1000000,
+	"gemini-1.0-pro":        32768,
+	"gemini-pro":            32768,
+}
+
 func getModelContextWindow(model string) int {
 	modelLower := strings.ToLower(model)
+
+	if strings.Contains(modelLower, "gemini") {
+		for key, size := range geminiContextWindowSize {
+			if strings.Contains(modelLower, strings.ToLower(key)) {
+				return size
+			}
+		}
+		return 1048576
+	}
+
 	if size, ok := modelContextWindowSize[model]; ok {
 		return size
 	}
