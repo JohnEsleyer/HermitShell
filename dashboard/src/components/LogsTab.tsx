@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FileText, Server, Bot, Box, Network, RefreshCw, Search } from 'lucide-react';
+import { FileText, Server, Bot, Box, Network, RefreshCw, Search, ChevronDown, ChevronRight, User, Terminal, Globe, Container } from 'lucide-react';
 
 const API_BASE = '';
 
@@ -19,6 +19,7 @@ export function LogsTab() {
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState<LogCategory>('all');
   const [search, setSearch] = useState('');
+  const [expandedLogs, setExpandedLogs] = useState<Set<number>>(new Set());
 
   const fetchLogs = async () => {
     try {
@@ -61,6 +62,34 @@ export function LogsTab() {
         (log.user_id?.toLowerCase() || '').includes(search.toLowerCase())
       )
     : logs;
+
+  const toggleExpand = (id: number) => {
+    setExpandedLogs(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const truncateDetails = (details: string, maxLength = 120) => {
+    if (!details) return '';
+    if (details.length <= maxLength) return details;
+    return details.substring(0, maxLength) + '...';
+  };
+
+  const getAgentIcon = (action: string) => {
+    if (!action) return <FileText className="w-3 h-3" />;
+    if (action.includes('terminal') || action.includes('command')) return <Terminal className="w-3 h-3" />;
+    if (action.includes('message') || action.includes('llm')) return <Bot className="w-3 h-3" />;
+    if (action.includes('container') || action.includes('docker')) return <Container className="w-3 h-3" />;
+    if (action.includes('network') || action.includes('llm_request') || action.includes('tunnel')) return <Globe className="w-3 h-3" />;
+    if (action.includes('user') || action.includes('telegram')) return <User className="w-3 h-3" />;
+    return <Server className="w-3 h-3" />;
+  };
 
   return (
     <div className="flex-1 flex flex-col gap-6 animate-in fade-in duration-500">
@@ -119,31 +148,68 @@ export function LogsTab() {
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto space-y-2 pr-2">
-          {filteredLogs.map((log) => (
-            <div
-              key={log.id}
-              className={`p-4 rounded-2xl border ${getCategoryColor(log.action)}`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-[10px] uppercase font-bold tracking-wider opacity-70">
-                    {log.action}
-                  </span>
+          {filteredLogs.map((log) => {
+            const isExpanded = expandedLogs.has(log.id);
+            const truncatedDetails = truncateDetails(log.details);
+            const isTruncated = log.details && log.details.length > 120;
+            
+            return (
+              <div
+                key={log.id}
+                className={`p-4 rounded-2xl border ${getCategoryColor(log.action)} transition-all ${isExpanded ? 'ring-1 ring-white/20' : ''}`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-3">
+                    {getAgentIcon(log.action)}
+                    <span className="text-[10px] uppercase font-bold tracking-wider opacity-70">
+                      {log.action}
+                    </span>
+                    {log.agent_id > 0 && (
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-zinc-800/50 text-zinc-400">
+                        Agent: {log.agent_id}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {isTruncated && (
+                      <button
+                        onClick={() => toggleExpand(log.id)}
+                        className="p-1 hover:bg-zinc-800 rounded transition-colors"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="w-4 h-4 opacity-50" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 opacity-50" />
+                        )}
+                      </button>
+                    )}
+                    <span className="text-[10px] opacity-50 font-mono">
+                      {log.created_at ? new Date(log.created_at).toLocaleString() : ''}
+                    </span>
+                  </div>
                 </div>
-                <span className="text-[10px] opacity-50 font-mono">
-                  {log.created_at ? new Date(log.created_at).toLocaleString() : ''}
-                </span>
-              </div>
-              <div className="text-sm font-mono opacity-80 whitespace-pre-wrap">
-                {log.details || <span className="italic opacity-50">No details</span>}
-              </div>
-              {log.user_id && (
-                <div className="text-[10px] opacity-50 mt-2">
-                  User: {log.user_id}
+                <div className={`text-sm font-mono opacity-80 whitespace-pre-wrap ${!isExpanded ? 'line-clamp-3' : ''}`} style={!isExpanded ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}}>
+                  {isExpanded ? (log.details || <span className="italic opacity-50">No details</span>) : (truncatedDetails || <span className="italic opacity-50">No details</span>)}
                 </div>
-              )}
-            </div>
-          ))}
+                <div className="flex items-center gap-4 mt-2">
+                  {log.user_id && (
+                    <div className="text-[10px] opacity-50 flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      User: {log.user_id}
+                    </div>
+                  )}
+                  {isTruncated && !isExpanded && (
+                    <button 
+                      onClick={() => toggleExpand(log.id)}
+                      className="text-[10px] text-blue-400 hover:text-blue-300"
+                    >
+                      Show more...
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

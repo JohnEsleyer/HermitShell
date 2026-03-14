@@ -576,6 +576,9 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 
+	// Log agent creation
+	s.db.LogAction(id, "system", "agent_created", fmt.Sprintf("Agent '%s' created with provider=%s, model=%s", a.Name, a.Provider, a.Model))
+
 	// Create agent workspace directories
 	basePath := fmt.Sprintf("data/agents/%d/workspace", id)
 	os.MkdirAll(filepath.Join(basePath, "in"), 0755)
@@ -695,6 +698,10 @@ func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
 
 	s.db.DeleteAgent(id)
 	s.db.DeleteTunnelByAgentID(id)
+
+	// Log agent deletion
+	s.db.LogAction(0, "system", "agent_deleted", fmt.Sprintf("Agent ID %d deleted from dashboard", id))
+
 	return c.JSON(fiber.Map{"success": true})
 }
 
@@ -1566,6 +1573,9 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		s.db.LogAction(agent.ID, "agent", "llm_error", "LLM client not configured")
 		return
 	}
+
+	// Log LLM API request (network)
+	s.db.LogAction(agent.ID, "network", "llm_request", fmt.Sprintf("Provider: %s, Model: %s, Messages: %d", agent.Provider, agent.Model, len(messages)))
 
 	// Chat
 	response, err := client.Chat(agent.Model, messages)
