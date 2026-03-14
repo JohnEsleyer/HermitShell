@@ -18,6 +18,7 @@ interface LogEntry {
 export function TestModal({ agent, onClose }: TestModalProps) {
   const [input, setInput] = useState('');
   const [chatId, setChatId] = useState('');
+  const [allowlist, setAllowlist] = useState<{ friendlyName: string; telegramUserId: string }[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([
     { id: 1, source: 'system', content: '{\n  "status": "READY",\n  "agent": "' + agent.name + '"\n}' }
   ]);
@@ -27,6 +28,13 @@ export function TestModal({ agent, onClose }: TestModalProps) {
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/allowlist`)
+      .then(res => res.json())
+      .then(data => setAllowlist(data || []))
+      .catch(err => console.error('Failed to fetch allowlist:', err));
+  }, []);
 
   const testLLM = async () => {
     setTestingLLM(true);
@@ -155,14 +163,19 @@ export function TestModal({ agent, onClose }: TestModalProps) {
           </div>
 
           <div className="w-1/2 p-6 flex flex-col bg-zinc-950">
-            <label className="text-sm font-bold text-zinc-400 mb-2 uppercase tracking-wider">Telegram Chat ID (optional)</label>
-            <input
-              type="text"
+            <label className="text-sm font-bold text-zinc-400 mb-2 uppercase tracking-wider">Telegram Chat ID (for test sending)</label>
+            <select
               value={chatId}
               onChange={e => setChatId(e.target.value)}
-              className="mb-4 bg-black border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 font-mono text-sm outline-none focus:border-zinc-600"
-              placeholder="Enter your Telegram chat ID to test actual Telegram sending"
-            />
+              className="mb-4 bg-black border border-zinc-800 rounded-xl px-4 py-2 text-zinc-300 font-mono text-sm outline-none focus:border-zinc-600 appearance-none"
+            >
+              <option value="">No Telegram (test locally only)</option>
+              {allowlist.map(item => (
+                <option key={item.telegramUserId} value={item.telegramUserId}>
+                  {item.friendlyName} ({item.telegramUserId})
+                </option>
+              ))}
+            </select>
             <label className="text-sm font-bold text-zinc-400 mb-2 uppercase tracking-wider">XML Input</label>
             <textarea
               value={input}
