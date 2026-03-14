@@ -43,11 +43,13 @@ export interface ContainerItem {
   agentId?: string;
   agentName: string;
   profilePic?: string;
-  status: 'running' | 'stopped';
+  status: 'running' | 'stopped' | 'active';
   cpu: number;
   memory: number;
   uptime?: string;
   containerId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CalendarEvent {

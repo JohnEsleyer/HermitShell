@@ -296,43 +296,75 @@ func (s *Server) HandleContainers(c *fiber.Ctx) error {
 		CPU         float64 `json:"cpu"`
 		Memory      float64 `json:"memory"`
 		ContainerID string  `json:"containerId"`
+		CreatedAt   string  `json:"createdAt"`
+		UpdatedAt   string  `json:"updatedAt"`
 	}
 
 	var containers []ContainerInfo
+	
+	// Create a map for quick docker lookup
+	dockerMap := make(map[string]docker.ContainerStats)
 	for _, cont := range metrics.Containers {
-		displayName := cont.Name
-		agentID := ""
-		status := "running"
-		var profilePic string
-		isAgent := false
+		dockerMap[cont.Name] = cont
+	}
 
+	// 1. Show all agents first
+	for _, a := range agents {
+		contName := a.ContainerID
+		if contName == "" {
+			contName = "agent-" + strings.ToLower(a.Name)
+		}
+
+		status := "stopped"
+		var cpu, mem float64
+		created := a.CreatedAt
+
+		if stats, ok := dockerMap[contName]; ok {
+			status = "running"
+			cpu = stats.CPUPercent
+			mem = stats.MemUsageMB
+			if stats.Created != "" {
+				created = stats.Created
+			}
+		}
+
+		containers = append(containers, ContainerInfo{
+			ID:          contName,
+			AgentID:     fmt.Sprintf("%d", a.ID),
+			AgentName:   a.Name,
+			ProfilePic:  a.ProfilePic,
+			Status:      status,
+			CPU:         cpu,
+			Memory:      mem,
+			ContainerID: contName,
+			CreatedAt:   created,
+			UpdatedAt:   a.UpdatedAt,
+		})
+	}
+
+	// 2. Optionally show system containers that are not agents
+	for _, cont := range metrics.Containers {
+		isAgent := false
 		for _, a := range agents {
-			// Match by explicit ContainerID or Name
-			if (a.ContainerID != "" && a.ContainerID == cont.Name) || strings.EqualFold(cont.Name, a.Name) || strings.EqualFold(cont.Name, "agent-"+strings.ToLower(a.Name)) {
-				displayName = a.Name
-				agentID = fmt.Sprintf("%d", a.ID)
-				status = a.Status
-				profilePic = a.ProfilePic
+			if a.ContainerID == cont.Name || cont.Name == "agent-"+strings.ToLower(a.Name) {
 				isAgent = true
 				break
 			}
 		}
-
 		if !isAgent {
-			displayName = "System: " + cont.Name
-			status = "active"
+			containers = append(containers, ContainerInfo{
+				ID:          cont.Name,
+				AgentID:     "",
+				AgentName:   "System: " + cont.Name,
+				ProfilePic:  "",
+				Status:      "running",
+				CPU:         cont.CPUPercent,
+				Memory:      cont.MemUsageMB,
+				ContainerID: cont.Name,
+				CreatedAt:   cont.Created,
+				UpdatedAt:   "",
+			})
 		}
-
-		containers = append(containers, ContainerInfo{
-			ID:          cont.Name,
-			AgentID:     agentID,
-			AgentName:   displayName,
-			ProfilePic:  profilePic,
-			Status:      status,
-			CPU:         cont.CPUPercent,
-			Memory:      cont.MemUsageMB,
-			ContainerID: cont.Name,
-		})
 	}
 
 	return c.JSON(containers)
@@ -1357,6 +1389,23 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			containerName = "agent-" + strings.ToLower(agent.Name)
 			agent.ContainerID = containerName
 			s.db.UpdateAgent(agent)
+		}
+
+		// Ensure container is running
+		if s.docker != nil && !s.docker.IsRunning(containerName) {
+			log.Printf("Starting missing container for agent %s: %s", agent.Name, containerName)
+			// Use a default image if none specified. Assuming 'hermit/python:latest'
+			image, _ := s.db.GetSetting("default_agent_image")
+			if image == "" {
+				image = "hermit/python:latest"
+			}
+			err := s.docker.Run(containerName, image, true)
+			if err != nil {
+				log.Printf("Failed to start container %s: %v", containerName, err)
+			} else {
+				// Startup delay to let services initialize if any
+				time.Sleep(1 * time.Second)
+			}
 		}
 	}
 

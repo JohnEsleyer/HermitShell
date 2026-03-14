@@ -29,6 +29,7 @@ type ContainerStats struct {
 	CPUPercent float64 `json:"cpuPercent"`
 	MemUsageMB float64 `json:"memUsageMB"`
 	MemLimitMB float64 `json:"memLimitMB"`
+	Created    string  `json:"created"`
 }
 
 type HostMetrics struct {
@@ -211,12 +212,18 @@ func (c *Client) collectContainerMetrics() ([]ContainerStats, error) {
 			memLimitMB := float64(v.MemoryStats.Limit) / (1024 * 1024)
 
 			cleanName := strings.TrimPrefix(name, "/")
+			
+			// Get created time
+			inspect, _ := c.cli.ContainerInspect(ctx, containerID)
+			created := inspect.Created
+
 			mu.Lock()
 			stats = append(stats, ContainerStats{
 				Name:       cleanName,
 				CPUPercent: cpuPercent,
 				MemUsageMB: memUsageMB,
 				MemLimitMB: memLimitMB,
+				Created:    created,
 			})
 			mu.Unlock()
 		}(cont.ID, cont.Names[0])
