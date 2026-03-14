@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"strings"
@@ -405,4 +406,70 @@ func (c *Client) IsRunning(name string) bool {
 		return false
 	}
 	return inspect.State.Running
+}
+
+type FileInfo struct {
+	Name    string `json:"name"`
+	Size    int64  `json:"size"`
+	Mode    string `json:"mode"`
+	ModTime string `json:"modTime"`
+	IsDir   bool   `json:"isDir"`
+}
+
+func (c *Client) ListContainerFiles(containerName, dir string) ([]FileInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := []string{"sh", "-c", fmt.Sprintf("ls -la '%s' 2>/dev/null | tail -n +2", dir)}
+	if dir == "" || dir == "/" {
+		cmd = []string{"sh", "-c", "ls -la /app/workspace/ 2>/dev/null | tail -n +2"}
+	}
+
+	execCfg := types.ExecConfig{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+
+	idResp, err := c.cli.ContainerExecCreate(ctx, containerName, execCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.cli.ContainerExecAttach(ctx, idResp.ID, types.ExecStartCheck{})
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Close()
+
+	out, _ := io.ReadAll(resp.Reader)
+	lines := strings.Split(string(out), "\n")
+
+	var files []FileInfo
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) < 9 {
+			continue
+		}
+
+		mode := fields[0]
+		name := strings.Join(fields[8:], " ")
+		if name == "." || name == ".." {
+			continue
+		}
+
+		isDir := mode[0] == 'd'
+		var size int64
+		fmt.Sscanf(fields[4], "%d", &size)
+
+		files = append(files, FileInfo{
+			Name:    name,
+			Size:    size,
+			Mode:    mode,
+			IsDir:   isDir,
+			ModTime: fields[5] + " " + fields[6],
+		})
+	}
+
+	return files, nil
 }

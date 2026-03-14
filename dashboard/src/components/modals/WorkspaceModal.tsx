@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Folder, File, Download, Trash2, HardDrive } from 'lucide-react';
 import { ContainerItem } from '../../types';
 
@@ -10,39 +10,59 @@ interface WorkspaceModalProps {
 
 interface FileItem {
   name: string;
-  size: string;
-  type: 'file' | 'directory';
-  updatedAt: string;
+  size: number;
+  mode: string;
+  modTime: string;
+  isDir: boolean;
+}
+
+interface FilesResponse {
+  path: string;
+  files: FileItem[];
+}
+
+const API_BASE = '';
+
+function formatSize(bytes: number): string {
+  if (bytes === 0) return '--';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 export function WorkspaceModal({ container, onClose, triggerToast }: WorkspaceModalProps) {
-  const [currentFolder, setCurrentFolder] = useState('/app/workspace/work/');
-  
+  const [currentFolder, setCurrentFolder] = useState('/app/workspace');
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const folders = [
-    { path: '/app/workspace/work/', name: 'work' },
-    { path: '/app/workspace/in/', name: 'in' },
-    { path: '/app/workspace/out/', name: 'out' },
-    { path: '/app/workspace/apps/', name: 'apps' },
+    { path: '/app/workspace/work', name: 'work' },
+    { path: '/app/workspace/in', name: 'in' },
+    { path: '/app/workspace/out', name: 'out' },
+    { path: '/app/workspace/apps', name: 'apps' },
   ];
 
-  const mockFiles: Record<string, FileItem[]> = {
-    '/app/workspace/work/': [
-      { name: 'script.py', size: '2.4 KB', type: 'file', updatedAt: '10 mins ago' },
-      { name: 'temp_data.json', size: '15 KB', type: 'file', updatedAt: '1 hour ago' }
-    ],
-    '/app/workspace/in/': [
-      { name: 'dataset.csv', size: '2.1 MB', type: 'file', updatedAt: '2 days ago' }
-    ],
-    '/app/workspace/out/': [
-      { name: 'report.pdf', size: '1.2 MB', type: 'file', updatedAt: '5 mins ago' },
-      { name: 'summary.txt', size: '450 B', type: 'file', updatedAt: '10 mins ago' }
-    ],
-    '/app/workspace/apps/': [
-      { name: 'todo-app', size: '--', type: 'directory', updatedAt: '1 day ago' }
-    ]
+  useEffect(() => {
+    fetchFiles(currentFolder);
+  }, [currentFolder, container.id]);
+
+  const fetchFiles = async (path: string) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/containers/${container.id}/files?path=${encodeURIComponent(path)}`);
+      const data: FilesResponse = await res.json();
+      setFiles(data.files || []);
+    } catch (err) {
+      console.error('Failed to fetch files:', err);
+      setFiles([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const files = mockFiles[currentFolder] || [];
+  const handleFolderClick = (path: string) => {
+    setCurrentFolder(path);
+  };
 
   return (
     <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-6 animate-in fade-in duration-300">
@@ -66,7 +86,7 @@ export function WorkspaceModal({ container, onClose, triggerToast }: WorkspaceMo
             {folders.map(folder => (
               <button 
                 key={folder.path}
-                onClick={() => setCurrentFolder(folder.path)}
+                onClick={() => handleFolderClick(folder.path)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-mono transition-all text-left ${currentFolder === folder.path ? 'bg-zinc-900 text-white' : 'text-zinc-400 hover:bg-zinc-900/50 hover:text-white'}`}
               >
                 <Folder className="w-4 h-4 shrink-0" />
@@ -77,11 +97,16 @@ export function WorkspaceModal({ container, onClose, triggerToast }: WorkspaceMo
 
           <div className="flex-1 flex flex-col bg-zinc-950">
             <div className="p-4 border-b border-zinc-800 bg-zinc-900/30 font-mono text-sm text-zinc-400 flex items-center gap-2">
-              <Folder className="w-4 h-4" /> {currentFolder}
+              <Folder className="w-4 h-4" /> {currentFolder}/
             </div>
             
             <div className="flex-1 overflow-y-auto p-4">
-              {files.length === 0 ? (
+              {loading ? (
+                <div className="h-full flex flex-col items-center justify-center text-zinc-500">
+                  <div className="w-8 h-8 border-2 border-zinc-800 border-t-white rounded-full animate-spin"></div>
+                  <p className="mt-4">Loading files...</p>
+                </div>
+              ) : files.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-zinc-500">
                   <Folder className="w-12 h-12 mb-4 opacity-20" />
                   <p>Directory is empty</p>
@@ -91,14 +116,22 @@ export function WorkspaceModal({ container, onClose, triggerToast }: WorkspaceMo
                   {files.map(file => (
                     <div key={file.name} className="flex items-center justify-between p-4 rounded-xl hover:bg-zinc-900/50 border border-transparent hover:border-zinc-800 transition-all group">
                       <div className="flex items-center gap-4">
-                        {file.type === 'directory' ? <Folder className="w-5 h-5 text-blue-400" /> : <File className="w-5 h-5 text-zinc-400" />}
+                        {file.isDir ? <Folder className="w-5 h-5 text-blue-400" /> : <File className="w-5 h-5 text-zinc-400" />}
                         <div>
                           <div className="font-mono text-sm text-white">{file.name}</div>
-                          <div className="text-xs text-zinc-500 mt-1">{file.size} • {file.updatedAt}</div>
+                          <div className="text-xs text-zinc-500 mt-1">{formatSize(file.size)} • {file.modTime}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {file.type === 'file' && (
+                        {file.isDir && (
+                          <button 
+                            onClick={() => setCurrentFolder(currentFolder + '/' + file.name)}
+                            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                          >
+                            <Folder className="w-4 h-4" />
+                          </button>
+                        )}
+                        {!file.isDir && (
                           <button onClick={() => triggerToast(`Downloading ${file.name}...`)} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors">
                             <Download className="w-4 h-4" />
                           </button>

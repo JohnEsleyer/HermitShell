@@ -256,6 +256,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/containers", s.HandleContainers)
 	api.Delete("/containers/:id", s.HandleTerminateContainer)
 	api.Post("/containers/:id/action", s.HandleContainerAction)
+	api.Get("/containers/:id/files", s.HandleContainerFiles)
 
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
@@ -603,17 +604,33 @@ func (s *Server) HandleContainers(c *fiber.Ctx) error {
 
 func (s *Server) HandleContainerFiles(c *fiber.Ctx) error {
 	containerID := c.Params("id")
-	_ = containerID
 	path := c.Query("path", "/app/workspace")
 
+	agents, _ := s.db.ListAgents()
+	var agentID int64
+	for _, a := range agents {
+		contName := a.ContainerID
+		if contName == "" {
+			contName = "agent-" + strings.ToLower(a.Name)
+		}
+		if contName == containerID {
+			agentID = a.ID
+			break
+		}
+	}
+
+	if agentID == 0 {
+		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
+	}
+
+	files, err := s.docker.ListContainerFiles(containerID, path)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
 	return c.JSON(fiber.Map{
-		"path": path,
-		"files": []fiber.Map{
-			{"name": "work", "type": "directory"},
-			{"name": "in", "type": "directory"},
-			{"name": "out", "type": "directory"},
-			{"name": "apps", "type": "directory"},
-		},
+		"path":  path,
+		"files": files,
 	})
 }
 
