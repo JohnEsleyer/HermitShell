@@ -1,5 +1,6 @@
 # Binaries
 hermit
+hermit-cli
 *.exe
 *.exe~
 *.dll
