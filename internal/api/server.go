@@ -1037,12 +1037,13 @@ func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
 					if err == nil {
 						tokenEstimate = int(resp.TotalTokens)
 						totalWords = int(float64(tokenEstimate) * 0.75)
+						contextWindow = getModelContextWindow(agent.Model)
 					}
 				}
 			}
 		}
 
-		if tokenEstimate == 0 {
+		if contextWindow == 0 {
 			for _, h := range history {
 				totalWords += len(strings.Fields(h.Content))
 			}
