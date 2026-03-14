@@ -136,6 +136,63 @@ func (b *Bot) SendMessage(chatID, text string) error {
 	return nil
 }
 
+func (b *Bot) SendMessageWithID(chatID, text string) (string, error) {
+	req := SendMessageRequest{
+		ChatID: chatID,
+		Text:   text,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/bot%s/sendMessage", b.apiURL, b.token)
+	resp, err := b.http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if msg, ok := result["result"].(map[string]interface{}); ok {
+		if msgID, ok := msg["message_id"].(float64); ok {
+			return fmt.Sprintf("%d", int(msgID)), nil
+		}
+	}
+	return "", nil
+}
+
+func (b *Bot) DeleteMessage(chatID, messageID string) error {
+	req := struct {
+		ChatID    string `json:"chat_id"`
+		MessageID string `json:"message_id"`
+	}{
+		ChatID:    chatID,
+		MessageID: messageID,
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/bot%s/deleteMessage", b.apiURL, b.token)
+	resp, err := b.http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	return nil
+}
+
 func (b *Bot) SendPhoto(chatID, filePath, caption string) error {
 	file, err := os.Open(filePath)
 	if err != nil {

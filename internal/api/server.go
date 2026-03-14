@@ -1513,6 +1513,15 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText string) {
 	tempBot := telegram.NewBot(agent.TelegramToken)
 
+	// Send "thinking" message first
+	thinkingMsgID, _ := tempBot.SendMessageWithID(chatID, "🤔 Thinking...")
+	if thinkingMsgID != "" {
+		log.Printf("[%s] Sent thinking message (ID: %s)", agent.Name, thinkingMsgID)
+	}
+
+	// Log AI processing start
+	s.db.LogAction(agent.ID, "agent", "ai_processing", fmt.Sprintf("Processing message from user %s", userID))
+
 	// Fetch history for context
 	history, _ := s.db.GetHistory(agent.ID, 10)
 	var messages []llm.Message
@@ -1534,7 +1543,11 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	client := s.getLLMClientForAgent(agent)
 	if client == nil {
 		tempBot.SendMessage(chatID, "Error: LLM client not configured for this agent.")
+		if thinkingMsgID != "" {
+			tempBot.DeleteMessage(chatID, thinkingMsgID)
+		}
 		s.db.AddHistory(agent.ID, "system", "system", "Error: LLM client not configured")
+		s.db.LogAction(agent.ID, "agent", "llm_error", "LLM client not configured")
 		return
 	}
 
@@ -1542,8 +1555,20 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	response, err := client.Chat(agent.Model, messages)
 	if err != nil {
 		tempBot.SendMessage(chatID, "Error communicating with AI: "+err.Error())
+		if thinkingMsgID != "" {
+			tempBot.DeleteMessage(chatID, thinkingMsgID)
+		}
 		s.db.AddHistory(agent.ID, "system", "system", "LLM Error: "+err.Error())
+		s.db.LogAction(agent.ID, "agent", "llm_error", fmt.Sprintf("Error: %v", err))
 		return
+	}
+
+	// Log LLM response
+	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
+
+	// Delete thinking message
+	if thinkingMsgID != "" {
+		tempBot.DeleteMessage(chatID, thinkingMsgID)
 	}
 
 	// Log agent response (Full trace)
@@ -1692,7 +1717,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 	// 1. Handle Thought (Internal only, no feedback needed)
 	if parsed.Thought != "" && agentID > 0 {
-		// Log thought if needed
+		s.db.LogAction(agentID, "system", "agent_thought", parsed.Thought)
 	}
 
 	// 2. Handle Message (Telegram user)
@@ -1701,17 +1726,24 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		status := "SUCCESS"
 		if err != nil {
 			status = "FAILED: " + err.Error()
+			s.db.LogAction(agentID, "system", "message_failed", fmt.Sprintf("Error: %v", err))
+		} else {
+			s.db.LogAction(agentID, "agent", "message_sent", parsed.Message)
 		}
 		feedback = append(feedback, map[string]interface{}{"action": "MESSAGE", "status": status})
 	}
 
 	// 3. Handle Terminals
 	for _, cmd := range parsed.Terminals {
+		s.db.LogAction(agentID, "system", "terminal_execute", fmt.Sprintf("Command: %s", cmd))
 		out, err := s.docker.Exec(containerName, cmd)
 		status := "SUCCESS"
 		if err != nil {
 			status = "FAILED"
 			out = err.Error()
+			s.db.LogAction(agentID, "system", "terminal_failed", fmt.Sprintf("Command: %s, Error: %v", cmd, err))
+		} else {
+			s.db.LogAction(agentID, "system", "terminal_success", fmt.Sprintf("Command: %s", cmd))
 		}
 		displayOut := out
 		if len(out) > 500 {
@@ -1743,6 +1775,9 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				if err != nil {
 					status = "FAILED"
 					log.Printf("GIVE error: %v", err)
+					s.db.LogAction(agentID, "system", "action_give_failed", fmt.Sprintf("File: %s, Error: %v", action.Value, err))
+				} else {
+					s.db.LogAction(agentID, "system", "action_give", fmt.Sprintf("File: %s", action.Value))
 				}
 				feedback = append(feedback, map[string]interface{}{"action": "GIVE", "file": action.Value, "status": status})
 			}
@@ -1753,8 +1788,10 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				if _, err := os.Stat(appPath); err == nil {
 					publicURL := s.tunnels.GetURL("dashboard") + fmt.Sprintf("/api/apps/%d/%s", agentID, action.Value)
 					bot.SendMessage(chatID, "🚀 App Published! Access it here: "+publicURL)
+					s.db.LogAction(agentID, "system", "action_app", fmt.Sprintf("App: %s, URL: %s", action.Value, publicURL))
 					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "SUCCESS", "url": publicURL})
 				} else {
+					s.db.LogAction(agentID, "system", "action_app_failed", fmt.Sprintf("App: %s, Error: directory not found", action.Value))
 					feedback = append(feedback, map[string]interface{}{"action": "APP", "app": action.Value, "status": "FAILED", "error": "App directory not found"})
 				}
 			}
@@ -1768,8 +1805,10 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				content, err := os.ReadFile(skillPath)
 				if err == nil {
 					s.db.AddHistory(agentID, "system", "system", "Skill loaded ["+skillName+"]:\n\n"+string(content)+"\n<end>")
+					s.db.LogAction(agentID, "system", "action_skill", fmt.Sprintf("Skill: %s", action.Value))
 					feedback = append(feedback, map[string]interface{}{"action": "SKILL", "skill": action.Value, "status": "SUCCESS"})
 				} else {
+					s.db.LogAction(agentID, "system", "action_skill_failed", fmt.Sprintf("Skill: %s, Error: %v", action.Value, err))
 					feedback = append(feedback, map[string]interface{}{"action": "SKILL", "skill": action.Value, "status": "FAILED", "error": "Skill not found"})
 				}
 			}

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Send, Terminal } from 'lucide-react';
+import { X, Send, Terminal, Zap, Loader2 } from 'lucide-react';
 import { Agent } from '../../types';
 
 const API_BASE = '';
@@ -20,11 +20,56 @@ export function TestModal({ agent, onClose }: TestModalProps) {
   const [logs, setLogs] = useState<LogEntry[]>([
     { id: 1, source: 'system', content: '{\n  "status": "READY",\n  "agent": "' + agent.name + '"\n}' }
   ]);
+  const [testingLLM, setTestingLLM] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
+
+  const testLLM = async () => {
+    setTestingLLM(true);
+    setLogs(prev => [...prev, { id: Date.now(), source: 'system', content: 'Testing LLM configuration...' }]);
+
+    try {
+      // Create a simple test message
+      const testMessage = "Say 'Hello' if you can hear me.";
+      
+      // Use the test-contract endpoint to test the LLM
+      const res = await fetch(`${API_BASE}/api/test-contract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          payload: `<message>${testMessage}</message>`, 
+          userId: 'test-user', 
+          agentId: agent.id 
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setLogs(prev => [...prev, { 
+          id: Date.now(), 
+          source: 'system', 
+          content: `✅ LLM Test Successful!\n\nProvider: ${agent.provider}\nModel: ${agent.model}\n\nResponse: ${JSON.stringify(data.actionEffects || data, null, 2)}` 
+        }]);
+      } else {
+        setLogs(prev => [...prev, { 
+          id: Date.now(), 
+          source: 'system', 
+          content: `❌ LLM Test Failed!\n\nError: ${data.error || 'Unknown error'}\n\nProvider: ${agent.provider}\nModel: ${agent.model}` 
+        }]);
+      }
+    } catch (err: any) {
+      setLogs(prev => [...prev, { 
+        id: Date.now(), 
+        source: 'system', 
+        content: `❌ LLM Test Failed!\n\nError: ${err.message}\n\nProvider: ${agent.provider}\nModel: ${agent.model}` 
+      }]);
+    } finally {
+      setTestingLLM(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -67,7 +112,7 @@ export function TestModal({ agent, onClose }: TestModalProps) {
     <div className="fixed inset-0 bg-black/85 backdrop-blur-md flex items-center justify-center z-50 p-4 sm:p-6 animate-in fade-in duration-300">
       <div className="bg-zinc-950 border border-zinc-800 w-full max-w-7xl h-[min(88vh,980px)] rounded-[2.5rem] relative flex flex-col shadow-2xl overflow-hidden">
 
-        <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
+          <div className="p-6 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
           <div>
             <h2 className="text-2xl font-bold text-white flex items-center gap-3">
               <Terminal className="w-6 h-6" /> Test Console: {agent.name}
@@ -75,6 +120,14 @@ export function TestModal({ agent, onClose }: TestModalProps) {
             <p className="text-sm text-zinc-400 mt-1">Simulate XML inputs or Telegram takeover commands.</p>
           </div>
           <div className="flex gap-2">
+            <button 
+              onClick={testLLM} 
+              disabled={testingLLM}
+              className="px-4 py-2 bg-emerald-900/50 hover:bg-emerald-900 border border-emerald-700/50 rounded-lg text-xs font-bold text-emerald-400 transition-colors flex items-center gap-2 disabled:opacity-50"
+            >
+              {testingLLM ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+              {testingLLM ? 'Testing...' : 'Test LLM'}
+            </button>
             <button onClick={() => insertExample('<terminal>ls -la</terminal>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">Terminal</button>
             <button onClick={() => insertExample('<action type="GIVE">test.txt</action>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">Give File</button>
             <button onClick={() => insertExample('<system>memory</system>')} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-mono text-zinc-300 transition-colors">System Info</button>
