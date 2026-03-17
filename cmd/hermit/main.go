@@ -19,6 +19,8 @@ import (
 	"github.com/JohnEsleyer/hermit/internal/telegram"
 )
 
+var version = "v0.2.0-beta"
+
 func main() {
 	port := getEnv("PORT", "3000")
 	dbPath := getEnv("DATABASE_PATH", "./data/hermit.db")
@@ -167,7 +169,7 @@ func main() {
 
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
-	log.Printf("Hermit (Go Fiber) starting on :%s ...", port)
+	log.Printf("Hermit %s (Go Fiber) starting on :%s ...", version, port)
 	log.Printf("Dashboard available at: http://localhost:%s/", port)
 
 	if err := apiServer.Listen(port); err != nil {
