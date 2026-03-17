@@ -12,7 +12,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -39,6 +38,8 @@ type Agent struct {
 	ContainerID   string `json:"container_id"`
 	Status        string `json:"status"`
 	Active        bool   `json:"active"`
+	LLMAPICalls   int64  `json:"llm_api_calls"`  // Total LLM API calls
+	ContextWindow int    `json:"context_window"` // Context window size in tokens
 	CreatedAt     string `json:"created_at"`
 	UpdatedAt     string `json:"updated_at"`
 }
@@ -100,6 +101,7 @@ func (d *DB) migrate() error {
 		provider TEXT NOT NULL DEFAULT 'openrouter',
 		model TEXT NOT NULL DEFAULT 'openai/gpt-4',
 		system_prompt TEXT NOT NULL DEFAULT '',
+		context TEXT NOT NULL DEFAULT '',
 		telegram_id TEXT NOT NULL DEFAULT '',
 		telegram_token TEXT NOT NULL DEFAULT '',
 		profile_pic TEXT NOT NULL DEFAULT '',
@@ -110,6 +112,8 @@ func (d *DB) migrate() error {
 		container_id TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'stopped',
 		active INTEGER NOT NULL DEFAULT 1,
+		llm_api_calls INTEGER NOT NULL DEFAULT 0,
+		context_window INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
@@ -140,54 +144,24 @@ func (d *DB) migrate() error {
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
 
-	CREATE TABLE IF NOT EXISTS allowlist (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		telegram_user_id TEXT NOT NULL UNIQUE,
-		friendly_name TEXT NOT NULL DEFAULT '',
-		notes TEXT NOT NULL DEFAULT '',
-		created_at TEXT NOT NULL DEFAULT (datetime('now'))
-	);
-
-	CREATE TABLE IF NOT EXISTS calendar (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		agent_id INTEGER NOT NULL,
-		date TEXT NOT NULL,
-		time TEXT NOT NULL,
-		prompt TEXT NOT NULL DEFAULT '',
-		executed INTEGER NOT NULL DEFAULT 0,
-		created_at TEXT NOT NULL DEFAULT (datetime('now')),
-		FOREIGN KEY(agent_id) REFERENCES agents(id)
-	);
-
-	CREATE TABLE IF NOT EXISTS tunnels (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		agent_id INTEGER NOT NULL,
-		tunnel_uuid TEXT NOT NULL UNIQUE,
-		tunnel_name TEXT NOT NULL,
-		public_hostname TEXT NOT NULL DEFAULT '',
-		status TEXT NOT NULL DEFAULT 'stopped',
-		created_at TEXT NOT NULL DEFAULT (datetime('now')),
-		last_seen TEXT NOT NULL DEFAULT (datetime('now')),
-		FOREIGN KEY(agent_id) REFERENCES agents(id)
-	);
-
-	CREATE TABLE IF NOT EXISTS users (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT NOT NULL UNIQUE,
-		password_hash TEXT NOT NULL,
-		role TEXT NOT NULL DEFAULT 'admin',
-		must_change_password INTEGER NOT NULL DEFAULT 1,
-		created_at TEXT NOT NULL DEFAULT (datetime('now')),
-		updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-	);
-
 	CREATE TABLE IF NOT EXISTS skills (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		agent_id INTEGER NOT NULL DEFAULT 0,
+		agent_id INTEGER NOT NULL,
 		title TEXT NOT NULL,
 		description TEXT NOT NULL DEFAULT '',
 		content TEXT NOT NULL,
-		created_at TEXT NOT NULL DEFAULT (datetime('now'))
+		is_core INTEGER NOT NULL DEFAULT 0,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS credentials (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		agent_id INTEGER NOT NULL,
+		provider TEXT NOT NULL,
+		api_key TEXT NOT NULL,
+		updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
 	`
 
@@ -195,14 +169,28 @@ func (d *DB) migrate() error {
 		return err
 	}
 
-	if _, err := d.db.Exec("ALTER TABLE agents ADD COLUMN provider TEXT NOT NULL DEFAULT 'openrouter'"); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+	// Add new columns to existing databases if they don't exist
+	if err := d.addColumnIfNotExists("agents", "llm_api_calls", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := d.addColumnIfNotExists("agents", "context_window", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
 
-	if _, err := d.db.Exec("ALTER TABLE agents ADD COLUMN banner_url TEXT NOT NULL DEFAULT ''"); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+	return nil
+}
+
+func (d *DB) addColumnIfNotExists(table, column, def string) error {
+	// Check if column exists
+	var count int
+	err := d.db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info('%s') WHERE name = ?", table), column).Scan(&count)
+	if err != nil {
 		return err
 	}
-
+	if count == 0 {
+		_, err = d.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, def))
+		return err
+	}
 	return nil
 }
 
@@ -221,9 +209,9 @@ func (d *DB) CreateAgent(a *Agent) (int64, error) {
 func (d *DB) GetAgent(id int64) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, llm_api_calls, context_window, created_at, updated_at
 		FROM agents WHERE id = ?
-	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.LLMAPICalls, &a.ContextWindow, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -233,9 +221,9 @@ func (d *DB) GetAgent(id int64) (*Agent, error) {
 func (d *DB) GetAgentByName(name string) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, llm_api_calls, context_window, created_at, updated_at
 		FROM agents WHERE name = ?
-	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt)
+	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.LLMAPICalls, &a.ContextWindow, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -273,6 +261,16 @@ func (d *DB) UpdateAgent(a *Agent) error {
 
 func (d *DB) DeleteAgent(id int64) error {
 	_, err := d.db.Exec("DELETE FROM agents WHERE id = ?", id)
+	return err
+}
+
+func (d *DB) IncrementLLMAPICalls(agentID int64) error {
+	_, err := d.db.Exec("UPDATE agents SET llm_api_calls = llm_api_calls + 1 WHERE id = ?", agentID)
+	return err
+}
+
+func (d *DB) UpdateAgentContextWindow(agentID int64, contextWindow int) error {
+	_, err := d.db.Exec("UPDATE agents SET context_window = ? WHERE id = ?", contextWindow, agentID)
 	return err
 }
 

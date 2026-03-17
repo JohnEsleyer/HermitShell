@@ -158,6 +158,18 @@ func (c *Client) Chat(model string, messages []Message) (string, error) {
 
 	resp, err := c.http.Do(req)
 	if err != nil {
+		// Clean error message - remove URL from error to avoid markdown issues
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "http://") || strings.Contains(errMsg, "https://") {
+			// Extract just the error type
+			if strings.Contains(errMsg, "context deadline exceeded") {
+				return "", fmt.Errorf("request timed out - please try again")
+			}
+			if strings.Contains(errMsg, "connection refused") {
+				return "", fmt.Errorf("connection refused - check network")
+			}
+			return "", fmt.Errorf("request failed: %v", err)
+		}
 		return "", fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()

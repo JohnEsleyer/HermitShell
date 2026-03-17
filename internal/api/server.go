@@ -168,6 +168,7 @@ type AgentStats struct {
 	ContextWindow int     `json:"contextWindow"`
 	HistoryCount  int     `json:"historyCount"`
 	EstimatedCost float64 `json:"estimatedCost"`
+	LLMAPICalls   int64   `json:"llmApiCalls"`
 }
 
 // Server handles HTTP requests and manages shared state with concurrency protection.
@@ -1298,6 +1299,7 @@ func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
 		ContextWindow: contextWindow,
 		HistoryCount:  len(history),
 		EstimatedCost: estimatedCost,
+		LLMAPICalls:   agent.LLMAPICalls,
 	}
 
 	return c.JSON(stats)
@@ -1894,6 +1896,8 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 		statusMsg := fmt.Sprintf("🤖 *Agent Status: %s*\n\n", agent.Name)
 		statusMsg += fmt.Sprintf("• Model: `%s`\n", agent.Model)
 		statusMsg += fmt.Sprintf("• Provider: `%s`\n", agent.Provider)
+		statusMsg += fmt.Sprintf("• Context Window: `%d` tokens\n", agent.ContextWindow)
+		statusMsg += fmt.Sprintf("• LLM API Calls: `%d`\n", agent.LLMAPICalls)
 
 		containerStatus := "Stopped"
 		if agent.ContainerID != "" && s.docker != nil {
@@ -2046,6 +2050,12 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 
 	// Chat
 	response, err := client.Chat(agent.Model, messages)
+
+	// Increment API call counter and update context window
+	s.db.IncrementLLMAPICalls(agent.ID)
+	contextWindow := getModelContextWindow(agent.Model)
+	s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
+
 	if err != nil {
 		tempBot.SendMessage(chatID, "Error communicating with AI: "+err.Error())
 		if thinkingMsgID != "" {

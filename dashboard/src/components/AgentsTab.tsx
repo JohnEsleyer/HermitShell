@@ -70,6 +70,12 @@ function AgentStatsCard({ agentId }: { agentId: number }) {
         <span>{formatNumber(stats.wordCount)} words</span>
         <span>{stats.historyCount} messages</span>
       </div>
+      {stats.llmApiCalls !== undefined && (
+        <div className="flex justify-between items-center pt-1 border-t border-zinc-800/50">
+          <span className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] font-bold">API Calls</span>
+          <span className="text-[10px] font-mono text-blue-400">{stats.llmApiCalls.toLocaleString()}</span>
+        </div>
+      )}
       {stats.estimatedCost > 0 && (
         <div className="flex justify-between items-center pt-1 border-t border-zinc-800/50">
           <span className="text-[9px] text-zinc-600 uppercase tracking-[0.2em] font-bold">Est. Cost</span>

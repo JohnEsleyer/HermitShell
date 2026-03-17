@@ -13,6 +13,8 @@ export interface Agent {
   model?: string;
   telegramId?: string;
   telegramToken?: string;
+  llmApiCalls?: number;
+  contextWindow?: number;
 }
 
 export interface AgentStats {
@@ -21,6 +23,7 @@ export interface AgentStats {
   contextWindow: number;
   historyCount: number;
   estimatedCost: number;
+  llmApiCalls?: number;
 }
 
 export interface ToastMessage {
