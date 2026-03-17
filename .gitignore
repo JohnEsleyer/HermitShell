@@ -71,3 +71,6 @@ test-results/
 
 # Docker
 *.dockerignore
+
+# Mockup Dashboard
+mockup-dashboard/
