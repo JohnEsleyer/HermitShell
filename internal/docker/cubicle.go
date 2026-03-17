@@ -315,17 +315,17 @@ func (c *Client) Exec(containerName string, command string) (string, error) {
 // Run creates and starts a Docker container for an agent.
 // Docs: See docs/container-management.md for container lifecycle.
 // Docs: See docs/security-measures.md for container isolation.
+// Traefik: Adds labels for automatic routing via Docker provider.
 func (c *Client) Run(name, image string, detach bool) error {
 	ctx := context.Background()
 
 	// 1. Check if container already exists
 	inspect, err := c.cli.ContainerInspect(ctx, name)
 	if err == nil {
-		// Already exists. If it's running, we're done.
+		// Already exists - start if stopped
 		if inspect.State.Running {
 			return nil
 		}
-		// If it's stopped, start it.
 		return c.cli.ContainerStart(ctx, name, types.ContainerStartOptions{})
 	}
 
@@ -356,10 +356,22 @@ func (c *Client) Run(name, image string, detach bool) error {
 		}
 	}
 
+	// Traefik labels for routing: /agent/{container-name}/
+	labels := map[string]string{
+		"traefik.enable":                                      "true",
+		"traefik.http.routers.agent.rule":                     "PathPrefix(`/agent/" + name + "/`)",
+		"traefik.http.routers.agent.entrypoints":              "web",
+		"traefik.http.services.agent.loadbalancer.server.url": "http://" + name + ":80",
+		"traefik.docker.network":                              "hermit-network",
+	}
+
 	resp, err := c.cli.ContainerCreate(ctx, &container.Config{
-		Image: image,
-		Cmd:   []string{"sleep", "infinity"},
-	}, nil, nil, nil, name)
+		Image:  image,
+		Cmd:    []string{"sleep", "infinity"},
+		Labels: labels,
+	}, &container.HostConfig{
+		NetworkMode: "hermit-network",
+	}, nil, nil, name)
 	if err != nil {
 		return err
 	}

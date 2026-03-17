@@ -1,0 +1,20 @@
+http:
+  routers:
+    # Catch-all router for agent apps
+    agent-apps:
+      rule: "PathPrefix(`/agent/`)"
+      service: agent-apps
+      middlewares:
+        - strip-agent-prefix
+
+  middlewares:
+    strip-agent-prefix:
+      stripprefix:
+        prefixes:
+          - "/agent"
+
+  services:
+    agent-apps:
+      loadbalancer:
+        servers:
+          - url: "http://host.docker.internal:3000"
