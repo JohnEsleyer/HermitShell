@@ -74,7 +74,7 @@ export function HealthTab() {
     };
 
     fetchMetrics();
-    const interval = setInterval(fetchMetrics, 2000);
+    const interval = setInterval(fetchMetrics, 5000);
     return () => clearInterval(interval);
   }, []);
 

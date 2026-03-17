@@ -5,19 +5,20 @@
 package parser
 
 import (
+	"log"
 	"regexp"
 	"strings"
 )
 
 type ParsedResponse struct {
-	Thought   string          `json:"thought"`
-	Message   string          `json:"message"`
-	Terminal  string          `json:"terminal"`
-	Terminals []string        `json:"terminals,omitempty"`
-	System    string          `json:"system,omitempty"`
-	Actions   []ParsedAction  `json:"actions"`
-	Calendar  *ParsedCalendar `json:"calendar,omitempty"`
-	Apps      []ParsedApp     `json:"apps,omitempty"`
+	Thought   string           `json:"thought"`
+	Message   string           `json:"message"`
+	Terminal  string           `json:"terminal"`
+	Terminals []string         `json:"terminals,omitempty"`
+	System    string           `json:"system,omitempty"`
+	Actions   []ParsedAction   `json:"actions"`
+	Calendars []ParsedCalendar `json:"calendars,omitempty"`
+	Apps      []ParsedApp      `json:"apps,omitempty"`
 }
 
 type ParsedAction struct {
@@ -26,8 +27,10 @@ type ParsedAction struct {
 }
 
 type ParsedCalendar struct {
-	DateTime string `json:"datetime"`
-	Prompt   string `json:"prompt"`
+	DateTime string `json:"datetime,omitempty"`
+	Prompt   string `json:"prompt,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Action   string `json:"action,omitempty"` // "create", "list", "delete", "update"
 }
 
 // ParsedApp represents a parsed <app> tag with HTML, CSS, and JS content.
@@ -53,10 +56,14 @@ var (
 	terminalRegex         = regexp.MustCompile(`(?is)<terminal>(.*?)</terminal>`)
 	systemRegex           = regexp.MustCompile(`(?is)<system>(.*?)</system>`)
 	skillRegex            = regexp.MustCompile(`(?is)<skill>(.*?)</skill>`)
-	calendarRegex         = regexp.MustCompile(`(?is)<calendar>.*?<prompt>(.*?)</prompt>.*?</calendar>`)
+	calendarRegex         = regexp.MustCompile(`(?is)<calendar>(.*?)</calendar>`)
 	calendarDateRegex     = regexp.MustCompile(`(?is)<date>(.*?)</date>`)
 	calendarTimeRegex     = regexp.MustCompile(`(?is)<time>(.*?)</time>`)
 	calendarDateTimeRegex = regexp.MustCompile(`(?is)<datetime>(.*?)</datetime>`)
+	// Calendar CRUD operations
+	calendarListRegex   = regexp.MustCompile(`(?is)<calendar\s+action=["']?list["']?\s*/>`)
+	calendarDeleteRegex = regexp.MustCompile(`(?is)<calendar\s+action=["']?delete["']?\s+id=["']?([^"'>]+)["']?\s*/>`)
+	calendarUpdateRegex = regexp.MustCompile(`(?is)<calendar\s+action=["']?update["']?\s+id=["']?([^"'>]+)["']?>(.*?)</calendar>`)
 	// New tags: <give>, <app>
 	giveRegex    = regexp.MustCompile(`(?is)<give>(.*?)</give>`)
 	appRegex     = regexp.MustCompile(`(?is)<app\s+name=["']?([^"'>]+)["']?>(.*?)</app>`)
@@ -69,6 +76,8 @@ var (
 // Docs: See docs/xml-tags.md for all supported tags.
 // Supported tags: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
 func ParseLLMOutput(text string) ParsedResponse {
+	log.Printf("[PARSER] Input text: %s", text)
+
 	text = activeZone(text)
 	resp := ParsedResponse{
 		Actions:   make([]ParsedAction, 0),
@@ -164,25 +173,69 @@ func ParseLLMOutput(text string) ParsedResponse {
 		}
 	}
 
-	if m := calendarRegex.FindStringSubmatch(text); len(m) > 1 {
-		prompt := strings.TrimSpace(m[1])
+	matches := calendarRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		calendarContent := m[1]
+
+		log.Printf("[PARSER DEBUG] calendarContent: %s", calendarContent)
+
+		// Extract prompt
+		promptRegex := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`)
+		prompt := ""
+		if pm := promptRegex.FindStringSubmatch(calendarContent); len(pm) > 1 {
+			prompt = strings.TrimSpace(pm[1])
+			log.Printf("[PARSER DEBUG] prompt found: %s", prompt)
+		}
+
+		// Extract datetime
 		datetime := ""
-		if dt := calendarDateTimeRegex.FindStringSubmatch(text); len(dt) > 1 {
+		if dt := calendarDateTimeRegex.FindStringSubmatch(calendarContent); len(dt) > 1 {
 			datetime = strings.TrimSpace(dt[1])
+			log.Printf("[PARSER DEBUG] datetime found: %s", datetime)
 		} else {
 			dateVal := ""
 			timeVal := ""
-			if d := calendarDateRegex.FindStringSubmatch(text); len(d) > 1 {
+			if d := calendarDateRegex.FindStringSubmatch(calendarContent); len(d) > 1 {
 				dateVal = strings.TrimSpace(d[1])
 			}
-			if t := calendarTimeRegex.FindStringSubmatch(text); len(t) > 1 {
+			if t := calendarTimeRegex.FindStringSubmatch(calendarContent); len(t) > 1 {
 				timeVal = strings.TrimSpace(t[1])
 			}
 			datetime = strings.TrimSpace(strings.TrimSpace(dateVal) + " " + strings.TrimSpace(timeVal))
 		}
-		if prompt != "" {
-			resp.Calendar = &ParsedCalendar{DateTime: datetime, Prompt: prompt}
+
+		if prompt != "" || datetime != "" {
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{DateTime: datetime, Prompt: prompt, Action: "create"})
+			log.Printf("[PARSER DEBUG] Added calendar event")
 		}
+	}
+
+	// Handle calendar list action
+	if calendarListRegex.FindStringIndex(text) != nil {
+		resp.Calendars = append(resp.Calendars, ParsedCalendar{Action: "list"})
+	}
+
+	// Handle calendar delete action
+	if m := calendarDeleteRegex.FindStringSubmatch(text); len(m) > 1 {
+		resp.Calendars = append(resp.Calendars, ParsedCalendar{Action: "delete", ID: strings.TrimSpace(m[1])})
+	}
+
+	// Handle calendar update action
+	if m := calendarUpdateRegex.FindStringSubmatch(text); len(m) > 2 {
+		updateID := strings.TrimSpace(m[1])
+		updateContent := m[2]
+		updatePrompt := ""
+		updateDatetime := ""
+		if p := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`).FindStringSubmatch(updateContent); len(p) > 1 {
+			updatePrompt = strings.TrimSpace(p[1])
+		}
+		if dt := calendarDateTimeRegex.FindStringSubmatch(updateContent); len(dt) > 1 {
+			updateDatetime = strings.TrimSpace(dt[1])
+		}
+		resp.Calendars = append(resp.Calendars, ParsedCalendar{Action: "update", ID: updateID, Prompt: updatePrompt, DateTime: updateDatetime})
 	}
 
 	return resp

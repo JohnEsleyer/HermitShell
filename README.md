@@ -198,11 +198,24 @@ Agents use XML tags for actions:
 <script>alert('Hello!');</script>
 </app>
 
-<!-- Schedule reminder -->
+<!-- Schedule multiple reminders -->
 <calendar>
-<datetime>2025-05-23T09:00:00</datetime>
-<prompt>Time for daily standup!</prompt>
+<datetime>2026-03-17T13:43:25</datetime>
+<prompt>Japanese Lesson 1: 'Komorebi' - Sunlight filtering through trees</prompt>
 </calendar>
+<calendar>
+<datetime>2026-03-17T13:45:25</datetime>
+<prompt>Japanese Lesson 2: 'Mono no aware' - The pathos of beautiful things</prompt>
+</calendar>
+
+<!-- List all calendar events -->
+<calendar action="list"/>
+
+<!-- Delete a calendar event -->
+<calendar action="delete" id="123"/>
+
+<!-- Update a calendar event -->
+<calendar action="update" id="456"><prompt>Updated reminder prompt</prompt></calendar>
 
 <!-- Load skill context -->
 <skill>python-coding</skill>

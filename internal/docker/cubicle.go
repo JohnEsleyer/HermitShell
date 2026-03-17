@@ -71,6 +71,13 @@ func NewClient() (*Client, error) {
 		timeout:   2 * time.Minute,
 		prevStats: make(map[string]types.CPUStats),
 	}
+
+	// Pre-populate metrics cache synchronously for fast initial dashboard load
+	metrics, err := c.collectSystemMetrics()
+	if err == nil {
+		c.latestSystem = metrics
+	}
+
 	c.StartMetricsAggregator()
 	return c, nil
 }

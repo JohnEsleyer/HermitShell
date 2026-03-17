@@ -113,8 +113,9 @@ The system will read `data/skills/python-coding.md` and inject it into the conve
 
 ### `<calendar>` - Schedule Event
 
-Schedule a calendar event.
+Schedule a calendar event. Supports multiple events in a single response.
 
+**Create event:**
 ```xml
 <calendar>
 <datetime>2025-05-23T09:00:00</datetime>
@@ -123,13 +124,43 @@ Schedule a calendar event.
 ```
 
 Or with separate date and time:
-
 ```xml
 <calendar>
 <date>2025-05-23</date>
 <time>09:00</time>
 <prompt>Daily standup!</prompt>
 </calendar>
+```
+
+**Multiple events:**
+```xml
+<calendar>
+<datetime>2026-03-17T13:00:00</datetime>
+<prompt>First lesson</prompt>
+</calendar>
+<calendar>
+<datetime>2026-03-17T13:05:00</datetime>
+<prompt>Second lesson</prompt>
+</calendar>
+<calendar>
+<datetime>2026-03-17T13:10:00</datetime>
+<prompt>Third lesson</prompt>
+</calendar>
+```
+
+**List all events:**
+```xml
+<calendar action="list"/>
+```
+
+**Delete an event:**
+```xml
+<calendar action="delete" id="123"/>
+```
+
+**Update an event:**
+```xml
+<calendar action="update" id="456"><prompt>Updated prompt</prompt></calendar>
 ```
 
 ---

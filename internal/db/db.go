@@ -594,6 +594,29 @@ func (d *DB) ListCalendarEvents() ([]*CalendarEvent, error) {
 	return events, nil
 }
 
+func (d *DB) ListCalendarEventsByAgent(agentID int64) ([]*CalendarEvent, error) {
+	rows, err := d.db.Query(`
+		SELECT id, agent_id, date, time, prompt, executed, created_at
+		FROM calendar WHERE agent_id = ? ORDER BY date ASC, time ASC
+	`, agentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []*CalendarEvent
+	for rows.Next() {
+		e := &CalendarEvent{}
+		var executed int
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.Date, &e.Time, &e.Prompt, &executed, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		e.Executed = executed == 1
+		events = append(events, e)
+	}
+	return events, nil
+}
+
 func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 	rows, err := d.db.Query(`
 		SELECT id, agent_id, date, time, prompt, executed, created_at

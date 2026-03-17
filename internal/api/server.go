@@ -1723,6 +1723,8 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON"})
 	}
 
+	log.Printf("[TEST CONTRACT] Received payload: %s", req.Payload)
+
 	agent, _ := s.db.GetAgent(req.AgentID)
 	var agentBot *telegram.Bot
 
@@ -1732,6 +1734,8 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	}
 
 	feedback := s.ExecuteXMLPayload(req.AgentID, req.UserID, req.Payload, agentBot)
+
+	log.Printf("[TEST CONTRACT] Feedback: %v", feedback)
 
 	// Only add to history if userId is not a test placeholder
 	if req.UserID != "test" && req.UserID != "test-user" && agent != nil {
@@ -2228,6 +2232,15 @@ func (s *Server) handleTelegramCommand(chatID, text string) {
 // Handles: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
 func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *telegram.Bot) []map[string]interface{} {
 	parsed := parser.ParseLLMOutput(xmlInput)
+
+	// Debug logging
+	if len(parsed.Calendars) > 0 {
+		log.Printf("[DEBUG] Found %d calendar events in parsed response", len(parsed.Calendars))
+		for i, cal := range parsed.Calendars {
+			log.Printf("[DEBUG] Calendar %d: action=%s, datetime=%s, prompt=%s", i, cal.Action, cal.DateTime, cal.Prompt)
+		}
+	}
+
 	var feedback []map[string]interface{}
 
 	agent, _ := s.db.GetAgent(agentID)
@@ -2383,41 +2396,126 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		}
 	}
 
-	// 8. Handle Calendar
-	if parsed.Calendar != nil && agentID > 0 {
-		// Parse DateTime into date and time components
-		dateTime := parsed.Calendar.DateTime
-		var dateStr, timeStr string
-
-		if dateTime != "" {
-			if len(dateTime) >= 10 {
-				dateStr = dateTime[:10]
-			}
-			if len(dateTime) >= 19 {
-				timeStr = dateTime[11:16]
-			} else if len(dateTime) >= 16 {
-				timeStr = dateTime[11:16]
-			}
-		}
-
-		if dateStr != "" && timeStr != "" {
-			_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
-				AgentID:  agentID,
-				Date:     dateStr,
-				Time:     timeStr,
-				Prompt:   parsed.Calendar.Prompt,
-				Executed: false,
-			})
+	// 8. Handle Calendar (multiple events and CRUD)
+	for _, cal := range parsed.Calendars {
+		switch cal.Action {
+		case "list":
+			// Get all calendar events for this agent
+			events, err := s.db.ListCalendarEventsByAgent(agentID)
 			if err != nil {
-				s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: %v", err))
-				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": err.Error()})
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_LIST", "status": "ERROR", "error": err.Error()})
 			} else {
-				s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s %s - %s", dateStr, timeStr, parsed.Calendar.Prompt))
-				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS"})
+				eventList := "📅 Existing Calendar Events:\n\n"
+				for _, e := range events {
+					status := "⏳ Pending"
+					if e.Executed {
+						status = "✅ Completed"
+					}
+					eventList += fmt.Sprintf("• ID: %d | %s at %s\n  %s [%s]\n\n", e.ID, e.Date, e.Time, e.Prompt, status)
+				}
+				if len(events) == 0 {
+					eventList += "No calendar events found."
+				}
+				s.db.AddHistory(agentID, "system", "system", eventList+"\n<end>")
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_LIST", "status": "SUCCESS", "events": events})
 			}
-		} else {
-			s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: Invalid date/time"))
-			feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": "Invalid date/time"})
+
+		case "delete":
+			// Delete a calendar event
+			eventID, err := strconv.ParseInt(cal.ID, 10, 64)
+			if err != nil {
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_DELETE", "status": "ERROR", "error": "Invalid event ID"})
+			} else {
+				err := s.db.DeleteCalendarEvent(eventID)
+				if err != nil {
+					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_DELETE", "status": "ERROR", "error": err.Error()})
+				} else {
+					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Deleted: ID %d\n<end>", eventID))
+					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_DELETE", "status": "SUCCESS", "id": eventID})
+				}
+			}
+
+		case "update":
+			// Update a calendar event
+			eventID, err := strconv.ParseInt(cal.ID, 10, 64)
+			if err != nil {
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_UPDATE", "status": "ERROR", "error": "Invalid event ID"})
+			} else {
+				// Get existing event
+				existing, err := s.db.GetCalendarEvent(eventID)
+				if err != nil {
+					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_UPDATE", "status": "ERROR", "error": "Event not found"})
+				} else {
+					// Update fields
+					newDate := existing.Date
+					newTime := existing.Time
+					newPrompt := existing.Prompt
+
+					if cal.DateTime != "" {
+						if len(cal.DateTime) >= 10 {
+							newDate = cal.DateTime[:10]
+						}
+						if len(cal.DateTime) >= 16 {
+							newTime = cal.DateTime[11:16]
+						}
+					}
+					if cal.Prompt != "" {
+						newPrompt = cal.Prompt
+					}
+
+					// Delete old and create new (simpler than update)
+					s.db.DeleteCalendarEvent(eventID)
+					_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
+						AgentID:  agentID,
+						Date:     newDate,
+						Time:     newTime,
+						Prompt:   newPrompt,
+						Executed: false,
+					})
+					if err != nil {
+						feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_UPDATE", "status": "ERROR", "error": err.Error()})
+					} else {
+						s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Updated: ID %d\n<end>", eventID))
+						feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_UPDATE", "status": "SUCCESS", "id": eventID})
+					}
+				}
+			}
+
+		default: // create
+			// Parse DateTime into date and time components
+			dateTime := cal.DateTime
+			var dateStr, timeStr string
+
+			if dateTime != "" {
+				if len(dateTime) >= 10 {
+					dateStr = dateTime[:10]
+				}
+				if len(dateTime) >= 19 {
+					timeStr = dateTime[11:16]
+				} else if len(dateTime) >= 16 {
+					timeStr = dateTime[11:16]
+				}
+			}
+
+			if dateStr != "" && timeStr != "" {
+				_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
+					AgentID:  agentID,
+					Date:     dateStr,
+					Time:     timeStr,
+					Prompt:   cal.Prompt,
+					Executed: false,
+				})
+				if err != nil {
+					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: %v", err))
+					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": err.Error()})
+				} else {
+					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Scheduled: %s %s - %s\n<end>", dateStr, timeStr, cal.Prompt))
+					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "SUCCESS"})
+				}
+			} else if cal.Prompt != "" {
+				s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Failed: Invalid date/time\n<end>"))
+				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR", "status": "ERROR", "error": "Invalid date/time"})
+			}
 		}
 	}
 

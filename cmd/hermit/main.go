@@ -115,6 +115,9 @@ func main() {
 	}
 	log.Printf("Docker client initialized")
 
+	// Start background metrics collection
+	dockerClient.StartMetricsAggregator()
+
 	tunnelManager := cloudflare.NewTunnelManager()
 
 	portInt := 3000
