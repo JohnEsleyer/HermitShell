@@ -174,7 +174,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
   };
 
   const getEventsForDate = (date: Date): CalendarEvent[] => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = date.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
     return events.filter(e => e.date === dateStr);
   };
 
@@ -193,7 +193,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
   };
 
   const openCreateForDate = (date: Date) => {
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = date.toLocaleDateString('en-CA'); // YYYY-MM-DD in local time
     setNewEvent({ ...newEvent, date: dateStr });
     setShowCreate(true);
   };

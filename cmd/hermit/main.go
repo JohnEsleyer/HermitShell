@@ -133,7 +133,7 @@ func main() {
 					return
 				}
 				log.Printf("==> Dashboard Public URL: %s", url)
-				
+
 				// Initial webhook update with retries
 				go func() {
 					log.Printf("Waiting for tunnel %s to propagate...", url)
@@ -158,6 +158,9 @@ func main() {
 			go webhookHealthMonitor(database, tunnelManager)
 		}
 	}
+
+	// Start calendar scheduler
+	go calendarScheduler(database)
 
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
@@ -240,6 +243,70 @@ func tunnelHealthMonitor(tm *cloudflare.TunnelManager, port int) {
 func cleanupStaleCloudflaredProcesses() {
 	cmd := exec.Command("pkill", "-f", "cloudflared.*localhost:3000")
 	if err := cmd.Run(); err != nil {
+	}
+}
+
+func calendarScheduler(database *db.DB) {
+	log.Println("Calendar scheduler started")
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		events, err := database.GetPendingCalendarEvents()
+		if err != nil {
+			continue
+		}
+
+		if len(events) > 0 {
+			log.Printf("Calendar scheduler: found %d pending events", len(events))
+		}
+
+		// Get timezone offset from settings
+		timeOffset, _ := database.GetSetting("time_offset")
+		offsetHours := 0
+		if timeOffset != "" {
+			fmt.Sscanf(timeOffset, "%d", &offsetHours)
+		}
+
+		// Apply timezone offset to get local time
+		now := time.Now().Add(time.Duration(offsetHours) * time.Hour)
+		log.Printf("Calendar scheduler: current local time %s (offset +%d)", now.Format("2006-01-02 15:04:05"), offsetHours)
+
+		for _, event := range events {
+			// Parse event datetime (stored in local time)
+			eventTime, err := time.Parse("2006-01-02 15:04", event.Date+" "+event.Time)
+			if err != nil {
+				log.Printf("Calendar scheduler: failed to parse event time: %v", err)
+				continue
+			}
+
+			log.Printf("Calendar scheduler: checking event %d at %s vs now %s", event.ID, eventTime.Format("15:04"), now.Format("15:04"))
+
+			// Check if event time has passed (compare local times)
+			if now.After(eventTime) || now.Equal(eventTime) {
+				log.Printf("Calendar scheduler: triggering event %d", event.ID)
+
+				// Get agent
+				agent, err := database.GetAgent(event.AgentID)
+				if err != nil {
+					log.Printf("Calendar scheduler: failed to get agent: %v", err)
+					continue
+				}
+
+				// Send reminder to user
+				if agent.TelegramToken != "" {
+					bot := telegram.NewBot(agent.TelegramToken)
+					// Get allowed users
+					allowedUsers := strings.Split(agent.AllowedUsers, ",")
+					if len(allowedUsers) > 0 && allowedUsers[0] != "" {
+						chatID := strings.TrimSpace(allowedUsers[0])
+						log.Printf("Calendar scheduler: sending reminder to chat %s", chatID)
+						bot.SendMessage(chatID, "🔔 *Reminder*\n\n"+event.Prompt)
+						database.MarkCalendarEventExecuted(event.ID)
+					}
+				}
+			}
+		}
 	}
 }
 

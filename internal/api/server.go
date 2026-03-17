@@ -1998,6 +1998,16 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText string) {
 	tempBot := telegram.NewBot(agent.TelegramToken)
 
+	// Inject current time with timezone offset into user message
+	timeOffset, _ := s.db.GetSetting("time_offset")
+	offsetHours := 0
+	if timeOffset != "" {
+		fmt.Sscanf(timeOffset, "%d", &offsetHours)
+	}
+	currentTime := time.Now().Add(time.Duration(offsetHours) * time.Hour)
+	formattedTime := currentTime.Format("2006-01-02 15:04:05")
+	userTextWithTime := fmt.Sprintf("[Current time: %s] %s", formattedTime, userText)
+
 	// Send "thinking" message first
 	thinkingMsgID, _ := tempBot.SendMessageWithID(chatID, "🤔 Thinking...")
 	if thinkingMsgID != "" {
@@ -2021,9 +2031,11 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
 		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
 	}
+
 	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
 
-	// Add history (reversed because GetHistory returns DESC)
+	// Add user message with injected time
+	messages = append(messages, llm.Message{Role: "user", Content: userTextWithTime})
 	for i := len(history) - 1; i >= 0; i-- {
 		h := history[i]
 		role := h.Role
