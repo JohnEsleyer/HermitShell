@@ -221,24 +221,30 @@ export function DocsTab() {
               </div>
             </DocCard>
 
-            <DocCard title="<action>" icon={FileCode} gradient="from-green-500 to-emerald-500">
-              <p className="text-zinc-400 mb-4">Perform special actions like sending files or publishing apps.</p>
-              
-              <div className="space-y-4">
-                <div>
-                  <p className="text-sm text-white mb-2">GIVE - Send a file to user:</p>
-                  <div className="bg-zinc-950 p-4 rounded-xl font-mono text-sm">
-                    <span className="text-pink-400">{'<action type="GIVE">'}</span>report.pdf<span className="text-pink-400">{'</action>'}</span>
-                  </div>
-                </div>
-                
-                <div>
-                  <p className="text-sm text-white mb-2">APP - Publish a web app:</p>
-                  <div className="bg-zinc-950 p-4 rounded-xl font-mono text-sm">
-                    <span className="text-pink-400">{'<action type="APP">'}</span>my-dashboard<span className="text-pink-400">{'</action>'}</span>
-                  </div>
-                </div>
+            <DocCard title="<give>" icon={Send} gradient="from-green-500 to-emerald-500">
+              <p className="text-zinc-400 mb-4">Send a file from the container's <code className="text-white">/app/workspace/out/</code> folder to the user via Telegram.</p>
+              <div className="bg-zinc-950 p-4 rounded-xl font-mono text-sm">
+                <span className="text-pink-400">{'<give>'}</span>report.pdf<span className="text-pink-400">{'</give>'}</span>
               </div>
+              <p className="text-xs text-zinc-500 mt-3">The file must exist in <code>/app/workspace/out/</code> within the container.</p>
+            </DocCard>
+
+            <DocCard title="<app>" icon={Globe} gradient="from-cyan-500 to-blue-500">
+              <p className="text-zinc-400 mb-4">Create a web application with HTML, CSS, and JavaScript. The system automatically creates the file structure.</p>
+              <div className="bg-zinc-950 p-4 rounded-xl font-mono text-sm overflow-x-auto">
+                <span className="text-pink-400">&lt;app name="myapp"&gt;</span><br/>
+                <span className="text-blue-300">  &lt;html&gt;</span><br/>
+                <span className="text-white">    &lt;button&gt;Click me&lt;/button&gt;</span><br/>
+                <span className="text-blue-300">  &lt;/html&gt;</span><br/>
+                <span className="text-green-300">  &lt;style&gt;</span><br/>
+                <span className="text-white">    button {'{'} padding: 10px; {'}'}</span><br/>
+                <span className="text-green-300">  &lt;/style&gt;</span><br/>
+                <span className="text-yellow-300">  &lt;script&gt;</span><br/>
+                <span className="text-white">    // JS code here</span><br/>
+                <span className="text-yellow-300">  &lt;/script&gt;</span><br/>
+                <span className="text-pink-400">&lt;/app&gt;</span>
+              </div>
+              <p className="text-xs text-zinc-500 mt-3">Creates /app/workspace/apps/myapp/index.html and publishes via Traefik.</p>
             </DocCard>
 
             <DocCard title="<calendar>" icon={Calendar} gradient="from-yellow-500 to-orange-500">
@@ -325,9 +331,32 @@ export function DocsTab() {
                 </div>
                 <div className="bg-zinc-800/50 p-4 rounded-xl">
                   <h4 className="font-bold text-white mb-2">Web Apps</h4>
-                  <p className="text-sm text-zinc-400">HTML/CSS/JS in /app/workspace/apps/ can be published via APP action.</p>
+                  <p className="text-sm text-zinc-400">HTML/CSS/JS in /app/workspace/apps/ can be published via <code className="text-green-400">&lt;app&gt;</code> tag.</p>
                 </div>
               </div>
+            </DocCard>
+
+            <DocCard title="Agent Statistics" icon={Zap} gradient="from-yellow-500 to-orange-500">
+              <p className="text-zinc-400 mb-4">Each agent tracks usage metrics for monitoring and cost estimation.</p>
+              <div className="space-y-3">
+                <div className="bg-zinc-950 p-3 rounded-xl">
+                  <span className="text-white font-medium">LLM API Calls</span>
+                  <p className="text-xs text-zinc-500 mt-1">Increments by 1 on every LLM API request</p>
+                </div>
+                <div className="bg-zinc-950 p-3 rounded-xl">
+                  <span className="text-white font-medium">Context Window</span>
+                  <p className="text-xs text-zinc-500 mt-1">Maximum token limit for the model (e.g., 1M for Gemini)</p>
+                </div>
+                <div className="bg-zinc-950 p-3 rounded-xl">
+                  <span className="text-white font-medium">Word Count</span>
+                  <p className="text-xs text-zinc-500 mt-1">Total words in conversation history</p>
+                </div>
+                <div className="bg-zinc-950 p-3 rounded-xl">
+                  <span className="text-white font-medium">Estimated Cost</span>
+                  <p className="text-xs text-zinc-500 mt-1">Cumulative cost based on token usage</p>
+                </div>
+              </div>
+              <p className="text-xs text-zinc-500 mt-4">View in agent card on dashboard or via <code className="text-green-400">/status</code> Telegram command.</p>
             </DocCard>
           </>
         )}
@@ -344,7 +373,9 @@ export function DocsTab() {
                     <div>provider, model, system_prompt</div>
                     <div>telegram_id, telegram_token</div>
                     <div>profile_pic, banner_url</div>
-                    <div>container_id, status</div>
+                    <div>container_id, status, active</div>
+                    <div>llm_api_calls, context_window</div>
+                    <div>created_at, updated_at</div>
                   </div>
                 </Collapsible>
                 

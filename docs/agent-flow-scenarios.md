@@ -19,7 +19,7 @@ This document describes the various scenarios and flows that an agent can experi
 **Agent Expected Behavior:**
 ```xml
 <message>I wrote the song and I'm sending it now.</message>
-<action type="GIVE">song.txt</action>
+<give>song.txt</give>
 ```
 
 **System Response:**
@@ -30,7 +30,7 @@ This document describes the various scenarios and flows that an agent can experi
 **Key Points:**
 - Texts without XML tags don't appear in Telegram
 - `<message>` creates a chat bubble
-- `<action type="GIVE">` is the delivery mechanism
+- `<give>` is the delivery mechanism
 
 ---
 
@@ -91,7 +91,7 @@ When enabled, Telegram user XML is treated as **system-control input**, useful f
 **Supported examples:**
 ```xml
 <terminal>cd out</terminal>
-<action type="GIVE">report.pdf</action>
+<give>report.pdf</give>
 ```
 
 **Notes:**
@@ -139,13 +139,47 @@ This enables safer and more deterministic status checks.
 
 **Agent Expected Behavior:**
 ```xml
-<action type="APP">my-todo-app</action>
+<app name="my-todo-app">
+<html>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Todo App</title>
+</head>
+<body>
+    <h1>My Tasks</h1>
+    <input id="task" placeholder="Add task">
+    <button onclick="addTask()">Add</button>
+    <ul id="list"></ul>
+</body>
+</html>
+</html>
+<style>
+body { font-family: sans-serif; padding: 20px; }
+input, button { padding: 10px; margin: 5px; }
+</style>
+<script>
+function addTask() {
+    const input = document.getElementById('task');
+    const list = document.getElementById('list');
+    const li = document.createElement('li');
+    li.textContent = input.value;
+    list.appendChild(li);
+    input.value = '';
+}
+</script>
+</app>
 ```
 
 **System Response:**
-1. Validates `/app/workspace/apps/my-todo-app/` exists
-2. Makes available at `{public-url}/apps/my-todo-app`
-3. Returns success with URL
+1. Creates `/app/workspace/apps/my-todo-app/` folder
+2. Creates `index.html` with embedded CSS/JS
+3. Makes available via Traefik at `{dashboard-url}/apps/{agent-name}/my-todo-app`
+4. Returns success with URL to agent
+
+**Multi-Tenant Routing:**
+- Traefik routes requests: `/apps/{container-id}/{app-name}` → container's internal port 80
+- Apps appear in the Published Apps panel on the dashboard
 
 ---
 
@@ -175,7 +209,9 @@ Parse XML Tags
      |
      +-- <terminal> --> Queue for execution
      |
-     +-- <action> -----> Queue for system action
+     +-- <give> -----> Send file to user
+     |
+     +-- <app> -----> Create web application
      |
      +-- <calendar> --> Insert to DB
      |

@@ -125,15 +125,26 @@ Each agent runs in an isolated Docker container with:
 Agents use XML tags for actions:
 - `<message>...</message>` - Telegram message bubble
 - `<terminal>...</terminal>` - Shell command execution
-- `<action type="GIVE">filename</action>` - Deliver file
-- `<action type="APP">appname</action>` - Publish web app
+- `<give>filename</give>` - Deliver file from `/app/workspace/out/`
+- `<app name="appname">...</app>` - Create web application
 - `<calendar><datetime>...</datetime><prompt>...</prompt></calendar>` - Schedule reminder
+- `<skill>skill-name</skill>` - Load skill context
+- `<system>time|date|memory</system>` - Request system information
 
 ### Docker Orchestration
 - Auto-create container on agent creation
 - Auto-start container on telegram message
 - Container reset capability
 - Real-time metrics collection
+
+### Usage Tracking
+Each agent tracks:
+- **LLM API Calls**: Number of requests sent to the LLM provider
+- **Context Window**: Maximum token limit for the model
+- **Word Count**: Total words in conversation history
+- **Estimated Cost**: Cumulative cost estimation based on token usage
+
+These metrics are displayed in the agent card on the dashboard and in the `/status` Telegram command.
 
 ## Makefile Commands
 
