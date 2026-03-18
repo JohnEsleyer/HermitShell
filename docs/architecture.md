@@ -13,8 +13,8 @@ Hermit is an AI Agent Orchestration System that enables autonomous agents to run
 
 ### 2. CLI (Go)
 - **Binary:** `hermitshell`
-- **Purpose:** Terminal interface for managing agents, containers, and tunnels
-- **Reference:** See `docs/installation.md#cli` or run `hermitshell help`
+- **Purpose:** Terminal interface for managing agents, containers, and server lifecycle (status, start, stop, restart)
+- **Reference:** See `docs/installation.md#cli-usage` or run `hermitshell help`
 
 ### 3. Agent Runtime (Docker)
 - Each agent runs in an isolated Docker container
