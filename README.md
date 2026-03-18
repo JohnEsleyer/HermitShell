@@ -31,7 +31,7 @@
 
 ## Overview
 
-Hermit provides a complete agentic OS with Docker-based agent containers, Telegram integration, and a web dashboard. Each AI agent runs in its own isolated Docker container with a dedicated workspace.
+HermitShell provides a complete agentic OS with Docker-based agent containers, Telegram integration, and a web dashboard. Each AI agent runs in its own isolated Docker container with a dedicated workspace.
 
 ### Key Features
 
@@ -111,7 +111,7 @@ HERMIT_CLI_PASS=hermit123
 ## Architecture
 
 ```
-hermit/
+HermitShell/
 ├── cmd/
 │   ├── hermit/           # Main application entry point
 │   └── cli/              # Terminal UI interface

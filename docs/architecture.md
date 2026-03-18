@@ -1,8 +1,8 @@
-# Hermit Technical Architecture
+# HermitShell Technical Architecture
 
 ## System Overview
 
-Hermit is an AI Agent Orchestration System that enables autonomous agents to run in isolated Docker containers, interact via Telegram, and expose services through public URLs.
+HermitShell is an AI Agent Orchestration System that enables autonomous agents to run in isolated Docker containers, interact via Telegram, and expose services through public URLs.
 
 ## Core Components
 
@@ -37,7 +37,7 @@ Supports multiple providers:
 
 ## Public URL Strategy
 
-Hermit treats public URLs as a core runtime dependency:
+HermitShell treats public URLs as a core runtime dependency:
 
 - Telegram webhooks require a publicly reachable endpoint
 - Agent apps in `/workspace/apps/<app-name>` are exposed through reverse proxy paths like `/apps/<app-name>`

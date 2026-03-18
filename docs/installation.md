@@ -1,6 +1,6 @@
 # Installation Guide
 
-Documentation for installing Hermit AI Agent OS on a server.
+Documentation for installing HermitShell AI Agent OS on a server.
 
 ## Quick Install
 
@@ -34,7 +34,7 @@ If you prefer to install manually, follow these steps:
 ```bash
 # 1. Clone the repository
 git clone https://github.com/JohnEsleyer/HermitShell.git
-cd hermit
+cd HermitShell
 
 # 2. Build the application (Recommended)
 make setup

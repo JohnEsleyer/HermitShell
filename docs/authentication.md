@@ -4,7 +4,7 @@
 
 ## Overview
 
-Hermit uses cookie-based session authentication for the dashboard. Users authenticate with username/password, and the server issues a secure HTTP-only cookie containing the user ID.
+HermitShell uses cookie-based session authentication for the dashboard. Users authenticate with username/password, and the server issues a secure HTTP-only cookie containing the user ID.
 
 ## High-Level Flow
 

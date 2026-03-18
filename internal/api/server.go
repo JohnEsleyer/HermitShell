@@ -1618,7 +1618,46 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
+	domainMode, _ := s.db.GetSetting("domain_mode")
+	if domainMode == "true" {
+		domain, _ := s.db.GetSetting("domain")
+		if domain != "" {
+			if !strings.HasPrefix(domain, "http") {
+				domain = "https://" + domain
+			}
+			return c.JSON(fiber.Map{
+				"url":     domain,
+				"healthy": true,
+			})
+		}
+	}
+
 	tunnelURL := s.tunnels.GetURL("dashboard")
+
+	// If tunnel is active but no URL yet, wait a bit
+	if tunnelURL == "" && s.tunnels.IsRunning("dashboard") {
+		for i := 0; i < 5; i++ {
+			time.Sleep(1 * time.Second)
+			tunnelURL = s.tunnels.GetURL("dashboard")
+			if tunnelURL != "" {
+				break
+			}
+		}
+	}
+
+	// If still no tunnel URL, trigger it if not in domain mode
+	if tunnelURL == "" && domainMode != "true" {
+		port, _ := strconv.Atoi(os.Getenv("PORT"))
+		if port == 0 {
+			port = 3000
+		}
+		// Synchronously wait for it (StartQuickTunnel has its own timeout)
+		newURL, err := s.tunnels.StartQuickTunnel("dashboard", port)
+		if err == nil {
+			tunnelURL = newURL
+		}
+	}
+
 	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
 
 	return c.JSON(fiber.Map{
