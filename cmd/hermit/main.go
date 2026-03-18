@@ -19,8 +19,12 @@ import (
 	"github.com/JohnEsleyer/HermitShell/internal/telegram"
 )
 
-var version = "v0.4.2"
+// version represents the current release of HermitShell server.
+// Using Major.Minor.Patch versioning scheme.
+var version = "v0.4.3"
 
+// main is the entry point for the HermitShell server.
+// It initializes dependencies and starts the Go Fiber API server.
 func main() {
 	port := getEnv("PORT", "3000")
 	dbPath := getEnv("DATABASE_PATH", "./data/hermit.db")
@@ -48,6 +52,8 @@ func main() {
 		log.Fatalf("Failed to initialize runtime data directories: %v", err)
 	}
 
+	// 1. Initialize Database
+	// Reference: See docs/architecture.md#data-layer
 	database, err := db.NewDB(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
@@ -60,6 +66,8 @@ func main() {
 	}
 	log.Printf("Default user initialized: admin (password must be changed on first login)")
 
+	// 2. Initialize Telegram Bot
+	// Reference: See docs/telegram-integration.md
 	var bot *telegram.Bot
 	if telegramToken != "" {
 		bot = telegram.NewBot(telegramToken)
@@ -119,6 +127,8 @@ func main() {
 		log.Printf("LLM client initialized: provider=%s model=%s", provider, llmModel)
 	}
 
+	// 3. Initialize Docker Engine
+	// Reference: See docs/container-management.md
 	dockerClient, err := docker.NewClient()
 	if err != nil {
 		log.Fatalf("Failed to initialize Docker client: %v", err)
@@ -128,6 +138,8 @@ func main() {
 	// Start background metrics collection
 	dockerClient.StartMetricsAggregator()
 
+	// 4. Setup Cloudflare Tunnels (if enabled)
+	// Reference: See docs/cloudflared.md
 	tunnelManager := cloudflare.NewTunnelManager()
 
 	portInt := 3000
@@ -172,9 +184,13 @@ func main() {
 		}
 	}
 
+	// 5. Start Background Tasks
+	// Reference: See docs/time-management.md
 	// Start calendar scheduler
 	go calendarScheduler(database)
 
+	// 6. Start API Server
+	// Reference: See docs/api-endpoints.md
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
 	log.Printf("Hermit %s (Go Fiber) starting on :%s ...", version, port)

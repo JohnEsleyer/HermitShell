@@ -46,6 +46,13 @@ Hermit provides a complete agentic OS with Docker-based agent containers, Telegr
 
 ## Quick Start
 
+### Automated Installation (Linux)
+
+```bash
+# Download and run the installation script
+./install.sh
+```
+
 ### Using Makefile (Recommended)
 
 ```bash

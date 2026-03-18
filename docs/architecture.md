@@ -11,7 +11,12 @@ Hermit is an AI Agent Orchestration System that enables autonomous agents to run
 - **Backend:** Go Fiber REST API (`hermit-server`)
 - **Purpose:** User interface for managing agents, viewing metrics, configuring settings
 
-### 2. Agent Runtime (Docker)
+### 2. CLI (Go)
+- **Binary:** `hermitshell`
+- **Purpose:** Terminal interface for managing agents, containers, and tunnels
+- **Reference:** See `docs/installation.md#cli` or run `hermitshell help`
+
+### 3. Agent Runtime (Docker)
 - Each agent runs in an isolated Docker container
 - Workspace structure:
   - `/app/workspace/work/` - Scratchpad for agent operations
@@ -19,14 +24,14 @@ Hermit is an AI Agent Orchestration System that enables autonomous agents to run
   - `/app/workspace/out/` - Deliverables for users
   - `/app/workspace/apps/` - Web apps published by agents
 
-### 3. LLM Integration
+### 4. LLM Integration
 Supports multiple providers:
 - **OpenRouter** (free models recommended)
 - **OpenAI** (GPT-4, GPT-4o)
 - **Anthropic** (Claude)
 - **Google Gemini**
 
-### 4. Telegram Bot Integration
+### 5. Telegram Bot Integration
 - Webhook-based communication
 - Commands: `/start`, `/help`, `/clear`, `/tokens`, `/reset`, `/takeover`, `/give_system_prompt`, `/give_context`
 

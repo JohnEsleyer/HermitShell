@@ -17,6 +17,7 @@ import (
 )
 
 var apiBase = "http://localhost:3000"
+var version = "v0.4.3"
 
 type Credentials struct {
 	Username string `json:"username"`
@@ -138,7 +139,8 @@ func runCLI() {
 	tunnelCmd := flag.NewFlagSet("tunnel", flag.ExitOnError)
 
 	flag.Usage = func() {
-		fmt.Println("HermitShell CLI - AI Agent Orchestrator")
+		fmt.Printf("HermitShell CLI %s - AI Agent Orchestrator\n", version)
+		fmt.Println("Reference: See docs/installation.md for CLI usage")
 		fmt.Println("")
 		fmt.Println("Usage: hermitshell <command> [subcommand] [options]")
 		fmt.Println("")

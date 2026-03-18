@@ -1,7 +1,9 @@
 #!/bin/bash
 
 # Hermit AI Agent OS - Installation Script
-# Docs: See docs/installation.md for detailed installation guide
+# This script handles automated setup and environment preparation.
+# Docs: See docs/installation.md for a detailed installation guide
+# For architecture details, see docs/architecture.md.
 
 set -e
 
@@ -47,6 +49,8 @@ print_info "Detected OS: $OS"
 
 # ============================================
 # 1. Install System Dependencies
+# This section installs package managers, runtimes, and core tools.
+# Reference: See docs/installation.md#prerequisites
 # ============================================
 print_info "Installing system dependencies..."
 
@@ -143,6 +147,8 @@ print_success "System dependencies installed!"
 
 # ============================================
 # 2. Install Frontend Dependencies
+# Uses Bun to manage dashboard components and libraries.
+# Reference: See docs/frontend-deployment.md
 # ============================================
 print_info "Installing frontend dependencies..."
 
@@ -157,6 +163,8 @@ fi
 
 # ============================================
 # 3. Build the Application
+# Compiles the Go server, CLI, and builds the Docker agent image.
+# Reference: See docs/installation.md#manual-installation
 # ============================================
 print_info "Building the application..."
 
@@ -169,14 +177,16 @@ if [ -d "dashboard" ]; then
     print_success "Frontend built!"
 fi
 
-# Build Go server
+# 2. Build Go server
+# See docs/installation.md for manual build instructions
 print_info "Building Go server..."
-go build -o hermit ./cmd/hermit/main.go
+go build -o hermit-server ./cmd/hermit/main.go
 print_success "Go server built!"
 
-# Build CLI
+# 3. Build CLI
+# The CLI allows managing the HermitShell from the terminal
 print_info "Building CLI..."
-go build -o hermit-cli ./cmd/cli/main.go
+go build -o hermitshell ./cmd/cli/main.go
 print_success "CLI built!"
 
 # Build Docker image
@@ -186,6 +196,8 @@ print_success "Docker image built!"
 
 # ============================================
 # 4. Setup Environment
+# Configures directories, API keys, and system services.
+# Reference: See docs/installation.md#configuration
 # ============================================
 print_info "Setting up environment..."
 
@@ -238,7 +250,7 @@ Requires=docker.service
 Type=simple
 User=${SERVICE_USER}
 WorkingDirectory=${HERMIT_DIR}
-ExecStart=${HERMIT_DIR}/hermit
+ExecStart=${HERMIT_DIR}/hermit-server
 Restart=always
 RestartSec=10
 StandardOutput=append:${HERMIT_DIR}/data/logs/hermit.log
@@ -265,7 +277,7 @@ else
     echo "  sudo systemctl enable hermit"
     echo "  sudo systemctl start hermit"
     print_info "Starting Hermit in background..."
-    nohup ./hermit > data/logs/hermit.log 2>&1 &
+    nohup ./hermit-server > data/logs/hermit.log 2>&1 &
 fi
 
 # Wait for Hermit to start and get tunnel URL
@@ -310,7 +322,7 @@ echo "    sudo systemctl restart hermit  - Restart"
 echo "    journalctl -u hermit -f       - View logs"
 echo ""
 echo "  Or manually:"
-echo "    ./hermit                      - Run directly"
+echo "    ./hermit-server               - Run directly"
 echo "    tail -f data/logs/hermit.log  - View logs"
 echo ""
 echo "  For production, consider:"

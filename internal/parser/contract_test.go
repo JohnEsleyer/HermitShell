@@ -51,13 +51,13 @@ func TestParseLLMOutputCalendarDateAndTime(t *testing.T) {
 	input := `<calendar><date>2026-03-14</date><time>08:00</time><prompt>Check logs</prompt></calendar>`
 	parsed := ParseLLMOutput(input)
 
-	if parsed.Calendar == nil {
+	if len(parsed.Calendars) == 0 {
 		t.Fatal("expected calendar to be parsed")
 	}
-	if parsed.Calendar.DateTime != "2026-03-14 08:00" {
-		t.Fatalf("expected datetime join, got %q", parsed.Calendar.DateTime)
+	if parsed.Calendars[0].DateTime != "2026-03-14 08:00" {
+		t.Fatalf("expected datetime join, got %q", parsed.Calendars[0].DateTime)
 	}
-	if parsed.Calendar.Prompt != "Check logs" {
-		t.Fatalf("expected prompt, got %q", parsed.Calendar.Prompt)
+	if parsed.Calendars[0].Prompt != "Check logs" {
+		t.Fatalf("expected prompt, got %q", parsed.Calendars[0].Prompt)
 	}
 }
