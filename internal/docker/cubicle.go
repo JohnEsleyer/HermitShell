@@ -79,6 +79,8 @@ func NewClient() (*Client, error) {
 	}
 
 	c.StartMetricsAggregator()
+	// Ensure hermit-network exists
+	c.cli.NetworkCreate(context.Background(), "hermit-network", types.NetworkCreate{})
 	return c, nil
 }
 

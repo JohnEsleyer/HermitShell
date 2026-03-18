@@ -2364,16 +2364,41 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			// Create index.html
 			htmlContent := app.HTML
 			if htmlContent == "" {
-				htmlContent = "<!DOCTYPE html><html><head><title>" + app.Name + "</title></head><body><h1>" + app.Name + "</h1></body></html>"
+				htmlContent = "<h1>" + app.Name + "</h1>"
+			}
+
+			// Ensure basic HTML structure if missing
+			if !strings.Contains(strings.ToLower(htmlContent), "<head>") {
+				htmlContent = "<head><title>" + app.Name + "</title></head>" + htmlContent
+			}
+			if !strings.Contains(strings.ToLower(htmlContent), "<body>") {
+				// Wrap non-head content in body if body is missing
+				headIdx := strings.Index(strings.ToLower(htmlContent), "</head>")
+				if headIdx != -1 {
+					htmlContent = htmlContent[:headIdx+7] + "<body>" + htmlContent[headIdx+7:] + "</body>"
+				} else {
+					htmlContent = "<body>" + htmlContent + "</body>"
+				}
+			}
+			if !strings.Contains(strings.ToLower(htmlContent), "<html>") {
+				htmlContent = "<!DOCTYPE html><html>" + htmlContent + "</html>"
 			}
 
 			// Build index.html with embedded CSS and JS if provided
 			indexHTML := htmlContent
 			if app.CSS != "" {
-				indexHTML = strings.Replace(indexHTML, "</head>", "<style>"+app.CSS+"</style></head>", 1)
+				if strings.Contains(strings.ToLower(indexHTML), "</head>") {
+					indexHTML = strings.Replace(indexHTML, "</head>", "<style>"+app.CSS+"</style></head>", 1)
+				} else if strings.Contains(strings.ToLower(indexHTML), "<body>") {
+					indexHTML = strings.Replace(indexHTML, "<body>", "<body><style>"+app.CSS+"</style>", 1)
+				}
 			}
 			if app.JS != "" {
-				indexHTML = strings.Replace(indexHTML, "</body>", "<script>"+app.JS+"</script></body>", 1)
+				if strings.Contains(strings.ToLower(indexHTML), "</body>") {
+					indexHTML = strings.Replace(indexHTML, "</body>", "<script>"+app.JS+"</script></body>", 1)
+				} else {
+					indexHTML += "<script>" + app.JS + "</script>"
+				}
 			}
 
 			// Create folder and files
