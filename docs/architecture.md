@@ -103,6 +103,7 @@ SQLite database with tables:
 ### Calendar
 - `GET /api/calendar` - List events
 - `POST /api/calendar` - Create event
+- `PUT /api/calendar/:id` - Update event
 - `DELETE /api/calendar/:id` - Delete event
 
 ### Allowlist

@@ -650,6 +650,14 @@ func (d *DB) DeleteCalendarEvent(id int64) error {
 	return err
 }
 
+func (d *DB) UpdateCalendarEvent(id, agentID int64, date, time, prompt string) error {
+	_, err := d.db.Exec(`
+		UPDATE calendar SET agent_id = ?, date = ?, time = ?, prompt = ?
+		WHERE id = ?
+	`, agentID, date, time, prompt, id)
+	return err
+}
+
 type Tunnel struct {
 	ID             int64
 	AgentID        int64

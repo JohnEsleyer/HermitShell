@@ -73,6 +73,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
     // Calendar routes
     api.Get("/calendar", s.HandleListCalendar)
     api.Post("/calendar", s.HandleCreateCalendarEvent)
+    api.Put("/calendar/:id", s.HandleUpdateCalendarEvent)
     api.Delete("/calendar/:id", s.HandleDeleteCalendarEvent)
 
     // ... more routes ...

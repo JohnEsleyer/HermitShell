@@ -259,6 +259,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 
 	api.Get("/calendar", s.HandleListCalendar)
 	api.Post("/calendar", s.HandleCreateCalendarEvent)
+	api.Put("/calendar/:id", s.HandleUpdateCalendarEvent)
 	api.Delete("/calendar/:id", s.HandleDeleteCalendarEvent)
 
 	api.Get("/allowlist", s.HandleListAllowlist)
@@ -1496,6 +1497,23 @@ func (s *Server) HandleCreateCalendarEvent(c *fiber.Ctx) error {
 func (s *Server) HandleDeleteCalendarEvent(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	s.db.DeleteCalendarEvent(id)
+	return c.JSON(fiber.Map{"success": true})
+}
+
+func (s *Server) HandleUpdateCalendarEvent(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	var req struct {
+		AgentID int64  `json:"agentId"`
+		Date    string `json:"date"`
+		Time    string `json:"time"`
+		Prompt  string `json:"prompt"`
+	}
+	c.BodyParser(&req)
+
+	err := s.db.UpdateCalendarEvent(id, req.AgentID, req.Date, req.Time, req.Prompt)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
 	return c.JSON(fiber.Map{"success": true})
 }
 

@@ -225,8 +225,8 @@ export default function App() {
 }
 
 function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('hermit123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   return (
     <div className="h-screen w-full flex items-center justify-center bg-black">
@@ -272,6 +272,9 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
           >
             Login
           </button>
+          <p className="text-xs text-zinc-500 text-center mt-4">
+            Hint: admin / hermit123
+          </p>
         </div>
       </div>
     </div>

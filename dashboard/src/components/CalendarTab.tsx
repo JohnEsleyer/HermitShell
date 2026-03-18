@@ -100,6 +100,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
   const [showDateEvents, setShowDateEvents] = useState<Date | null>(null);
   const [selectedDateForNew, setSelectedDateForNew] = useState<string>('');
   const [newEvent, setNewEvent] = useState({ agentId: 0, date: '', time: '09:00', prompt: '' });
+  const [editEvent, setEditEvent] = useState<CalendarEventWithAgent | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
 
@@ -172,6 +173,21 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
       fetchEvents();
     } catch (err) {
       triggerToast('Failed to delete event', 'error');
+    }
+  };
+
+  const handleUpdate = async (id: number, agentId: number, date: string, time: string, prompt: string) => {
+    try {
+      await fetch(`${API_BASE}/api/calendar/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agentId, date, time, prompt }),
+      });
+      triggerToast('Event updated');
+      setShowEventDetails(null);
+      fetchEvents();
+    } catch (err) {
+      triggerToast('Failed to update event', 'error');
     }
   };
 
@@ -335,7 +351,7 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
               .sort((a, b) => {
                 const dateA = new Date(`${a.date}T${a.time}`);
                 const dateB = new Date(`${b.date}T${b.time}`);
-                return dateA.getTime() - dateB.getTime();
+                return dateB.getTime() - dateA.getTime();
               })
               .map(event => (
                 <div
@@ -450,29 +466,91 @@ export function CalendarTab({ triggerToast, agents }: CalendarTabProps) {
                 <X className="w-5 h-5 text-zinc-400" />
               </button>
             </div>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 text-zinc-400">
-                <Clock className="w-4 h-4" />
-                <span className="font-mono">{showEventDetails.date} at {formatTime12(showEventDetails.time)}</span>
+            {editEvent ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">Agent</label>
+                  <select
+                    value={editEvent.agentId}
+                    onChange={e => setEditEvent({ ...editEvent, agentId: parseInt(e.target.value) })}
+                    className="w-full bg-black border border-zinc-800 rounded-full px-6 py-3 text-white"
+                  >
+                    {agents?.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">Date</label>
+                    <input
+                      type="date"
+                      value={editEvent.date}
+                      onChange={e => setEditEvent({ ...editEvent, date: e.target.value })}
+                      className="w-full bg-black border border-zinc-800 rounded-full px-6 py-3 text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">Time</label>
+                    <input
+                      type="time"
+                      value={editEvent.time}
+                      onChange={e => setEditEvent({ ...editEvent, time: e.target.value })}
+                      className="w-full bg-black border border-zinc-800 rounded-full px-6 py-3 text-white"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">Prompt</label>
+                  <textarea
+                    value={editEvent.prompt}
+                    onChange={e => setEditEvent({ ...editEvent, prompt: e.target.value })}
+                    className="w-full bg-black border border-zinc-800 rounded-2xl px-6 py-3 text-white h-24 resize-none"
+                  />
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setEditEvent(null);
+                      setShowEventDetails(null);
+                    }}
+                    className="flex-1 py-3 text-zinc-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleUpdate(editEvent.id, editEvent.agentId, editEvent.date, editEvent.time, editEvent.prompt)}
+                    className="flex-1 bg-white text-black py-3 rounded-full font-bold"
+                  >
+                    Save
+                  </button>
+                </div>
               </div>
-              <div className="p-4 bg-zinc-900/50 rounded-xl">
-                <p className="text-sm text-zinc-300">{showEventDetails.prompt}</p>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3 text-zinc-400">
+                  <Clock className="w-4 h-4" />
+                  <span className="font-mono">{showEventDetails.date} at {formatTime12(showEventDetails.time)}</span>
+                </div>
+                <div className="p-4 bg-zinc-900/50 rounded-xl">
+                  <p className="text-sm text-zinc-300">{showEventDetails.prompt}</p>
+                </div>
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setEditEvent(showEventDetails)}
+                    className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(showEventDetails.id)}
+                    className="flex-1 py-3 text-red-400 hover:bg-red-400/10 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-3 pt-4">
-                <button
-                  onClick={() => handleDelete(showEventDetails.id)}
-                  className="flex-1 py-3 text-red-400 hover:bg-red-400/10 rounded-xl transition-colors flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
-                <button
-                  onClick={() => setShowEventDetails(null)}
-                  className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
