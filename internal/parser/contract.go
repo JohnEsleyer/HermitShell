@@ -47,7 +47,8 @@ func activeZone(text string) string {
 	if idx == -1 {
 		return text
 	}
-	return text[:idx]
+	// Return everything after the last <end> tag (5 is len("<end>"))
+	return text[idx+5:]
 }
 
 var (
