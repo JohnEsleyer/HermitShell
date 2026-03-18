@@ -7,8 +7,8 @@ all: build
 setup: build-docker
 	@echo "Setup complete! Run 'make run' to start Hermit."
 
-# Build everything (UI + Server + Docker image)
-build: build-ui build-server build-docker
+# Build everything (UI + Server + CLI + Docker image)
+build: build-ui build-server build-cli build-docker
 
 # Build only the frontend
 build-ui:
@@ -21,6 +21,12 @@ build-server:
 	@echo "Building server..."
 	go build -o hermit ./cmd/hermit/main.go
 	@echo "Server built successfully."
+
+# Build CLI
+build-cli:
+	@echo "Building CLI..."
+	go build -o hermit-cli ./cmd/cli/main.go
+	@echo "CLI built successfully."
 
 # Build Docker image for agents
 build-docker:
