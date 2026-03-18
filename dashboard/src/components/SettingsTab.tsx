@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Key, RefreshCw, LogOut, User, Download, Upload, FolderZip, AlertTriangle } from 'lucide-react';
+import { Globe, Key, RefreshCw, LogOut, User, Download, Upload, Archive, AlertTriangle } from 'lucide-react';
 
 const API_BASE = '';
 
@@ -568,7 +568,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       {/* Backup and Restore Section */}
       {/* Docs: See docs/backup-restore.md for backup and restore documentation */}
       <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
-        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><FolderZip className="w-6 h-6" /> Backup & Restore</h2>
+        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><Archive className="w-6 h-6" /> Backup & Restore</h2>
         
         <div className="space-y-8">
           {/* Export Section */}
