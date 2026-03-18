@@ -152,6 +152,7 @@ func (s *Server) HandleCheckAuth(c *fiber.Ctx) error {
 2. **Session**: HTTP-only cookie with user ID
 3. **Default User**: Created on first run with `admin` / `hermit123`
 4. **Must Change Password**: Users forced to change password on first login
+5. **Inline Login Errors**: The dashboard login form displays invalid credential and connectivity failures directly in the UI
 
 ## Database Schema
 

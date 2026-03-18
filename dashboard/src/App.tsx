@@ -129,6 +129,8 @@ export default function App() {
     setAgents([]);
   };
 
+  // handleLogin authenticates dashboard users and returns inline form errors for failed logins.
+  // Docs: See docs/authentication.md for the login API contract and first-login password change flow.
   const handleLogin = async (username: string, password: string) => {
     try {
       const res = await fetch(`${API_BASE}/api/auth/login`, {
@@ -142,13 +144,14 @@ export default function App() {
         setShowLogin(false);
         fetchAgents();
         if (data.mustChangePassword) {
-          triggerToast('Please change your password', 'info');
+          triggerToast('Please change your credentials in the settings dashboard before continuing.', 'info');
         }
-      } else {
-        triggerToast(data.error || 'Login failed', 'error');
+        return null;
       }
+
+      return data.error || 'Invalid username or password.';
     } catch (err) {
-      triggerToast('Login failed', 'error');
+      return 'Unable to reach the HermitShell server. Check that the service is running and try again.';
     }
   };
 
@@ -224,9 +227,32 @@ export default function App() {
   );
 }
 
-function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
+// LoginScreen presents first-time credentials guidance and inline authentication errors.
+// Docs: See docs/authentication.md for the required first-login password rotation policy.
+function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => Promise<string | null> }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // submitLogin keeps login feedback visible inside the form so failed authentication is actionable.
+  // Docs: See docs/frontend-backend-communication.md for how the dashboard calls the auth API.
+  const submitLogin = async () => {
+    setErrorMessage('');
+
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage('Enter both the username and password to sign in.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    const error = await onLogin(username.trim(), password);
+    setIsSubmitting(false);
+
+    if (error) {
+      setErrorMessage(error);
+    }
+  };
 
   return (
     <div className="h-screen w-full flex items-center justify-center bg-black">
@@ -243,7 +269,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
             <circle cx="42" cy="45" r="5" fill="black" />
             <circle cx="60" cy="45" r="5" fill="black" />
           </svg>
-          <h1 className="text-4xl font-black tracking-tighter">HERMIT</h1>
+          <h1 className="text-4xl font-black tracking-tighter">HERMITSHELL</h1>
           <p className="text-zinc-500 mt-2">Agent Orchestration System</p>
         </div>
 
@@ -256,6 +282,7 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
               placeholder="admin"
               value={username}
               onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') void submitLogin(); }}
               className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
@@ -267,14 +294,29 @@ function LoginScreen({ onLogin }: { onLogin: (u: string, p: string) => void }) {
               placeholder="hermit123"
               value={password}
               onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') void submitLogin(); }}
               className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
+
+          <div className="rounded-3xl border border-amber-500/30 bg-amber-500/10 px-5 py-4 text-sm text-amber-100">
+            <p className="font-semibold uppercase tracking-wide text-amber-200">First-time setup</p>
+            <p className="mt-2">Default credentials: <span className="font-mono text-white">admin / hermit123</span>.</p>
+            <p className="mt-2 text-amber-50">Changing these default credentials in the settings dashboard is required before regular use.</p>
+          </div>
+
+          {errorMessage && (
+            <div className="rounded-3xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+              {errorMessage}
+            </div>
+          )}
+
           <button 
-            onClick={() => onLogin(username, password)}
-            className="w-full bg-white text-black py-4 rounded-full font-bold mt-4 hover:bg-zinc-200 transition-colors"
+            onClick={() => void submitLogin()}
+            disabled={isSubmitting}
+            className="w-full bg-white text-black py-4 rounded-full font-bold mt-4 hover:bg-zinc-200 transition-colors disabled:cursor-not-allowed disabled:bg-zinc-300"
           >
-            Login
+            {isSubmitting ? 'Signing in...' : 'Login'}
           </button>
         </div>
       </div>

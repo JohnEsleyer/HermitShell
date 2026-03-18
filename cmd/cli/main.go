@@ -19,8 +19,9 @@ import (
 )
 
 var apiBase = "http://127.0.0.1:3000"
-var version = "v0.5.0"
+var version = "v0.5.1"
 var exitFunc = os.Exit
+var loginFunc = login
 
 type Credentials struct {
 	Username string `json:"username"`
@@ -84,8 +85,16 @@ func login(username, password string) bool {
 	return false
 }
 
+// promptLogin collects credentials for CLI sign-in and explains the default first-run account.
+// Docs: See docs/installation.md for CLI login defaults and required credential rotation guidance.
 func promptLogin() {
 	reader := bufio.NewReader(os.Stdin)
+
+	// First-run guidance mirrors the installation documentation so new operators can sign in immediately.
+	// Docs: See docs/installation.md for the default credentials and required settings update.
+	fmt.Println("First-time login? Use the default credentials: admin / hermit123")
+	fmt.Println("You are required to change these credentials in the settings dashboard after signing in.")
+	fmt.Println()
 
 	fmt.Print("Username: ")
 	username, _ := reader.ReadString('\n')
@@ -102,9 +111,9 @@ func promptLogin() {
 	}
 
 	fmt.Print("Logging in...")
-	if !login(username, password) {
+	if !loginFunc(username, password) {
 		fmt.Println(" failed")
-		fmt.Println("Invalid credentials")
+		fmt.Println("Invalid credentials. If this is your first run, sign in with admin / hermit123 and then change the credentials in the settings dashboard.")
 		exitFunc(1)
 		return
 	}
@@ -129,7 +138,7 @@ func main() {
 	creds, err := loadCredentials()
 	if err == nil && creds.Username != "" && creds.Password != "" {
 		fmt.Print("Auto-login...")
-		if login(creds.Username, creds.Password) {
+		if loginFunc(creds.Username, creds.Password) {
 			fmt.Println(" OK")
 			runCLI()
 			return
@@ -143,7 +152,7 @@ func main() {
 	envPass := os.Getenv("HERMIT_CLI_PASS")
 	if envUser != "" && envPass != "" {
 		fmt.Printf("Logging in as %s from environment...", envUser)
-		if login(envUser, envPass) {
+		if loginFunc(envUser, envPass) {
 			fmt.Println(" OK")
 			saveCredentials(envUser, envPass)
 			runCLI()

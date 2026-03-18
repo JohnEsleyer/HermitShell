@@ -35,7 +35,7 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
             <circle cx="60" cy="45" r="5" fill="black" />
           </svg>
           <div>
-            <span className="text-white font-bold text-sm">HERMIT</span>
+            <span className="text-white font-bold text-sm">HERMITSHELL</span>
             <span className="text-zinc-500 text-[10px] block">AI Agent OS</span>
           </div>
         </div>

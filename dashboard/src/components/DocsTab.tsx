@@ -108,7 +108,7 @@ export function DocsTab() {
           <>
             <div className="bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-2xl p-6">
               <h2 className="text-3xl font-black mb-4 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Hermit AI Agent OS
+                HermitShell AI Agent OS
               </h2>
               <p className="text-zinc-300">
                 A lightweight AI agent orchestrator built with Go, designed for efficient VPS environments. 
@@ -143,7 +143,7 @@ export function DocsTab() {
                   </div>
                   <Arrow />
                   <div className="bg-green-500/20 border border-green-500/30 px-4 py-2 rounded-xl">
-                    <span className="text-green-300 font-medium">Hermit Server</span>
+                    <span className="text-green-300 font-medium">HermitShell Server</span>
                   </div>
                   <Arrow />
                   <div className="bg-purple-500/20 border border-purple-500/30 px-4 py-2 rounded-xl">
@@ -364,7 +364,7 @@ export function DocsTab() {
         {activeSection === 'database' && (
           <>
             <DocCard title="Database Schema" icon={Database} gradient="from-green-500 to-emerald-500">
-              <p className="text-zinc-400 mb-4">Hermit uses SQLite for persistent storage. All data is stored in hermit.db.</p>
+              <p className="text-zinc-400 mb-4">HermitShell uses SQLite for persistent storage. All data is stored in hermit.db.</p>
               
               <div className="space-y-4">
                 <Collapsible title="agents" defaultOpen>

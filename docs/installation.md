@@ -75,7 +75,7 @@ OPENROUTER_API_KEY=sk-or-...
 
 - URL: http://localhost:3000
 - Username: admin
-- Password: hermit123 (change on first login!)
+- Password: hermit123 (required to change in the settings dashboard after first login)
 
 ## Production Setup
 
@@ -146,6 +146,8 @@ cloudflared --version
 ## CLI Usage
 
 HermitShell includes a CLI tool called `hermitshell` to manage the system from the terminal.
+
+On the first CLI run, HermitShell prints the default credentials (`admin / hermit123`) before prompting for login. After signing in, changing those credentials in the settings dashboard is required before regular use.
 
 ### Authentication
 The CLI will prompt for credentials on first use and save them to `~/.hermit/credentials`. You can also automate this by setting these environment variables in your `.env` file:

@@ -22,7 +22,7 @@ import (
 
 // version represents the current release of HermitShell server.
 // Using Major.Minor.Patch versioning scheme.
-var version = "v0.5.0"
+var version = "v0.5.1"
 
 // main is the entry point for the HermitShell server.
 // It initializes dependencies and starts the Go Fiber API server.
