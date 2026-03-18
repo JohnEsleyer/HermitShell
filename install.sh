@@ -82,6 +82,9 @@ if command -v apt-get &> /dev/null; then
         sudo apt-get install -y nodejs
     fi
     
+    # Add Node.js to PATH for this session
+    export PATH=$PATH:/usr/bin/nodejs/bin:/usr/local/bin
+    
     # Install Go if not present
     if ! command -v go &> /dev/null; then
         print_info "Installing Go..."
@@ -198,11 +201,20 @@ EOF
     print_success "Created .env file - please configure your API keys"
 fi
 
-# Create systemd service file (optional, for Linux)
-if [[ "$OS" == "linux-gnu"* ]] && [ "$EUID" -eq 0 ]; then
-    print_info "Creating systemd service..."
-    
-    cat > /etc/systemd/system/hermit.service << 'EOF'
+# Setup systemd for process management
+print_info "Setting up systemd service..."
+
+# Get absolute path of current directory
+HERMIT_DIR=$(pwd)
+
+# Detect user for systemd service
+SERVICE_USER=$(whoami)
+if [ "$EUID" -eq 0 ]; then
+    SERVICE_USER="ubuntu"
+fi
+
+# Create systemd service file
+cat > hermit.service << EOF
 [Unit]
 Description=Hermit AI Agent OS
 After=network.target docker.service
@@ -210,18 +222,36 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/hermitclaw/hermit
-ExecStart=/home/ubuntu/hermitclaw/hermit/hermit
+User=${SERVICE_USER}
+WorkingDirectory=${HERMIT_DIR}
+ExecStart=${HERMIT_DIR}/hermit
 Restart=always
 RestartSec=10
+StandardOutput=append:${HERMIT_DIR}/data/logs/hermit.log
+StandardError=append:${HERMIT_DIR}/data/logs/hermit-error.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
-    
+
+# Create logs directory
+mkdir -p data/logs
+
+# Install systemd service (if running as root)
+if [ "$EUID" -eq 0 ]; then
+    sudo cp hermit.service /etc/systemd/system/hermit.service
     sudo systemctl daemon-reload
-    print_success "Systemd service created! You can enable with: sudo systemctl enable hermit"
+    sudo systemctl enable hermit
+    sudo systemctl start hermit
+    print_success "Systemd service installed and started!"
+else
+    print_warning "Not running as root. To enable auto-start on boot, run:"
+    echo "  sudo cp hermit.service /etc/systemd/system/hermit.service"
+    echo "  sudo systemctl daemon-reload"
+    echo "  sudo systemctl enable hermit"
+    echo "  sudo systemctl start hermit"
+    print_info "Starting Hermit in background..."
+    nohup ./hermit > data/logs/hermit.log 2>&1 &
 fi
 
 # ============================================
@@ -232,11 +262,20 @@ echo "=========================================="
 echo "  Installation Complete!"
 echo "=========================================="
 echo ""
+echo "Systemd Commands (if enabled):"
+echo "  sudo systemctl status hermit   - Check status"
+echo "  sudo systemctl restart hermit  - Restart"
+echo "  sudo systemctl stop hermit    - Stop"
+echo "  journalctl -u hermit -f       - View logs"
+echo ""
+echo "Or manually:"
+echo "  ./hermit                      - Run directly"
+echo "  tail -f data/logs/hermit.log  - View logs"
+echo ""
 echo "Next steps:"
 echo "  1. Configure your API keys in .env (or via dashboard)"
-echo "  2. Run: ./hermit"
-echo "  3. Open: http://localhost:3000"
-echo "  4. Login with: admin / hermit123"
+echo "  2. Open: http://localhost:3000"
+echo "  3. Login with: admin / hermit123"
 echo ""
 echo "For production, consider:"
 echo "  - Running behind a reverse proxy (nginx/traefik)"
