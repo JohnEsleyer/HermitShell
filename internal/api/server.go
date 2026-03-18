@@ -9,10 +9,13 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path"
@@ -278,6 +281,11 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Post("/settings", s.HandleSetSettings)
 	api.Get("/settings/domain-status", s.HandleDomainStatus)
 	api.Get("/time", s.HandleGetTime)
+
+	// Backup and Restore - Export/Import all app data
+	// Docs: See docs/backup-restore.md for detailed documentation
+	api.Get("/backup/export", s.HandleExportBackup)
+	api.Post("/backup/import", s.HandleImportBackup)
 
 	api.Post("/test-contract", s.HandleTestContract)
 
@@ -2547,4 +2555,336 @@ func (s *Server) handleTakeoverInput(agentId int64, chatID, xmlInput string, bot
 	// Log feedback and add <end>
 	feedbackJSON, _ := json.Marshal(feedback)
 	s.db.AddHistory(agentId, "system", "system", string(feedbackJSON)+"\n<end>")
+}
+
+// HandleExportBackup exports all app data to a .zip file.
+// Docs: See docs/backup-restore.md for detailed documentation on backup process.
+// Data included: database (hermit.db), images (data/image), skills (data/skills),
+// agent data (data/agents), and app logs.
+func (s *Server) HandleExportBackup(c *fiber.Ctx) error {
+	// Create a buffer to write the zip file
+	buf := new(bytes.Buffer)
+	zipWriter := zip.NewWriter(buf)
+
+	// Base directories to backup
+	baseDirs := []string{"data", "hermit.log"}
+
+	// Walk through each directory and add files to zip
+	for _, dir := range baseDirs {
+		if _, err := os.Stat(dir); err == nil {
+			err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+
+				// Skip the database WAL and SHM files (they're not needed for restore)
+				if strings.HasSuffix(path, ".db-wal") || strings.HasSuffix(path, ".db-shm") {
+					return nil
+				}
+
+				// Calculate relative path for the archive
+				relPath, err := filepath.Rel(filepath.Dir(dir), path)
+				if err != nil {
+					return err
+				}
+
+				// If it's the root directory itself, skip
+				if relPath == "." {
+					return nil
+				}
+
+				// For files in root like hermit.log
+				if dir == "hermit.log" && path == "hermit.log" {
+					relPath = "hermit.log"
+				}
+
+				// Add file to zip
+				header, err := zip.FileInfoHeader(info)
+				if err != nil {
+					return err
+				}
+				header.Name = relPath
+				header.Method = zip.Deflate
+
+				writer, err := zipWriter.CreateHeader(header)
+				if err != nil {
+					return err
+				}
+
+				if !info.IsDir() {
+					content, err := os.ReadFile(path)
+					if err != nil {
+						return err
+					}
+					_, err = writer.Write(content)
+					if err != nil {
+						return err
+					}
+				}
+
+				return nil
+			})
+			if err != nil {
+				return c.Status(500).JSON(fiber.Map{"error": "Failed to archive " + dir + ": " + err.Error()})
+			}
+		}
+	}
+
+	// Close the zip writer
+	if err := zipWriter.Close(); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create zip: " + err.Error()})
+	}
+
+	// Generate filename with timestamp
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	filename := fmt.Sprintf("hermit-backup-%s.zip", timestamp)
+
+	// Set headers for file download
+	c.Set("Content-Type", "application/zip")
+	c.Set("Content-Disposition", "attachment; filename="+filename)
+
+	// Send the zip file
+	return c.Send(buf.Bytes())
+}
+
+// HandleImportBackup restores app data from a .zip file.
+// Docs: See docs/backup-restore.md for detailed documentation on restore process.
+// Requires password verification for security.
+// Warning: This will overwrite existing data.
+func (s *Server) HandleImportBackup(c *fiber.Ctx) error {
+	// Parse request with password
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	// Verify password by checking against stored credentials
+	session := c.Cookies("session")
+	if session == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "Not authenticated"})
+	}
+
+	userID, _ := strconv.ParseInt(session, 10, 64)
+	username, _, err := s.db.GetUserByID(userID)
+	if err != nil || username == "" {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid session"})
+	}
+
+	// Verify password
+	_, _, err = s.db.VerifyUser(username, req.Password)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"error": "Invalid password"})
+	}
+
+	// Get the uploaded file
+	file, err := c.FormFile("backup")
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "No backup file uploaded"})
+	}
+
+	// Open the uploaded file
+	openedFile, err := file.Open()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to open backup file"})
+	}
+	defer openedFile.Close()
+
+	// Read the entire file content
+	zipContent, err := io.ReadAll(openedFile)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to read backup file"})
+	}
+
+	// Create a zip reader from the content
+	zipReader, err := zip.NewReader(bytes.NewReader(zipContent), int64(len(zipContent)))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid backup file format"})
+	}
+
+	// Create a temporary directory for extraction
+	tempDir, err := os.MkdirTemp("", "hermit-restore-*")
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create temp directory"})
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Extract all files from the zip - convert to slice first
+	files := make([]*zip.File, len(zipReader.File))
+	copy(files, zipReader.File)
+
+	for _, zipFile := range files {
+		filename := zipFile.Name
+
+		// Security check: prevent path traversal
+		if strings.Contains(filename, "..") || strings.HasPrefix(filename, "/") {
+			continue
+		}
+
+		targetPath := filepath.Join(tempDir, filename)
+
+		// Create directory if needed
+		if zipFile.FileInfo().IsDir() {
+			os.MkdirAll(targetPath, 0755)
+			continue
+		}
+
+		// Ensure parent directory exists
+		parentDir := filepath.Dir(targetPath)
+		if err := os.MkdirAll(parentDir, 0755); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to create directory: " + err.Error()})
+		}
+
+		// Extract file
+		source, err := zipFile.Open()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to read zip entry: " + err.Error()})
+		}
+		defer source.Close()
+
+		dest, err := os.Create(targetPath)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to create file: " + err.Error()})
+		}
+		defer dest.Close()
+
+		if _, err := io.Copy(dest, source); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to extract file: " + err.Error()})
+		}
+	}
+
+	// Now restore the files to their proper locations
+	// 1. Restore database
+	dbFile := filepath.Join(tempDir, "data", "hermit.db")
+	if _, err := os.Stat(dbFile); err == nil {
+		// Close existing database connection before replacing
+		// The main app will need to reconnect after restart
+		currentDB := "data/hermit.db"
+		backupDB := "data/hermit.db.backup"
+
+		// Backup current database
+		if _, err := os.Stat(currentDB); err == nil {
+			os.Rename(currentDB, backupDB)
+		}
+
+		// Copy new database
+		if err := copyFile(dbFile, currentDB); err != nil {
+			// Restore backup if failed
+			if _, err := os.Stat(backupDB); err == nil {
+				os.Rename(backupDB, currentDB)
+			}
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to restore database: " + err.Error()})
+		}
+
+		// Remove backup after successful restore
+		if _, err := os.Stat(backupDB); err == nil {
+			os.Remove(backupDB)
+		}
+	}
+
+	// 2. Restore data/image directory
+	imageDir := filepath.Join(tempDir, "data", "image")
+	if _, err := os.Stat(imageDir); err == nil {
+		targetImageDir := "data/image"
+		os.MkdirAll(targetImageDir, 0755)
+
+		err := filepath.Walk(imageDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			relPath, _ := filepath.Rel(imageDir, path)
+			targetPath := filepath.Join(targetImageDir, relPath)
+			return copyFile(path, targetPath)
+		})
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to restore images: " + err.Error()})
+		}
+	}
+
+	// 3. Restore data/skills directory
+	skillsDir := filepath.Join(tempDir, "data", "skills")
+	if _, err := os.Stat(skillsDir); err == nil {
+		targetSkillsDir := "data/skills"
+		os.MkdirAll(targetSkillsDir, 0755)
+
+		err := filepath.Walk(skillsDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			relPath, _ := filepath.Rel(skillsDir, path)
+			targetPath := filepath.Join(targetSkillsDir, relPath)
+			return copyFile(path, targetPath)
+		})
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to restore skills: " + err.Error()})
+		}
+	}
+
+	// 4. Restore data/agents directory
+	agentsDir := filepath.Join(tempDir, "data", "agents")
+	if _, err := os.Stat(agentsDir); err == nil {
+		targetAgentsDir := "data/agents"
+		os.MkdirAll(targetAgentsDir, 0755)
+
+		err := filepath.Walk(agentsDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+			relPath, _ := filepath.Rel(agentsDir, path)
+			targetPath := filepath.Join(targetAgentsDir, relPath)
+			parentDir := filepath.Dir(targetPath)
+			os.MkdirAll(parentDir, 0755)
+			return copyFile(path, targetPath)
+		})
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to restore agent data: " + err.Error()})
+		}
+	}
+
+	// 5. Restore hermit.log if exists
+	logFile := filepath.Join(tempDir, "hermit.log")
+	if _, err := os.Stat(logFile); err == nil {
+		copyFile(logFile, "hermit.log")
+	}
+
+	// Log the restore action
+	s.db.LogAction(0, username, "system", "backup_restored")
+
+	return c.JSON(fiber.Map{
+		"success": true,
+		"message": "Backup restored successfully. Some changes may require restart to take effect.",
+	})
+}
+
+// copyFile copies a file from src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destDir := filepath.Dir(dst)
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return err
+	}
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }

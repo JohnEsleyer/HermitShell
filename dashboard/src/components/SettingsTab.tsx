@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Globe, Key, RefreshCw, LogOut, User } from 'lucide-react';
+import { Globe, Key, RefreshCw, LogOut, User, Download, Upload, FolderZip, AlertTriangle } from 'lucide-react';
 
 const API_BASE = '';
 
@@ -67,6 +67,99 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     newUsername: '',
     newPassword: '',
   });
+
+  // Backup/Restore state
+  const [importPassword, setImportPassword] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Handle Export - downloads all app data as a zip file
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/backup/export`, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+
+      // Get the blob and download it
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Extract filename from content-disposition header or generate one
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `hermit-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+      
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+      
+      triggerToast('Backup exported successfully');
+    } catch (err) {
+      console.error('Export error:', err);
+      triggerToast('Failed to export backup', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Handle Import - uploads a backup zip file
+  const handleImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const fileInput = document.getElementById('backup-file') as HTMLInputElement;
+    const file = fileInput?.files?.[0];
+    
+    if (!file) {
+      triggerToast('Please select a backup file', 'error');
+      return;
+    }
+
+    if (!importPassword) {
+      triggerToast('Please enter your password', 'error');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append('backup', file);
+      formData.append('password', importPassword);
+
+      const response = await fetch(`${API_BASE}/api/backup/import`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Import failed');
+      }
+
+      triggerToast('Backup imported successfully. Some changes may require restart.');
+      setImportPassword('');
+      if (fileInput) fileInput.value = '';
+    } catch (err: any) {
+      console.error('Import error:', err);
+      triggerToast(err.message || 'Failed to import backup', 'error');
+    } finally {
+      setImporting(false);
+    }
+  };
 
   // Fetch settings and current time from backend.
   // Docs: See docs/time-management.md for time settings persistence.
@@ -470,6 +563,86 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
         >
           <LogOut className="w-4 h-4" /> Logout
         </button>
+      </div>
+
+      {/* Backup and Restore Section */}
+      {/* Docs: See docs/backup-restore.md for backup and restore documentation */}
+      <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
+        <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><FolderZip className="w-6 h-6" /> Backup & Restore</h2>
+        
+        <div className="space-y-8">
+          {/* Export Section */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <Download className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-lg font-semibold">Export Backup</h3>
+            </div>
+            <p className="text-sm text-zinc-400">
+              Download all your data including database, images, skills, agent configurations, and logs as a .zip file.
+              Use this to move your data to a new VPS or create a backup.
+            </p>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-3 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              {exporting ? 'Exporting...' : 'Download Backup'}
+            </button>
+          </div>
+
+          {/* Import Section */}
+          <div className="border-t border-zinc-800 pt-8 space-y-4">
+            <div className="flex items-center gap-3">
+              <Upload className="w-5 h-5 text-amber-400" />
+              <h3 className="text-lg font-semibold">Import Backup</h3>
+            </div>
+            
+            <div className="bg-amber-950/30 border border-amber-900/50 rounded-xl p-4 flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="text-sm text-amber-200">
+                <strong>Warning:</strong> Importing a backup will overwrite existing data. 
+                This action cannot be undone. Make sure to export your current data first if needed.
+              </div>
+            </div>
+
+            <form onSubmit={handleImport} className="space-y-4">
+              <div>
+                <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">
+                  Select Backup File (.zip)
+                </label>
+                <input
+                  type="file"
+                  id="backup-file"
+                  accept=".zip"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">
+                  Your Password (required for security)
+                </label>
+                <input
+                  type="password"
+                  value={importPassword}
+                  onChange={e => setImportPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-600"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={importing}
+                className="bg-amber-600 hover:bg-amber-500 text-white px-6 py-3 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+              >
+                <Upload className="w-4 h-4" />
+                {importing ? 'Importing...' : 'Import Backup'}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );
