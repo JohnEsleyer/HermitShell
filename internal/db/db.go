@@ -12,12 +12,14 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"github.com/JohnEsleyer/HermitShell/internal/crypto"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type DB struct {
-	db *sql.DB
+	db        *sql.DB
+	cryptoKey []byte
 }
 
 type Agent struct {
@@ -89,6 +91,10 @@ func NewDB(path string) (*DB, error) {
 
 func (d *DB) Close() error {
 	return d.db.Close()
+}
+
+func (d *DB) SetCryptoKey(key []byte) {
+	d.cryptoKey = key
 }
 
 func (d *DB) migrate() error {
@@ -479,6 +485,12 @@ func (d *DB) GetAllAuditLogs(category string, limit int) ([]*AuditLog, error) {
 	return logs, nil
 }
 func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
+	if d.cryptoKey != nil {
+		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
+		if err == nil {
+			content = "enc:" + encrypted
+		}
+	}
 	_, err := d.db.Exec(`
 		INSERT INTO history (agent_id, user_id, role, content)
 		VALUES (?, ?, ?, ?)
@@ -501,6 +513,12 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 		e := &HistoryEntry{}
 		if err := rows.Scan(&e.ID, &e.AgentID, &e.UserID, &e.Role, &e.Content, &e.CreatedAt); err != nil {
 			return nil, err
+		}
+		if d.cryptoKey != nil && len(e.Content) > 4 && e.Content[:4] == "enc:" {
+			decrypted, err := crypto.Decrypt(e.Content[4:], d.cryptoKey)
+			if err == nil {
+				e.Content = decrypted
+			}
 		}
 		entries = append(entries, e)
 	}

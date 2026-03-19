@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/JohnEsleyer/HermitShell/internal/cloudflare"
+	"github.com/JohnEsleyer/HermitShell/internal/crypto"
 	"github.com/JohnEsleyer/HermitShell/internal/db"
 	"github.com/JohnEsleyer/HermitShell/internal/docker"
 	"github.com/JohnEsleyer/HermitShell/internal/llm"
@@ -35,6 +36,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/websocket/v2"
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/option"
 )
@@ -194,10 +196,11 @@ type Server struct {
 
 	containerStats map[string]docker.ContainerStats
 
-	// Telegram polling management
-	// Reference: See docs/telegram-integration.md for long polling architecture.
 	pollers   map[int64]context.CancelFunc
 	pollersMu sync.Mutex
+
+	wsClients map[*websocket.Conn]bool
+	wsMutex   sync.Mutex
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
@@ -215,6 +218,7 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 		tokenCounters:  make(map[string]int),
 		containerStats: make(map[string]docker.ContainerStats),
 		pollers:        make(map[int64]context.CancelFunc),
+		wsClients:      make(map[*websocket.Conn]bool),
 	}
 
 	// Set default agent image if not already set or if it's the old remote image
@@ -232,6 +236,11 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 
 	s.setupRoutes(app)
 	s.app = app
+
+	// Initialize crypto key from default admin password (or a setting if we had one)
+	// In a real scenario, this would be more dynamic.
+	s.db.SetCryptoKey(crypto.DeriveKey("hermit123"))
+
 	return s
 }
 
@@ -243,7 +252,34 @@ func (s *Server) Listen(port string) error {
 // Docs: See docs/api-endpoints.md for how to add new endpoints.
 // Docs: See docs/frontend-backend-communication.md for frontend integration.
 func (s *Server) setupRoutes(app *fiber.App) {
+	app.Use("/api/ws", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+
 	api := app.Group("/api")
+
+	api.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		s.wsMutex.Lock()
+		s.wsClients[c] = true
+		s.wsMutex.Unlock()
+
+		defer func() {
+			s.wsMutex.Lock()
+			delete(s.wsClients, c)
+			s.wsMutex.Unlock()
+			c.Close()
+		}()
+
+		for {
+			if _, _, err := c.ReadMessage(); err != nil {
+				break
+			}
+		}
+	}))
 
 	api.Post("/auth/login", s.HandleLogin)
 	api.Post("/auth/logout", s.HandleLogout)
@@ -329,13 +365,19 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 
 	userText := strings.TrimSpace(req.Message)
+	if userText != "" && strings.HasPrefix(userText, "enc:") {
+		decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
+		if err == nil {
+			userText = decrypted
+		}
+	}
+
 	if userText == "" {
 		return c.Status(400).JSON(fiber.Map{"error": "Message cannot be empty"})
 	}
 
 	userID := "mobile"
 	chatID := "mobile-chat"
-	tempBot := telegram.NewBot(agent.TelegramToken)
 
 	authHeader := c.Get("Authorization")
 	session := strings.TrimPrefix(authHeader, "Bearer ")
@@ -383,7 +425,7 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	client := s.getLLMClientForAgent(agent)
 	if client == nil {
-		s.db.AddHistory(agent.ID, "system", "system", "Error: LLM client not configured")
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "Error: LLM client not configured")
 		return c.Status(500).JSON(fiber.Map{"error": "LLM client not configured"})
 	}
 
@@ -396,21 +438,42 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
 
 	if err != nil {
-		s.db.AddHistory(agent.ID, "system", "system", "LLM Error: "+err.Error())
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
 		return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
 	}
 
 	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
-	s.db.AddHistory(agent.ID, userID, "user", userText)
-	s.db.AddHistory(agent.ID, "assistant", "assistant", response)
+	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
 
-	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil) // pass nil instead of tempBot to block Telegram spam
 	if len(feedback) > 0 {
 		feedbackJSON, _ := json.Marshal(feedback)
-		s.db.AddHistory(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
 	}
 
-	return c.JSON(fiber.Map{"response": response})
+	parsed := parser.ParseLLMOutput(response)
+	var files []string
+	for _, action := range parsed.Actions {
+		if action.Type == "GIVE" {
+			files = append(files, action.Value)
+		}
+	}
+
+	finalResponse := response
+	finalParsedMsg := parsed.Message
+	if encrypted, err := crypto.Encrypt(finalResponse, crypto.DeriveKey("hermit123")); err == nil {
+		finalResponse = "enc:" + encrypted
+	}
+	if encrypted, err := crypto.Encrypt(finalParsedMsg, crypto.DeriveKey("hermit123")); err == nil {
+		finalParsedMsg = "enc:" + encrypted
+	}
+
+	return c.JSON(fiber.Map{
+		"response": finalResponse,
+		"message":  finalParsedMsg,
+		"files":    files,
+	})
 }
 
 func (s *Server) HandleServeApp(c *fiber.Ctx) error {
@@ -1927,7 +1990,7 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 
 	// Only add to history if userId is not a test placeholder
 	if req.UserID != "test" && req.UserID != "test-user" && agent != nil {
-		s.db.AddHistory(agent.ID, "assistant", "assistant", req.Payload)
+		s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", req.Payload)
 	}
 
 	return c.JSON(fiber.Map{
@@ -2030,7 +2093,7 @@ func (s *Server) ProcessTelegramUpdate(agent *db.Agent, update telegram.Update) 
 	}
 
 	// Log user message
-	s.db.AddHistory(agent.ID, userID, "user", userText)
+	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
 
 	// Ensure container is running before processing AI request
 	if _, err := s.ensureAgentContainer(agent); err != nil {
@@ -2299,7 +2362,7 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		if thinkingMsgID != "" {
 			tempBot.DeleteMessage(chatID, thinkingMsgID)
 		}
-		s.db.AddHistory(agent.ID, "system", "system", "Error: LLM client not configured")
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "Error: LLM client not configured")
 		s.db.LogAction(agent.ID, "agent", "llm_error", "LLM client not configured")
 		return
 	}
@@ -2320,7 +2383,7 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		if thinkingMsgID != "" {
 			tempBot.DeleteMessage(chatID, thinkingMsgID)
 		}
-		s.db.AddHistory(agent.ID, "system", "system", "LLM Error: "+err.Error())
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
 		s.db.LogAction(agent.ID, "agent", "llm_error", fmt.Sprintf("Error: %v", err))
 		return
 	}
@@ -2334,7 +2397,7 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	}
 
 	// Log agent response (Full trace)
-	s.db.AddHistory(agent.ID, "assistant", "assistant", response)
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
 
 	// Execute the XML actions from the response
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
@@ -2342,7 +2405,7 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	// Commit with <end> and feedback
 	if len(feedback) > 0 {
 		feedbackJSON, _ := json.Marshal(feedback)
-		s.db.AddHistory(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
 	}
 }
 
@@ -2731,7 +2794,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				skillPath := filepath.Join("data", "skills", skillName)
 				content, err := os.ReadFile(skillPath)
 				if err == nil {
-					s.db.AddHistory(agentID, "system", "system", "Skill loaded ["+skillName+"]:\n\n"+string(content)+"\n<end>")
+					s.addHistoryAndBroadcast(agentID, "system", "system", "Skill loaded ["+skillName+"]:\n\n"+string(content)+"\n<end>")
 					s.db.LogAction(agentID, "system", "action_skill", fmt.Sprintf("Skill: %s", action.Value))
 					feedback = append(feedback, map[string]interface{}{"action": "SKILL", "skill": action.Value, "status": "SUCCESS"})
 				} else {
@@ -2773,7 +2836,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				if len(events) == 0 {
 					eventList += "No calendar events found."
 				}
-				s.db.AddHistory(agentID, "system", "system", eventList+"\n<end>")
+				s.addHistoryAndBroadcast(agentID, "system", "system", eventList+"\n<end>")
 				feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_LIST", "status": "SUCCESS", "events": events})
 			}
 
@@ -2787,7 +2850,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				if err != nil {
 					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_DELETE", "status": "ERROR", "error": err.Error()})
 				} else {
-					s.db.AddHistory(agentID, "system", "system", fmt.Sprintf("Calendar Event Deleted: ID %d\n<end>", eventID))
+					s.addHistoryAndBroadcast(agentID, "system", "system", fmt.Sprintf("Calendar Event Deleted: ID %d\n<end>", eventID))
 					feedback = append(feedback, map[string]interface{}{"action": "CALENDAR_DELETE", "status": "SUCCESS", "id": eventID})
 				}
 			}
@@ -2885,7 +2948,7 @@ func (s *Server) handleTakeoverInput(agentId int64, chatID, xmlInput string, bot
 
 	// Log feedback and add <end>
 	feedbackJSON, _ := json.Marshal(feedback)
-	s.db.AddHistory(agentId, "system", "system", string(feedbackJSON)+"\n<end>")
+	s.addHistoryAndBroadcast(agentId, "system", "system", string(feedbackJSON)+"\n<end>")
 }
 
 // HandleExportBackup exports all app data to a .zip file.
@@ -3219,3 +3282,31 @@ func copyFile(src, dst string) error {
 	_, err = io.Copy(destFile, sourceFile)
 	return err
 }
+
+func (s *Server) BroadcastMessage(msg string) {
+	s.wsMutex.Lock()
+	defer s.wsMutex.Unlock()
+	for client := range s.wsClients {
+		if err := client.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
+			client.Close()
+			delete(s.wsClients, client)
+		}
+	}
+}
+
+func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content string) {
+	s.db.AddHistory(agentID, userID, role, content)
+
+	// Broadcast to WebSockets
+	payload := map[string]interface{}{
+		"type":     "new_message",
+		"agent_id": agentID,
+		"user_id":  userID,
+		"role":     role,
+		"content":  content,
+	}
+	if jsonMsg, err := json.Marshal(payload); err == nil {
+		s.BroadcastMessage(string(jsonMsg))
+	}
+}
+
