@@ -199,7 +199,7 @@ func runCLI() {
 		fmt.Println("Commands:")
 		fmt.Println("  agents      Manage agents")
 		fmt.Println("  containers  Manage containers")
-		fmt.Println("  tunnel      Get tunnel URL")
+		fmt.Println("  tunnel      Manage tunnel (enable/disable/status)")
 		fmt.Println("  status      Check server status")
 		fmt.Println("  start       Start server service")
 		fmt.Println("  stop        Stop server service")
@@ -210,7 +210,8 @@ func runCLI() {
 		fmt.Println("Examples:")
 		fmt.Println("  hermitshell agents list")
 		fmt.Println("  hermitshell status")
-		fmt.Println("  hermitshell tunnel")
+		fmt.Println("  hermitshell tunnel enable")
+		fmt.Println("  hermitshell tunnel disable")
 	}
 
 	if len(os.Args) < 2 {
@@ -229,7 +230,7 @@ func runCLI() {
 	case "containers":
 		handleContainers(os.Args[2:], containersCmd, containersListCmd)
 	case "tunnel":
-		handleTunnel(tunnelCmd)
+		handleTunnel(os.Args[2:], tunnelCmd)
 	case "status":
 		handleStatus()
 	case "start":
@@ -288,9 +289,40 @@ func handleContainers(args []string, parent, list *flag.FlagSet) {
 	printContainers()
 }
 
-// handleTunnel tests the Cloudflare tunnel and displays the public URL.
-// Reference: See docs/cloudflared.md for tunnel management and URL extraction.
-func handleTunnel(tunnel *flag.FlagSet) {
+// handleTunnel manages the Cloudflare tunnel (enable, disable, status)
+func handleTunnel(args []string, tunnel *flag.FlagSet) {
+	if len(args) > 0 {
+		switch args[0] {
+		case "enable", "disable":
+			tunnelEnabled := args[0] == "enable"
+			reqData := map[string]interface{}{"tunnelEnabled": tunnelEnabled}
+			jsonData, _ := json.Marshal(reqData)
+
+			req, _ := http.NewRequest("POST", apiBase+"/api/settings", bytes.NewBuffer(jsonData))
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error connecting to server: %v\n", err)
+				exitFunc(1)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode == 200 {
+				fmt.Printf("Tunnel %sd successfully.\n", args[0])
+			} else {
+				fmt.Printf("Failed to %s tunnel.\n", args[0])
+			}
+			return
+		case "status":
+			// continue to print status below
+		default:
+			fmt.Printf("Unknown tunnel command: %s\n", args[0])
+			fmt.Println("Available commands: enable, disable, status")
+			exitFunc(1)
+			return
+		}
+	}
+
 	// First check if cloudflared binary is available
 	if err := checkCloudflaredBinary(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
@@ -328,10 +360,7 @@ func handleTunnel(tunnel *flag.FlagSet) {
 			fmt.Println("Note: Tunnel may be still provisioning. Try again in a few seconds.")
 		}
 	} else {
-		fmt.Println("Tunnel not available")
-		if domainMode, _ := result["domainMode"].(bool); domainMode {
-			fmt.Println("Domain mode is enabled. Use your configured domain instead.")
-		}
+		fmt.Println("Tunnel is disabled or not available")
 		exitFunc(1)
 		return
 	}

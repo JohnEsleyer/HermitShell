@@ -170,11 +170,10 @@ export function HealthTab() {
           </>
         ))}
 
-        {metricCard('network', <Network className="w-4 h-4" />, metrics.tunnelURL || metrics.domain ? 20 : 90, showSkeleton ? <div className="h-12 rounded-lg bg-zinc-800 animate-pulse" /> : (
+        {metricCard('network', <Network className="w-4 h-4" />, metrics.tunnelURL ? 20 : 90, showSkeleton ? <div className="h-12 rounded-lg bg-zinc-800 animate-pulse" /> : (
           <div className="flex flex-col gap-1 text-xs">
-            <span className={`${metrics.tunnelURL || metrics.domain ? 'text-emerald-300' : 'text-red-300'}`}>{metrics.domainMode ? 'Domain' : metrics.tunnelURL ? 'Tunnel Active' : 'Offline'}</span>
+            <span className={`${metrics.tunnelURL ? 'text-emerald-300' : 'text-red-300'}`}>{metrics.tunnelURL ? 'Tunnel Active' : 'Offline'}</span>
             {metrics.tunnelURL && <div className="text-zinc-400 break-all">{metrics.tunnelURL}</div>}
-            {metrics.domain && metrics.domainMode && <div className="text-zinc-400 break-all">https://{metrics.domain}</div>}
           </div>
         ))}
       </div>

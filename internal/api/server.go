@@ -286,9 +286,9 @@ func (s *Server) setupRoutes(app *fiber.App) {
 
 	api.Get("/settings", s.HandleGetSettings)
 	api.Post("/settings", s.HandleSetSettings)
-	api.Get("/settings/domain-status", s.HandleDomainStatus)
 	api.Get("/tunnel-url", s.HandleGetTunnelURL)
 	api.Get("/time", s.HandleGetTime)
+	api.Get("/apps", s.HandleGetAllApps)
 
 	// Backup and Restore - Export/Import all app data
 	// Docs: See docs/backup-restore.md for detailed documentation
@@ -662,20 +662,16 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 		}
 	}
 
-	domainMode, _ := s.db.GetSetting("domain_mode")
+	tunnelEnabled, _ := s.db.GetSetting("tunnel_enabled")
 	tunnelURL := ""
-	if domainMode != "true" {
+	if tunnelEnabled != "false" {
 		tunnelURL = s.tunnels.GetURL("dashboard")
 	}
-
-	domain, _ := s.db.GetSetting("domain")
 
 	return c.JSON(fiber.Map{
 		"host":       metrics.Host,
 		"containers": allContainers,
 		"tunnelURL":  tunnelURL,
-		"domain":     domain,
-		"domainMode": domainMode == "true",
 	})
 }
 
@@ -1715,8 +1711,10 @@ func (s *Server) HandleDeleteAllowlist(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
-	domainMode, _ := s.db.GetSetting("domain_mode")
-	domain, _ := s.db.GetSetting("domain")
+	tunnelEnabled, _ := s.db.GetSetting("tunnel_enabled")
+	if tunnelEnabled == "" {
+		tunnelEnabled = "true"
+	}
 	openrouterKey, _ := s.db.GetSetting("openrouter_api_key")
 	openaiKey, _ := s.db.GetSetting("openai_api_key")
 	anthropicKey, _ := s.db.GetSetting("anthropic_api_key")
@@ -1727,7 +1725,7 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 	tunnelURL := s.tunnels.GetURL("dashboard")
 	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
 
-	if domainMode != "true" && tunnelURL == "" {
+	if tunnelEnabled == "true" && tunnelURL == "" {
 		port, _ := strconv.Atoi(os.Getenv("PORT"))
 		if port == 0 {
 			port = 3000
@@ -1735,12 +1733,20 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		go s.tunnels.StartQuickTunnel("dashboard", port)
 	}
 
+	status := "Disabled"
+	if tunnelEnabled == "true" {
+		if isHealthy {
+			status = "Active (Quick Tunnel)"
+		} else {
+			status = "Provisioning..."
+		}
+	}
+
 	return c.JSON(fiber.Map{
-		"domainMode":    domainMode == "true",
-		"domain":        domain,
+		"tunnelEnabled": tunnelEnabled == "true",
 		"tunnelURL":     tunnelURL,
 		"tunnelHealthy": isHealthy,
-		"status":        s.getTunnelStatus(domainMode == "true", isHealthy),
+		"status":        status,
 		"openrouterKey": openrouterKey != "",
 		"openaiKey":     openaiKey != "",
 		"anthropicKey":  anthropicKey != "",
@@ -1752,23 +1758,16 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 }
 
 func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
-	domainMode, _ := s.db.GetSetting("domain_mode")
-	if domainMode == "true" {
-		domain, _ := s.db.GetSetting("domain")
-		if domain != "" {
-			if !strings.HasPrefix(domain, "http") {
-				domain = "https://" + domain
-			}
-			return c.JSON(fiber.Map{
-				"url":     domain,
-				"healthy": true,
-			})
-		}
+	tunnelEnabled, _ := s.db.GetSetting("tunnel_enabled")
+	if tunnelEnabled == "false" {
+		return c.JSON(fiber.Map{
+			"url":     "",
+			"healthy": false,
+		})
 	}
 
 	tunnelURL := s.tunnels.GetURL("dashboard")
 
-	// If tunnel is active but no URL yet, wait a bit
 	if tunnelURL == "" && s.tunnels.IsRunning("dashboard") {
 		for i := 0; i < 5; i++ {
 			time.Sleep(1 * time.Second)
@@ -1779,13 +1778,11 @@ func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
 		}
 	}
 
-	// If still no tunnel URL, trigger it if not in domain mode
-	if tunnelURL == "" && domainMode != "true" {
+	if tunnelURL == "" {
 		port, _ := strconv.Atoi(os.Getenv("PORT"))
 		if port == 0 {
 			port = 3000
 		}
-		// Synchronously wait for it (StartQuickTunnel has its own timeout)
 		newURL, err := s.tunnels.StartQuickTunnel("dashboard", port)
 		if err == nil {
 			tunnelURL = newURL
@@ -1800,22 +1797,9 @@ func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
 	})
 }
 
-func (s *Server) getTunnelStatus(domainMode, healthy bool) string {
-	if domainMode {
-		return "Domain Mode Active"
-	}
-	if healthy {
-		return "Active (Quick Tunnel)"
-	}
-	return "Provisioning..."
-}
-
-// HandleSetSettings saves system settings including timezone and time offset.
-// Docs: See docs/time-management.md for time management flow and persistence.
 func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	var req struct {
-		DomainMode    string `json:"domainMode"`
-		Domain        string `json:"domain"`
+		TunnelEnabled *bool  `json:"tunnelEnabled"`
 		OpenrouterKey string `json:"openrouterKey"`
 		OpenaiKey     string `json:"openaiKey"`
 		AnthropicKey  string `json:"anthropicKey"`
@@ -1825,13 +1809,17 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	}
 	c.BodyParser(&req)
 
-	if req.DomainMode != "" {
-		s.db.SetSetting("domain_mode", req.DomainMode)
+	if req.TunnelEnabled != nil {
+		if *req.TunnelEnabled {
+			s.db.SetSetting("tunnel_enabled", "true")
+		} else {
+			s.db.SetSetting("tunnel_enabled", "false")
+			if s.tunnels != nil {
+				s.tunnels.StopTunnel("dashboard")
+			}
+		}
 	}
-	if req.Domain != "" {
-		s.db.SetSetting("domain", req.Domain)
-	}
-	// Save timezone and time offset settings
+
 	if req.Timezone != "" {
 		s.db.SetSetting("timezone", req.Timezone)
 	}
@@ -1840,16 +1828,6 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	}
 
 	return c.JSON(fiber.Map{"success": true})
-}
-
-func (s *Server) HandleDomainStatus(c *fiber.Ctx) error {
-	domain, _ := s.db.GetSetting("domain")
-
-	return c.JSON(fiber.Map{
-		"domain":     domain,
-		"configured": domain != "",
-		"message":    "DNS A record should point to this server's IP",
-	})
 }
 
 // HandleGetTime returns the current time with user's offset applied.
@@ -2522,6 +2500,51 @@ func (s *Server) HandleListApps(c *fiber.Ctx) error {
 	return c.JSON(apps)
 }
 
+func (s *Server) HandleGetAllApps(c *fiber.Ctx) error {
+	agents, err := s.db.ListAgents()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to retrieve agents"})
+	}
+
+	var allApps []fiber.Map
+	appsDir := "/app/workspace/apps"
+
+	for _, agent := range agents {
+		if agent.Status != "running" || !agent.Active {
+			continue
+		}
+
+		containerName := agent.ContainerID
+		if containerName == "" {
+			containerName = "agent-" + strings.ToLower(agent.Name)
+		}
+
+		files, err := s.docker.ListContainerFiles(containerName, appsDir)
+		if err != nil {
+			continue
+		}
+
+		for _, f := range files {
+			if f.IsDir {
+				allApps = append(allApps, fiber.Map{
+					"agentId":     agent.ID,
+					"agentName":   agent.Name,
+					"profilePic":  agent.ProfilePic,
+					"containerId": containerName,
+					"name":        f.Name,
+					"url":         fmt.Sprintf("/apps/%d/%s", agent.ID, f.Name),
+				})
+			}
+		}
+	}
+
+	if allApps == nil {
+		allApps = []fiber.Map{}
+	}
+
+	return c.JSON(allApps)
+}
+
 // ExecuteXMLPayload processes parsed XML tags from LLM response.
 // Docs: See docs/xml-tags.md for all supported tags.
 // Handles: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
@@ -2683,17 +2706,8 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		if agentID > 0 && bot != nil {
 			s.db.LogAction(agentID, "system", "action_app_deployed", fmt.Sprintf("App: %s deployed", appName))
 
-			domainMode, _ := s.db.GetSetting("domain_mode")
-			var publicURL string
-			if domainMode == "true" {
-				domain, _ := s.db.GetSetting("domain")
-				if !strings.HasPrefix(domain, "http") {
-					domain = "https://" + domain
-				}
-				publicURL = fmt.Sprintf("%s/apps/%d/%s", domain, agentID, appName)
-			} else {
-				publicURL = s.tunnels.GetURL("dashboard") + fmt.Sprintf("/apps/%d/%s", agentID, appName)
-			}
+			tunnelURL := s.tunnels.GetURL("dashboard")
+			publicURL := tunnelURL + fmt.Sprintf("/apps/%d/%s", agentID, appName)
 
 			bot.SendMessage(chatID, "🚀 App Deployed: "+appName+"\n\nAccess it here: "+publicURL)
 

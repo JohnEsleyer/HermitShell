@@ -107,6 +107,5 @@ export interface SystemMetrics {
   host: HostMetrics;
   containers: ContainerStats[];
   tunnelURL?: string;
-  domain?: string;
-  domainMode?: boolean;
+  tunnelEnabled?: boolean;
 }

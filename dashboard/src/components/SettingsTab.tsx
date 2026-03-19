@@ -12,8 +12,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
   const [mode, setMode] = useState<'tunnel' | 'domain'>('tunnel');
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
-    domainMode: false,
-    domain: '',
+    tunnelEnabled: true,
     tunnelURL: '',
     tunnelHealthy: false,
     timezone: 'UTC',
@@ -24,10 +23,10 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     currentDate: '',
   });
   const [saving, setSaving] = useState(false);
-  
+
   // Real local time (from browser)
   const [localTime, setLocalTime] = useState('');
-  
+
   // Update local time every second
   useEffect(() => {
     const updateLocalTime = () => {
@@ -81,7 +80,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
         method: 'GET',
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         throw new Error('Export failed');
       }
@@ -91,7 +90,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      
+
       // Extract filename from content-disposition header or generate one
       const contentDisposition = response.headers.get('Content-Disposition');
       let filename = `hermit-backup-${new Date().toISOString().slice(0, 10)}.zip`;
@@ -99,13 +98,13 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
         const match = contentDisposition.match(/filename="(.+)"/);
         if (match) filename = match[1];
       }
-      
+
       a.download = filename;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       a.remove();
-      
+
       triggerToast('Backup exported successfully');
     } catch (err) {
       console.error('Export error:', err);
@@ -118,10 +117,10 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
   // Handle Import - uploads a backup zip file
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const fileInput = document.getElementById('backup-file') as HTMLInputElement;
     const file = fileInput?.files?.[0];
-    
+
     if (!file) {
       triggerToast('Please select a backup file', 'error');
       return;
@@ -173,7 +172,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       ]);
       const data = await settingsRes.json();
       const timeData = await timeRes.json();
-      
+
       setSettings({
         ...data,
         timezone: data.timezone || 'UTC',
@@ -182,8 +181,6 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
         currentTime12: timeData.time12 || '',
         currentDate: timeData.date || '',
       });
-      setMode(data.domainMode ? 'domain' : 'tunnel');
-
       setHasApiKeys({
         openrouterKey: !!data.openrouterKey,
         openaiKey: !!data.openaiKey,
@@ -211,8 +208,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     setSaving(true);
     try {
       const payload: any = {
-        domainMode: mode === 'domain' ? 'true' : 'false',
-        domain: settings.domain,
+        tunnelEnabled: settings.tunnelEnabled,
         timezone: settings.timezone,
         timeOffset: settings.timeOffset,
         ...specificKeys
@@ -285,12 +281,24 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><Globe className="w-6 h-6" /> Public URL Configuration</h2>
 
-        <div className="flex gap-4 mb-8">
-          <button onClick={() => setMode('tunnel')} className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${mode === 'tunnel' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}>Cloudflare Tunnel</button>
-          <button onClick={() => setMode('domain')} className={`px-6 py-3 rounded-full font-bold text-sm transition-all ${mode === 'domain' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}>Custom Domain</button>
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h3 className="font-bold">Enable Cloudflare Tunnel</h3>
+            <p className="text-sm text-zinc-400">Allows external access to the dashboard and apps.</p>
+          </div>
+          <button
+            onClick={() => {
+              const newValue = !settings.tunnelEnabled;
+              setSettings({ ...settings, tunnelEnabled: newValue });
+              handleSave({ tunnelEnabled: newValue });
+            }}
+            className={`w-14 h-8 rounded-full transition-colors relative ${settings.tunnelEnabled ? 'bg-emerald-500' : 'bg-zinc-700'}`}
+          >
+            <div className={`absolute top-1 left-1 bg-white w-6 h-6 rounded-full transition-transform ${settings.tunnelEnabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
+          </button>
         </div>
 
-        {mode === 'tunnel' ? (
+        {settings.tunnelEnabled && (
           <div className="space-y-4 animate-in fade-in">
             <p className="text-sm text-zinc-400">The system automatically orchestrates cloudflared CLI to create a tunnel URL for the dashboard and agents.</p>
             <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 flex items-center justify-between">
@@ -305,36 +313,6 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
             <div className="flex items-center gap-2 text-xs text-zinc-500 mt-2">
               <div className={`w-2 h-2 rounded-full ${settings.tunnelHealthy ? 'bg-emerald-500 animate-pulse' : 'bg-zinc-500'}`}></div>
               Tunnel health check: {settings.tunnelHealthy ? 'OK' : 'Disconnected'}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4 animate-in fade-in">
-            <p className="text-sm text-zinc-400">Use your own domain or subdomain. The system will automatically configure Let's Encrypt for HTTPS.</p>
-            <div>
-              <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">Base Domain</label>
-              <div className="flex gap-4">
-                <input
-                  type="text"
-                  value={settings.domain}
-                  onChange={e => setSettings({ ...settings, domain: e.target.value })}
-                  placeholder="e.g. mydomain.com"
-                  className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-600"
-                />
-                <button
-                  onClick={() => handleSave()}
-                  disabled={saving}
-                  className="bg-white text-black px-6 py-3 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50"
-                >
-                  Verify & Save
-                </button>
-              </div>
-            </div>
-            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 mt-4">
-              <div className="text-sm text-zinc-300 mb-2">DNS Configuration Instructions:</div>
-              <ul className="text-xs text-zinc-500 list-disc list-inside space-y-1">
-                <li>Point an A record for your domain to this server's IP address.</li>
-                <li>Point a Wildcard A record (*.mydomain.com) for agent apps.</li>
-              </ul>
             </div>
           </div>
         )}
@@ -409,7 +387,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
 
       <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-3">System Time</h2>
-        
+
         {loading ? (
           <div className="space-y-6">
             <div className="bg-zinc-900/50 rounded-2xl p-6 border border-zinc-800">
@@ -433,7 +411,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
                   Your computer
                 </div>
               </div>
-              
+
               {/* System Time (preview based on selected offset) */}
               <div className="bg-blue-500/10 rounded-2xl p-6 border border-blue-500/30">
                 <div className="text-xs text-blue-400 uppercase tracking-wider mb-1">Preview (after offset)</div>
@@ -468,11 +446,10 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
                     onClick={() => {
                       setSettings(s => ({ ...s, timeOffset: preset.value }));
                     }}
-                    className={`py-3 px-4 rounded-xl text-sm font-medium transition-all ${
-                      settings.timeOffset === preset.value
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
-                    }`}
+                    className={`py-3 px-4 rounded-xl text-sm font-medium transition-all ${settings.timeOffset === preset.value
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                      }`}
                   >
                     <div className="font-bold">{preset.label}</div>
                     <div className="text-xs opacity-70">{preset.desc}</div>
@@ -481,41 +458,41 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
               </div>
             </div>
 
-          <div className="flex justify-between items-center pt-2">
-            <p className="text-xs text-zinc-500">
-              This offset is applied to all scheduled events and the dashboard clock.
-            </p>
-            <button
-              onClick={async () => {
-                setSaving(true);
-                try {
-                  const res = await fetch(`${API_BASE}/api/settings`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      timeOffset: settings.timeOffset,
-                      timezone: settings.timezone,
-                    }),
-                  });
-                  if (res.ok) {
-                    triggerToast('Time settings saved');
-                    const timeRes = await fetch(`${API_BASE}/api/time`);
-                    const timeData = await timeRes.json();
-                    setSettings(s => ({ ...s, currentTime: timeData.time, currentTime12: timeData.time12, currentDate: timeData.date }));
-                  } else {
+            <div className="flex justify-between items-center pt-2">
+              <p className="text-xs text-zinc-500">
+                This offset is applied to all scheduled events and the dashboard clock.
+              </p>
+              <button
+                onClick={async () => {
+                  setSaving(true);
+                  try {
+                    const res = await fetch(`${API_BASE}/api/settings`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        timeOffset: settings.timeOffset,
+                        timezone: settings.timezone,
+                      }),
+                    });
+                    if (res.ok) {
+                      triggerToast('Time settings saved');
+                      const timeRes = await fetch(`${API_BASE}/api/time`);
+                      const timeData = await timeRes.json();
+                      setSettings(s => ({ ...s, currentTime: timeData.time, currentTime12: timeData.time12, currentDate: timeData.date }));
+                    } else {
+                      triggerToast('Failed to save', 'error');
+                    }
+                  } catch (err) {
                     triggerToast('Failed to save', 'error');
                   }
-                } catch (err) {
-                  triggerToast('Failed to save', 'error');
-                }
-                setSaving(false);
-              }}
-              disabled={saving}
-              className="bg-white text-black px-8 py-3 rounded-full text-sm font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50"
-            >
-              {saving ? 'Saving...' : 'Save Time Settings'}
-            </button>
-          </div>
+                  setSaving(false);
+                }}
+                disabled={saving}
+                className="bg-white text-black px-8 py-3 rounded-full text-sm font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save Time Settings'}
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -569,7 +546,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
       {/* Docs: See docs/backup-restore.md for backup and restore documentation */}
       <div className="bg-black border border-zinc-800 rounded-[2.5rem] p-8">
         <h2 className="text-2xl font-bold mb-6 flex items-center gap-3"><Archive className="w-6 h-6" /> Backup & Restore</h2>
-        
+
         <div className="space-y-8">
           {/* Export Section */}
           <div className="space-y-4">
@@ -597,11 +574,11 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
               <Upload className="w-5 h-5 text-amber-400" />
               <h3 className="text-lg font-semibold">Import Backup</h3>
             </div>
-            
+
             <div className="bg-amber-950/30 border border-amber-900/50 rounded-xl p-4 flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-amber-200">
-                <strong>Warning:</strong> Importing a backup will overwrite existing data. 
+                <strong>Warning:</strong> Importing a backup will overwrite existing data.
                 This action cannot be undone. Make sure to export your current data first if needed.
               </div>
             </div>
@@ -618,7 +595,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
                   className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-zinc-800 file:text-zinc-300 hover:file:bg-zinc-700"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2">
                   Your Password (required for security)
