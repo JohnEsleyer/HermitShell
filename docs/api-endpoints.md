@@ -99,7 +99,6 @@ func (s *Server) setupRoutes(app *fiber.App) {
     // Settings
     api.Get("/settings", s.HandleGetSettings)
     api.Post("/settings", s.HandleSetSettings)
-    api.Get("/settings/domain-status", s.HandleDomainStatus)
     api.Get("/tunnel-url", s.HandleGetTunnelURL)
 
     // Backup and Restore
@@ -224,22 +223,22 @@ func (s *Server) HandleGetLogs(c *fiber.Ctx) error {
 
 ## Cheatsheet
 
-| HTTP Method | Fiber Function | Route Pattern |
-|-------------|----------------|---------------|
-| GET | `api.Get("/path", handler)` | List/Get |
-| POST | `api.Post("/path", handler)` | Create |
-| PUT | `api.Put("/path/:id", handler)` | Update |
-| DELETE | `api.Delete("/path/:id", handler)` | Delete |
+| HTTP Method | Fiber Function                     | Route Pattern |
+| ----------- | ---------------------------------- | ------------- |
+| GET         | `api.Get("/path", handler)`        | List/Get      |
+| POST        | `api.Post("/path", handler)`       | Create        |
+| PUT         | `api.Put("/path/:id", handler)`    | Update        |
+| DELETE      | `api.Delete("/path/:id", handler)` | Delete        |
 
-| Operation | Code |
-|-----------|------|
-| Parse body | `c.BodyParser(&struct)` |
-| Get URL param | `c.Params("id")` |
-| Get query param | `c.Query("name", "default")` |
-| Get cookie | `c.Cookies("session")` |
-| Set cookie | `c.Cookie(&fiber.Cookie{...})` |
-| JSON response | `c.JSON(data)` |
-| Error response | `c.Status(500).JSON(...)` |
+| Operation       | Code                           |
+| --------------- | ------------------------------ |
+| Parse body      | `c.BodyParser(&struct)`        |
+| Get URL param   | `c.Params("id")`               |
+| Get query param | `c.Query("name", "default")`   |
+| Get cookie      | `c.Cookies("session")`         |
+| Set cookie      | `c.Cookie(&fiber.Cookie{...})` |
+| JSON response   | `c.JSON(data)`                 |
+| Error response  | `c.Status(500).JSON(...)`      |
 
 ## Adding a New Endpoint
 

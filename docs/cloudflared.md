@@ -180,15 +180,15 @@ func (m *TunnelManager) StopTunnel(id string) {
 
 ## Cheatsheet
 
-| Operation | File | Function |
-|-----------|------|----------|
-| New Manager | `tunnel.go:31` | `NewTunnelManager` |
-| Start Tunnel | `tunnel.go:43` | `StartQuickTunnel` |
-| Tunnel Loop | `tunnel.go:73` | `runTunnelLoop` |
-| Stop Tunnel | `tunnel.go:161` | `StopTunnel` |
-| Get URL | `tunnel.go:178` | `GetURL` |
+| Operation    | File            | Function            |
+| ------------ | --------------- | ------------------- |
+| New Manager  | `tunnel.go:31`  | `NewTunnelManager`  |
+| Start Tunnel | `tunnel.go:43`  | `StartQuickTunnel`  |
+| Tunnel Loop  | `tunnel.go:73`  | `runTunnelLoop`     |
+| Stop Tunnel  | `tunnel.go:161` | `StopTunnel`        |
+| Get URL      | `tunnel.go:178` | `GetURL`            |
 | Health Check | `tunnel.go:191` | `CheckTunnelHealth` |
-| Check Binary | `tunnel.go:16` | `CheckBinary` |
+| Check Binary | `tunnel.go:16`  | `CheckBinary`       |
 
 ## Tunnel Usage in Server
 
@@ -214,21 +214,6 @@ curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloud
 chmod +x /usr/local/bin/cloudflared
 ```
 
-## Domain Mode
-
-If you have a public domain and want to use it instead of Cloudflare Quick Tunnels:
-
-1. Go to **Settings** in the dashboard.
-2. Enable **Domain Mode**.
-3. Enter your **Domain Name** (e.g., `hermit.example.com`).
-4. Set up an A record or CNAME pointing to your server's IP.
-5. Configure a reverse proxy like Nginx or Traefik (see [Installation Guide](./installation.md)).
-
-When Domain Mode is enabled, the system will:
-- Stop automatic tunnel creation.
-- Use your domain for Telegram webhooks.
-- Assume you are handling SSL via your reverse proxy.
-
 ## Key Points
 
 1. **Quick Tunnels**: Uses `cloudflared tunnel --url` (no login required).
@@ -237,7 +222,6 @@ When Domain Mode is enabled, the system will:
 4. **Auto-Restart**: Tunnel loop restarts on failure with 5s backoff.
 5. **Multiple Tunnels**: Can run multiple tunnels with different IDs.
 6. **Health Checks**: HTTP GET to verify tunnel is accessible.
-7. **Domain Mode**: Toggle between Cloudflare tunnels and custom domain.
 
 ## Related Files
 

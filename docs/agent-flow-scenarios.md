@@ -190,7 +190,7 @@ HermitShell uses long polling for Telegram (no webhook needed). Tunnels are opti
 On startup (`./hermit-server`):
 
 1. Dashboard starts on localhost:3000
-2. Optional: Dashboard public URL created (cloudflared tunnel or domain)
+2. Optional: Dashboard public URL created (cloudflared tunnel)
 3. Telegram polling starts for agents with tokens
 4. Health monitor checks tunnel reachability (if enabled)
 

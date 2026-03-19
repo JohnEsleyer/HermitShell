@@ -49,10 +49,7 @@ HermitShell treats public URLs as **optional** runtime dependencies:
 - Dashboard gets its own tunnel
 - Agents can share dashboard tunnel or have dedicated tunnels
 
-### Domain Mode (Optional)
-- Operators provide custom domains
-- HTTPS via Let's Encrypt (CertMagic)
-- Single entry point for all services
+
 
 ## Tunnel Health Monitoring
 
@@ -67,7 +64,7 @@ The metrics panel reads real host and container data:
 
 - **Host Metrics:** CPU, memory, disk from `/proc` (via gopsutil)
 - **Container Metrics:** CPU, memory from Docker stats
-- **Network:** Tunnel/domain connectivity status
+- **Network:** Tunnel connectivity status
 - Auto-refresh every 2 seconds for near real-time visualization
 
 ## Database Schema
