@@ -193,6 +193,11 @@ type Server struct {
 	tokenCounters map[string]int
 
 	containerStats map[string]docker.ContainerStats
+
+	// Telegram polling management
+	// Reference: See docs/telegram-integration.md for long polling architecture.
+	pollers   map[int64]context.CancelFunc
+	pollersMu sync.Mutex
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
@@ -209,6 +214,7 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 		contextStore:   make(map[string][]string),
 		tokenCounters:  make(map[string]int),
 		containerStats: make(map[string]docker.ContainerStats),
+		pollers:        make(map[int64]context.CancelFunc),
 	}
 
 	// Set default agent image if not already set or if it's the old remote image
@@ -294,8 +300,6 @@ func (s *Server) setupRoutes(app *fiber.App) {
 
 	api.Post("/telegram/send-code", s.HandleTelegramSendCode)
 	api.Post("/telegram/verify", s.HandleTelegramVerify)
-	api.Post("/webhook", s.HandleWebhook)
-	api.Post("/webhook/:agentId", s.HandleAgentWebhook)
 
 	// Agent Specific Skills
 	api.Get("/agents/:id/skills", s.HandleListAgentSkills)
@@ -925,6 +929,17 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	// Log agent creation
 	s.db.LogAction(id, "system", "agent_created", fmt.Sprintf("Agent '%s' created with provider=%s, model=%s", a.Name, a.Provider, a.Model))
 
+	// Start Telegram polling for this agent if token is provided
+	if a.TelegramToken != "" {
+		go func() {
+			time.Sleep(1 * time.Second) // Give DB time to settle
+			agent, _ := s.db.GetAgent(id)
+			if agent != nil {
+				s.StartPollingForAgent(agent)
+			}
+		}()
+	}
+
 	// Create agent-specific skills folder with context.md
 	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
 	os.MkdirAll(agentSkillsPath, 0755)
@@ -1018,11 +1033,20 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 	if err := s.db.UpdateAgent(existing); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// Restart polling if Telegram token changed
+	if req.TelegramToken != "" {
+		s.StartPollingForAgent(existing)
+	}
+
 	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) HandleDeleteAgent(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+
+	// Stop polling for this agent before deletion
+	s.StopPollingForAgent(id)
 
 	// Get agent to delete its container
 	agent, _ := s.db.GetAgent(id)
@@ -1824,24 +1848,6 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	})
 }
 
-func (s *Server) HandleWebhook(c *fiber.Ctx) error {
-	var update telegram.Update
-	if err := c.BodyParser(&update); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
-	}
-
-	if update.Message == nil || update.Message.Text == "" {
-		return c.SendStatus(200)
-	}
-
-	chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
-	userText := strings.TrimSpace(update.Message.Text)
-
-	s.handleTelegramCommand(chatID, userText)
-
-	return c.SendStatus(200)
-}
-
 func (s *Server) ensureAgentContainer(agent *db.Agent) (string, error) {
 	if agent == nil {
 		return "hermit-test", nil
@@ -1879,23 +1885,12 @@ func (s *Server) ensureAgentContainer(agent *db.Agent) (string, error) {
 	return containerName, nil
 }
 
-// HandleAgentWebhook receives Telegram updates and processes messages.
-// Docs: See docs/telegram-integration.md for complete Telegram flow.
-// Docs: See docs/security-measures.md for allowlist authorization.
-func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
-	agentId, _ := strconv.ParseInt(c.Params("agentId"), 10, 64)
-	agent, err := s.db.GetAgent(agentId)
-	if err != nil || agent == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
-	}
-
-	var update telegram.Update
-	if err := c.BodyParser(&update); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
-	}
-
+// ProcessTelegramUpdate processes a Telegram update from polling.
+// This method decouples the message processing logic from the transport mechanism.
+// Reference: See docs/telegram-integration.md for polling architecture.
+func (s *Server) ProcessTelegramUpdate(agent *db.Agent, update telegram.Update) {
 	if update.Message == nil || update.Message.Text == "" {
-		return c.SendStatus(200)
+		return
 	}
 
 	chatID := fmt.Sprintf("%d", update.Message.Chat.ID)
@@ -1904,7 +1899,7 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 
 	// Log incoming message
 	log.Printf("[Telegram] Agent=%s, From=%s(@%s), Message=%s", agent.Name, userID, update.Message.From.Username, userText)
-	s.db.LogAction(agentId, "agent", "telegram_received", fmt.Sprintf("From: %s(@%s), Message: %s", userID, update.Message.From.Username, userText))
+	s.db.LogAction(agent.ID, "agent", "telegram_received", fmt.Sprintf("From: %s(@%s), Message: %s", userID, update.Message.From.Username, userText))
 
 	// Authorization check
 	allowed := false
@@ -1933,21 +1928,22 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 	}
 
 	// Log the authorization attempt
-	s.db.LogAction(agentId, "agent", "telegram_message", fmt.Sprintf("From: %s (ID: %s), Allowed: %v, Reason: %s", update.Message.From.Username, userID, allowed, authReason))
+	s.db.LogAction(agent.ID, "agent", "telegram_message", fmt.Sprintf("From: %s (ID: %s), Allowed: %v, Reason: %s", update.Message.From.Username, userID, allowed, authReason))
 
 	if !allowed {
 		tempBot := telegram.NewBot(agent.TelegramToken)
 		tempBot.SendMessage(chatID, fmt.Sprintf("You are not authorized to use this agent.\n\nDebug info:\n- Your ID: %s\n- Your username: @%s\n- Allowed users: %s", userID, update.Message.From.Username, agent.AllowedUsers))
-		return c.SendStatus(200)
+		return
 	}
 
 	// Handle Commands
 	if strings.HasPrefix(userText, "/") {
-		return s.handleAgentCommand(agent, chatID, userText)
+		s.handleAgentCommand(agent, chatID, userText)
+		return
 	}
 
 	// Log user message
-	s.db.AddHistory(agentId, userID, "user", userText)
+	s.db.AddHistory(agent.ID, userID, "user", userText)
 
 	// Ensure container is running before processing AI request
 	if _, err := s.ensureAgentContainer(agent); err != nil {
@@ -1960,12 +1956,98 @@ func (s *Server) HandleAgentWebhook(c *fiber.Ctx) error {
 
 	if takeoverOn {
 		tempBot := telegram.NewBot(agent.TelegramToken)
-		s.handleTakeoverInput(agentId, chatID, userText, tempBot)
+		s.handleTakeoverInput(agent.ID, chatID, userText, tempBot)
 	} else {
 		go s.processAgentAIRequest(agent, chatID, userID, userText)
 	}
+}
 
-	return c.SendStatus(200)
+// StartAgentPoller starts a long-polling goroutine for a specific agent.
+// It runs in a loop, fetching updates from Telegram and processing them.
+// The poller stops when the context is cancelled.
+// Reference: See docs/telegram-integration.md for polling architecture.
+func (s *Server) StartAgentPoller(ctx context.Context, agent *db.Agent) {
+	bot := telegram.NewBot(agent.TelegramToken)
+
+	// Clear any existing webhook before polling
+	if err := bot.DeleteWebhook(); err != nil {
+		log.Printf("Agent %s: Failed to delete webhook: %v", agent.Name, err)
+	}
+
+	var offset int64 = 0
+	log.Printf("Agent %s: Starting Telegram poller (offset=%d)", agent.Name, offset)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("Agent %s: Stopping Telegram poller", agent.Name)
+			return
+		default:
+			// 30 second timeout for long polling
+			updates, err := bot.GetUpdates(offset, 30)
+			if err != nil {
+				log.Printf("Agent %s: Polling error: %v", agent.Name, err)
+				time.Sleep(5 * time.Second) // backoff on error
+				continue
+			}
+
+			for _, update := range updates {
+				if update.UpdateID >= offset {
+					offset = update.UpdateID + 1 // Advance offset to acknowledge
+				}
+				// Process update concurrently so polling doesn't block
+				go s.ProcessTelegramUpdate(agent, update)
+			}
+		}
+	}
+}
+
+// StartPollingForAgent starts a new polling goroutine for an agent.
+// If a poller already exists for this agent, it will be stopped first.
+// Reference: See docs/telegram-integration.md for polling architecture.
+func (s *Server) StartPollingForAgent(agent *db.Agent) {
+	if agent.TelegramToken == "" {
+		log.Printf("Agent %s: No Telegram token, skipping poller start", agent.Name)
+		return
+	}
+
+	// Stop existing poller if any
+	s.StopPollingForAgent(agent.ID)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	s.pollersMu.Lock()
+	s.pollers[agent.ID] = cancel
+	s.pollersMu.Unlock()
+
+	go s.StartAgentPoller(ctx, agent)
+	log.Printf("Agent %s: Poller started", agent.Name)
+}
+
+// StopPollingForAgent stops the polling goroutine for an agent.
+// Reference: See docs/telegram-integration.md for polling architecture.
+func (s *Server) StopPollingForAgent(agentID int64) {
+	s.pollersMu.Lock()
+	defer s.pollersMu.Unlock()
+
+	if cancel, exists := s.pollers[agentID]; exists {
+		cancel()
+		delete(s.pollers, agentID)
+		log.Printf("Agent ID %d: Poller stopped", agentID)
+	}
+}
+
+// StopAllPollers stops all active polling goroutines.
+// Reference: See docs/telegram-integration.md for polling architecture.
+func (s *Server) StopAllPollers() {
+	s.pollersMu.Lock()
+	defer s.pollersMu.Unlock()
+
+	for agentID, cancel := range s.pollers {
+		cancel()
+		log.Printf("Agent ID %d: Poller stopped", agentID)
+	}
+	s.pollers = make(map[int64]context.CancelFunc)
 }
 
 func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error {
@@ -1990,17 +2072,8 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 		}
 		statusMsg += fmt.Sprintf("• Container: `%s` (%s)\n", agent.ContainerID, containerStatus)
 
-		info, err := bot.GetWebhookInfo()
-		if err != nil {
-			statusMsg += "• Webhook: ❌ Error fetching\n"
-		} else {
-			webhookStatus := "Mismatch ⚠️"
-			currentTunnel := s.tunnels.GetURL("dashboard")
-			if strings.HasPrefix(info.URL, currentTunnel) {
-				webhookStatus = "Active ✅"
-			}
-			statusMsg += fmt.Sprintf("• Webhook: %s (`%s`)\n", webhookStatus, info.URL)
-		}
+		// Show polling status instead of webhook
+		statusMsg += "• Connection: Long Polling Active ✅\n"
 
 		statusMsg += fmt.Sprintf("\n🔐 *Authorization*\n")
 		statusMsg += fmt.Sprintf("• Allowed Users: `%s`\n", agent.AllowedUsers)
@@ -2011,12 +2084,18 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 			statusMsg += "• Status: ⚠️ Restricted\n"
 		}
 
-		statusMsg += fmt.Sprintf("\n🌐 *Dashboard*: `%s`\n", s.tunnels.GetURL("dashboard"))
+		tunnelURL := ""
+		if s.tunnels != nil {
+			tunnelURL = s.tunnels.GetURL("dashboard")
+		}
+		if tunnelURL != "" {
+			statusMsg += fmt.Sprintf("\n🌐 *Dashboard*: `%s`\n", tunnelURL)
+		}
 
 		bot.SendMessage(chatID, statusMsg)
 
 	case "/help":
-		helpMsg := "🤖 *Hermit Agent Commands*\n\n"
+		helpMsg := "🤖 *HermitShell Agent Commands*\n\n"
 		helpMsg += "• /status - Show configuration & health\n"
 		helpMsg += "• /clear - Wipe chat context\n"
 		helpMsg += "• /reset - Restart container\n"

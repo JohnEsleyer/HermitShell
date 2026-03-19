@@ -22,7 +22,7 @@ import (
 
 // version represents the current release of HermitShell server.
 // Using Major.Minor.Patch versioning scheme.
-var version = "v0.6.0"
+var version = "v0.7.0"
 
 // main is the entry point for the HermitShell server.
 // It initializes dependencies and starts the Go Fiber API server.
@@ -161,29 +161,9 @@ func main() {
 					return
 				}
 				log.Printf("==> Dashboard Public URL: %s", url)
-
-				// Initial webhook update with retries
-				go func() {
-					log.Printf("Waiting for tunnel %s to propagate...", url)
-					// Wait for the URL to be reachable from our side first
-					for i := 0; i < 30; i++ {
-						if tunnelManager.CheckTunnelHealth("dashboard", 5*time.Second) {
-							log.Printf("Tunnel %s is reachable, setting up webhooks...", url)
-							break
-						}
-						time.Sleep(5 * time.Second)
-					}
-
-					// Now try to set webhooks with retries
-					for i := 0; i < 20; i++ {
-						updateAgentWebhooks(database, tunnelManager, url)
-						time.Sleep(20 * time.Second)
-					}
-				}()
 			}()
 
 			go tunnelHealthMonitor(tunnelManager, portInt, dbPath)
-			go webhookHealthMonitor(database, tunnelManager)
 		}
 	}
 
@@ -196,54 +176,24 @@ func main() {
 	// Reference: See docs/api-endpoints.md
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
+	// Start Telegram polling for all existing agents with tokens
+	// Reference: See docs/telegram-integration.md for long polling architecture.
+	go func() {
+		time.Sleep(2 * time.Second) // Give server time to initialize
+		agents, _ := database.ListAgents()
+		for _, a := range agents {
+			if a.TelegramToken != "" {
+				apiServer.StartPollingForAgent(a)
+				log.Printf("Started Telegram poller for agent: %s", a.Name)
+			}
+		}
+	}()
+
 	log.Printf("Hermit %s (Go Fiber) starting on :%s ...", version, port)
 	log.Printf("Dashboard available at: http://localhost:%s/", port)
 
 	if err := apiServer.Listen(port); err != nil {
 		log.Fatal(err)
-	}
-}
-
-func updateAgentWebhooks(database *db.DB, tm *cloudflare.TunnelManager, baseURL string) {
-	agents, err := database.ListAgents()
-	if err != nil {
-		log.Printf("Failed to list agents: %v", err)
-		return
-	}
-	for _, a := range agents {
-		if a.TelegramToken != "" {
-			tempBot := telegram.NewBot(a.TelegramToken)
-			webhookURL := fmt.Sprintf("%s/api/webhook/%d", baseURL, a.ID)
-
-			// Check if already set
-			info, err := tempBot.GetWebhookInfo()
-			if err == nil && info.URL == webhookURL {
-				continue
-			}
-
-			// Try to set webhook
-			if err := tempBot.SetWebhook(webhookURL); err != nil {
-				// Only log if it's not a resolution error (to avoid noise during propagation)
-				// unless it's been a while.
-				if !strings.Contains(err.Error(), "Failed to resolve host") {
-					log.Printf("Failed to set webhook for agent %d: %v", a.ID, err)
-				}
-			} else {
-				log.Printf("SUCCESS: Webhook set for agent %d: %s", a.ID, webhookURL)
-			}
-		}
-	}
-}
-
-func webhookHealthMonitor(database *db.DB, tm *cloudflare.TunnelManager) {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		url := tm.GetURL("dashboard")
-		if url != "" {
-			updateAgentWebhooks(database, tm, url)
-		}
 	}
 }
 

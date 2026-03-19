@@ -449,7 +449,7 @@ export function DocsTab() {
                 <div className="space-y-6">
                   {[
                     { step: 1, title: 'Telegram Message', desc: 'User sends message via Telegram', icon: Send, color: 'cyan' },
-                    { step: 2, title: 'Webhook Received', desc: 'Server receives at /webhook/:agentId', icon: Globe, color: 'blue' },
+                    { step: 2, title: 'Long Polling', desc: 'Server polls Telegram for new messages', icon: Globe, color: 'blue' },
                     { step: 3, title: 'Container Started', desc: 'Docker container starts if not running', icon: Container, color: 'orange' },
                     { step: 4, title: 'Context Loaded', desc: 'System prompt + history + skills sent to LLM', icon: Brain, color: 'purple' },
                     { step: 5, title: 'LLM Processing', desc: 'AI generates XML response', icon: Cpu, color: 'pink' },
