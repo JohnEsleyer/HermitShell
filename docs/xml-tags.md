@@ -8,15 +8,15 @@ Hermit agents communicate with the system using XML-like tags. These tags are pa
 
 ## Tag Reference
 
-### `<message>` - Send Telegram Message
+### `<message>` - Send User Message
 
-Send a message to the user via Telegram.
+Send a message to the active user transport. In Telegram mode it goes to Telegram; in HermitChat mode it is pushed into the HermitChat conversation as the agent.
 
 ```xml
 <message>Hello! I've completed your task.</message>
 ```
 
-**Response**: Message sent to Telegram user.
+**Response**: Message sent to the active user transport.
 
 ---
 
@@ -34,7 +34,7 @@ Run a command inside the agent's Docker container.
 
 ### `<give>` - Send File to User
 
-Send a file from the container's `/app/workspace/out/` folder to the user via Telegram.
+Send a file from the container's `/app/workspace/out/` folder to the active user transport. Telegram sends it as a document/photo/video depending on the file type; HermitChat exposes it as an attachment in the conversation.
 
 ```xml
 <give>report.pdf</give>

@@ -216,6 +216,9 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
                   onClick={() => setFormData({ ...formData, provider })}
                   className={`w-full text-left px-8 py-5 rounded-full border transition-all ${formData.provider === provider ? 'bg-white text-black border-white font-bold' : 'bg-black border-zinc-800 text-white hover:border-zinc-600'}`}
                 >
+                  {provider === 'openai' ? 'OpenAI' :
+                    provider === 'gemini' ? 'Google Gemini' :
+                      provider.charAt(0).toUpperCase() + provider.slice(1)}
                 </button>
               ))}
 
