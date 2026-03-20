@@ -394,7 +394,9 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
 	}
 
-	var req struct{ Message string `json:"message"` }
+	var req struct {
+		Message string `json:"message"`
+	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
@@ -425,6 +427,11 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	currentTime := s.db.GetSystemTime()
 	userTextWithTime := fmt.Sprintf("[Current System Time: %s] %s", currentTime.Format("2006-01-02 15:04:05"), userText)
+
+	// Handle commands locally without LLM
+	if strings.HasPrefix(userText, "/") {
+		return s.handleLocalCommand(c, agent, userText)
+	}
 
 	s.db.LogAction(agent.ID, "agent", "ai_processing", fmt.Sprintf("Processing HTTP chat message from user %s", userID))
 
@@ -815,25 +822,25 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 }
 
 func (s *Server) StartMetricsBroadcast() {
-    ticker := time.NewTicker(5 * time.Second)
-    for range ticker.C {
-        health, err := s.getSystemHealth()
-        if err != nil {
-            continue
-        }
-        
-        payload := fiber.Map{
-            "type":   "system_health",
-            "health": health,
-        }
-        
-        msg, _ := json.Marshal(payload)
-        s.wsMutex.Lock()
-        for client := range s.wsClients {
-            client.WriteMessage(websocket.TextMessage, msg)
-        }
-        s.wsMutex.Unlock()
-    }
+	ticker := time.NewTicker(5 * time.Second)
+	for range ticker.C {
+		health, err := s.getSystemHealth()
+		if err != nil {
+			continue
+		}
+
+		payload := fiber.Map{
+			"type":   "system_health",
+			"health": health,
+		}
+
+		msg, _ := json.Marshal(payload)
+		s.wsMutex.Lock()
+		for client := range s.wsClients {
+			client.WriteMessage(websocket.TextMessage, msg)
+		}
+		s.wsMutex.Unlock()
+	}
 }
 
 type LogWithAgent struct {
@@ -1516,6 +1523,79 @@ func (s *Server) HandleGetAgentLogs(c *fiber.Ctx) error {
 	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
 	history, _ := s.db.GetHistory(id, 100)
 	return c.JSON(history)
+}
+
+// handleLocalCommand processes commands without requiring LLM
+func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, command string) error {
+	parts := strings.Fields(command)
+	cmd := parts[0]
+
+	response := ""
+
+	switch cmd {
+	case "/status":
+		response = fmt.Sprintf("🤖 *Agent Status: %s*\n\n", agent.Name)
+		response += fmt.Sprintf("• Model: `%s`\n", agent.Model)
+		response += fmt.Sprintf("• Provider: `%s`\n", agent.Provider)
+		response += fmt.Sprintf("• Context Window: `%d` tokens\n", agent.ContextWindow)
+		response += fmt.Sprintf("• LLM API Calls: `%d`\n", agent.LLMAPICalls)
+
+		containerStatus := "Stopped"
+		if agent.ContainerID != "" && s.docker != nil {
+			if s.docker.IsRunning(agent.ContainerID) {
+				containerStatus = "Running ✅"
+			} else {
+				containerStatus = "Stopped ❌"
+			}
+		}
+		response += fmt.Sprintf("• Container: `%s` (%s)\n", agent.ContainerID, containerStatus)
+
+		response += "• Connection: HTTP Active ✅\n"
+
+		response += fmt.Sprintf("\n🔐 *Authorization*\n")
+		response += fmt.Sprintf("• Allowed Users: `%s`\n", agent.AllowedUsers)
+		if agent.AllowedUsers == "" {
+			response += "• Status: ✅ No restrictions\n"
+		} else {
+			response += "• Status: ⚠️ Restricted\n"
+		}
+
+		tunnelURL := ""
+		if s.tunnels != nil {
+			tunnelURL = s.tunnels.GetURL("dashboard")
+		}
+		if tunnelURL != "" {
+			response += fmt.Sprintf("\n🌐 *Dashboard*: `%s`\n", tunnelURL)
+		}
+
+	case "/reset":
+		if agent.ContainerID != "" && s.docker != nil {
+			s.docker.Stop(agent.ContainerID)
+			s.docker.Remove(agent.ContainerID)
+			image, _ := s.db.GetSetting("default_agent_image")
+			if image == "" {
+				image = "hermit-agent:latest"
+			}
+			err := s.docker.Run(agent.ContainerID, image, true)
+			if err != nil {
+				response = fmt.Sprintf("❌ Failed to reset container: %v", err)
+			} else {
+				response = "✅ Container reset successfully"
+				s.db.LogAction(agent.ID, "docker", "container_reset", "Container reset from mobile client")
+			}
+		} else {
+			response = "❌ No container configured for this agent"
+		}
+
+	case "/clear":
+		s.db.ClearHistory(agent.ID)
+		response = "✅ Chat history cleared"
+
+	default:
+		response = fmt.Sprintf("Unknown command: %s", cmd)
+	}
+
+	return c.JSON(fiber.Map{"message": response})
 }
 
 func (s *Server) HandleGetAgentStats(c *fiber.Ctx) error {
@@ -3400,4 +3480,3 @@ func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content str
 		s.BroadcastMessage(string(jsonMsg))
 	}
 }
-
