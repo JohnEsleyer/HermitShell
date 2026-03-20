@@ -241,11 +241,41 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 	// In a real scenario, this would be more dynamic.
 	s.db.SetCryptoKey(crypto.DeriveKey("hermit123"))
 
+	// Start background metrics broadcast
+	go s.StartMetricsBroadcast()
+
 	return s
 }
 
 func (s *Server) Listen(port string) error {
 	return s.app.Listen(":" + port)
+}
+
+// authMiddleware verifies that the request is authenticated.
+func (s *Server) authMiddleware(c *fiber.Ctx) error {
+	session := c.Cookies("session")
+	if session == "" {
+		authHeader := c.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			session = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+	if session == "" {
+		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Unauthorized"})
+	}
+
+	id, err := strconv.ParseInt(session, 10, 64)
+	if err != nil {
+		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Invalid session"})
+	}
+
+	username, _, err := s.db.GetUserByID(id)
+	if err != nil || username == "" {
+		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Invalid session"})
+	}
+
+	c.Locals("userID", id)
+	return c.Next()
 }
 
 // setupRoutes registers all API endpoints with Fiber router.
@@ -284,6 +314,10 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Post("/auth/login", s.HandleLogin)
 	api.Post("/auth/logout", s.HandleLogout)
 	api.Get("/auth/check", s.HandleCheckAuth)
+
+	// Protected routes
+	api.Use(s.authMiddleware)
+
 	api.Post("/auth/change-credentials", s.HandleChangeCredentials)
 
 	api.Get("/agents", s.HandleListAgents)
@@ -318,6 +352,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Delete("/containers/:id", s.HandleTerminateContainer)
 	api.Post("/containers/:id/action", s.HandleContainerAction)
 	api.Get("/containers/:id/files", s.HandleContainerFiles)
+	api.Post("/containers/:id/upload", s.HandleContainerUpload)
 	api.Get("/containers/:id/download", s.HandleContainerDownload)
 
 	api.Get("/settings", s.HandleGetSettings)
@@ -388,13 +423,8 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		userID = session
 	}
 
-	timeOffset, _ := s.db.GetSetting("time_offset")
-	offsetHours := 0
-	if timeOffset != "" {
-		fmt.Sscanf(timeOffset, "%d", &offsetHours)
-	}
-	currentTime := time.Now().Add(time.Duration(offsetHours) * time.Hour)
-	userTextWithTime := fmt.Sprintf("[Current time: %s] %s", currentTime.Format("2006-01-02 15:04:05"), userText)
+	currentTime := s.db.GetSystemTime()
+	userTextWithTime := fmt.Sprintf("[Current System Time: %s] %s", currentTime.Format("2006-01-02 15:04:05"), userText)
 
 	s.db.LogAction(agent.ID, "agent", "ai_processing", fmt.Sprintf("Processing HTTP chat message from user %s", userID))
 
@@ -596,6 +626,44 @@ func (s *Server) setupStaticRoutes(app *fiber.App) {
 	})
 }
 
+func (s *Server) HandleContainerUpload(c *fiber.Ctx) error {
+	containerID := c.Params("id")
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "No file uploaded"})
+	}
+
+	agents, _ := s.db.ListAgents()
+	var agent *db.Agent
+	for _, a := range agents {
+		contName := a.ContainerID
+		if contName == "" {
+			contName = "agent-" + strings.ToLower(a.Name)
+		}
+		if contName == containerID {
+			agent = a
+			break
+		}
+	}
+
+	if agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "agent not found"})
+	}
+
+	// Save to workspace/in
+	targetDir := filepath.Join("data", "agents", agent.Name, "workspace", "in")
+	os.MkdirAll(targetDir, 0755)
+	dst := filepath.Join(targetDir, file.Filename)
+
+	if err := c.SaveFile(file, dst); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to save file: " + err.Error()})
+	}
+
+	s.db.LogAction(agent.ID, "system", "file_uploaded", fmt.Sprintf("File '%s' uploaded to workspace/in", file.Filename))
+
+	return c.JSON(fiber.Map{"success": true, "filename": file.Filename})
+}
+
 // HandleLogin processes user authentication.
 // Docs: See docs/authentication.md for login flow and security details.
 // Docs: See docs/security-measures.md for HTTP-only cookie implementation.
@@ -665,10 +733,10 @@ func (s *Server) HandleChangeCredentials(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"success": true})
 }
 
-func (s *Server) HandleMetrics(c *fiber.Ctx) error {
+func (s *Server) getSystemHealth() (fiber.Map, error) {
 	metrics, err := s.docker.LatestSystemMetrics()
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return nil, err
 	}
 
 	agents, _ := s.db.ListAgents()
@@ -697,9 +765,9 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 			"agentName":  a.Name,
 			"status":     status,
 			"cpu":        cpu,
-			"cpuPercent": cpu, // for legacy HealthTab
+			"cpuPercent": cpu,
 			"memory":     mem,
-			"memUsageMB": mem, // for legacy HealthTab
+			"memUsageMB": mem,
 		})
 	}
 
@@ -731,11 +799,41 @@ func (s *Server) HandleMetrics(c *fiber.Ctx) error {
 		tunnelURL = s.tunnels.GetURL("dashboard")
 	}
 
-	return c.JSON(fiber.Map{
+	return fiber.Map{
 		"host":       metrics.Host,
 		"containers": allContainers,
 		"tunnelURL":  tunnelURL,
-	})
+	}, nil
+}
+
+func (s *Server) HandleMetrics(c *fiber.Ctx) error {
+	health, err := s.getSystemHealth()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(health)
+}
+
+func (s *Server) StartMetricsBroadcast() {
+    ticker := time.NewTicker(5 * time.Second)
+    for range ticker.C {
+        health, err := s.getSystemHealth()
+        if err != nil {
+            continue
+        }
+        
+        payload := fiber.Map{
+            "type":   "system_health",
+            "health": health,
+        }
+        
+        msg, _ := json.Marshal(payload)
+        s.wsMutex.Lock()
+        for client := range s.wsClients {
+            client.WriteMessage(websocket.TextMessage, msg)
+        }
+        s.wsMutex.Unlock()
+    }
 }
 
 type LogWithAgent struct {
@@ -1063,6 +1161,7 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		Status        string `json:"status"`
 		Model         string `json:"model"`
 		AllowedUsers  string `json:"allowedUsers"`
+		Platform      string `json:"platform"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
@@ -1078,7 +1177,11 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		TelegramToken: req.TelegramToken,
 		TelegramID:    req.TelegramID,
 		Status:        "standby",
+		Platform:      req.Platform,
 		Active:        true,
+	}
+	if a.Platform == "" {
+		a.Platform = "telegram"
 	}
 	if a.Role == "" {
 		a.Role = "assistant"
@@ -1097,8 +1200,8 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	// Log agent creation
 	s.db.LogAction(id, "system", "agent_created", fmt.Sprintf("Agent '%s' created with provider=%s, model=%s", a.Name, a.Provider, a.Model))
 
-	// Start Telegram polling for this agent if token is provided
-	if a.TelegramToken != "" {
+	// Start Telegram polling for this agent if token is provided and platform is telegram
+	if a.Platform == "telegram" && a.TelegramToken != "" {
 		go func() {
 			time.Sleep(1 * time.Second) // Give DB time to settle
 			agent, _ := s.db.GetAgent(id)
@@ -1172,6 +1275,7 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 		AllowedUsers  string `json:"allowedUsers"`
 		TelegramID    string `json:"telegramId"`
 		TelegramToken string `json:"telegramToken"`
+		Platform      string `json:"platform"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Bad request"})
@@ -1196,6 +1300,9 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 	}
 	if req.TelegramToken != "" {
 		existing.TelegramToken = req.TelegramToken
+	}
+	if req.Platform != "" {
+		existing.Platform = req.Platform
 	}
 
 	if err := s.db.UpdateAgent(existing); err != nil {
@@ -1900,32 +2007,21 @@ func (s *Server) HandleGetTime(c *fiber.Ctx) error {
 	timezone, _ := s.db.GetSetting("timezone")
 	timeOffset, _ := s.db.GetSetting("time_offset")
 
-	// Get current UTC time from server
-	currentTime := time.Now().UTC()
-
-	// Apply offset to get user's desired time
-	// Formula: displayed_time = server_utc_time + offset
-	offsetHours := 0
-	if timeOffset != "" {
-		fmt.Sscanf(timeOffset, "%d", &offsetHours)
-	}
-	currentTime = currentTime.Add(time.Duration(offsetHours) * time.Hour)
-
-	// Note: We don't convert to timezone here because the offset already
-	// represents the user's desired timezone difference from UTC.
-	// The timezone setting is kept for reference but offset is primary.
-
-	// Format time in UTC for consistent display regardless of server timezone
-	utcTime := currentTime.UTC()
+	// Get current system time (already has offset applied via db.GetSystemTime)
+	systemTime := s.db.GetSystemTime()
+	// Get raw UTC time so clients can calculate their own offsets/previews accurately
+	rawUtcTime := time.Now().UTC()
 
 	return c.JSON(fiber.Map{
-		"time":       utcTime.Format("03:04:05 PM"),
-		"time12":     utcTime.Format("3:04 PM"),
-		"date":       utcTime.Format("Mon, Jan 2"),
-		"fullDate":   utcTime.Format("2006-01-02"),
-		"datetime":   utcTime.Format(time.RFC3339),
-		"timezone":   timezone,
-		"timeOffset": timeOffset,
+		"time":          systemTime.Format("03:04:05 PM"),
+		"time12":        systemTime.Format("3:04 PM"),
+		"date":          systemTime.Format("Mon, Jan 2"),
+		"fullDate":      systemTime.Format("2006-01-02"),
+		"datetime":      systemTime.Format(time.RFC3339),
+		"systemTime":    systemTime.Format(time.RFC3339),
+		"serverUtcTime": rawUtcTime.Format(time.RFC3339),
+		"timezone":      timezone,
+		"offset":        timeOffset,
 	})
 }
 
@@ -2308,15 +2404,10 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText string) {
 	tempBot := telegram.NewBot(agent.TelegramToken)
 
-	// Inject current time with timezone offset into user message
-	timeOffset, _ := s.db.GetSetting("time_offset")
-	offsetHours := 0
-	if timeOffset != "" {
-		fmt.Sscanf(timeOffset, "%d", &offsetHours)
-	}
-	currentTime := time.Now().Add(time.Duration(offsetHours) * time.Hour)
+	// Inject current system time into human-friendly user message for AI context
+	currentTime := s.db.GetSystemTime()
 	formattedTime := currentTime.Format("2006-01-02 15:04:05")
-	userTextWithTime := fmt.Sprintf("[Current time: %s] %s", formattedTime, userText)
+	userTextWithTime := fmt.Sprintf("[Current System Time: %s] %s", formattedTime, userText)
 
 	// Send "thinking" message first
 	thinkingMsgID, _ := tempBot.SendMessageWithID(chatID, "🤔 Thinking...")
@@ -2807,7 +2898,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 	// 7. Handle System
 	if parsed.System == "time" {
-		feedback = append(feedback, map[string]interface{}{"system": "time", "value": time.Now().Format(time.RFC3339)})
+		feedback = append(feedback, map[string]interface{}{"system": "time", "value": s.db.GetSystemTime().Format(time.RFC3339)})
 	} else if parsed.System == "memory" {
 		if s.docker != nil {
 			stats, _ := s.docker.LatestSystemMetrics()

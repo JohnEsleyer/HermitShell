@@ -12,6 +12,9 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strconv"
+	"time"
+
 	"github.com/JohnEsleyer/HermitShell/internal/crypto"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -39,6 +42,7 @@ type Agent struct {
 	AllowedUsers  string `json:"allowed_users"`
 	ContainerID   string `json:"container_id"`
 	Status        string `json:"status"`
+	Platform      string `json:"platform"` // "telegram" or "hermitchat"
 	Active        bool   `json:"active"`
 	LLMAPICalls   int64  `json:"llm_api_calls"`  // Total LLM API calls
 	ContextWindow int    `json:"context_window"` // Context window size in tokens
@@ -97,6 +101,13 @@ func (d *DB) SetCryptoKey(key []byte) {
 	d.cryptoKey = key
 }
 
+// GetSystemTime returns the current time based on the global UTC offset setting.
+func (d *DB) GetSystemTime() time.Time {
+	offsetStr, _ := d.GetSetting("time_offset")
+	offsetHours, _ := strconv.Atoi(offsetStr)
+	return time.Now().UTC().Add(time.Duration(offsetHours) * time.Hour)
+}
+
 func (d *DB) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS agents (
@@ -117,6 +128,7 @@ func (d *DB) migrate() error {
 		allowed_users TEXT NOT NULL DEFAULT '',
 		container_id TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'stopped',
+		platform TEXT NOT NULL DEFAULT 'telegram',
 		active INTEGER NOT NULL DEFAULT 1,
 		llm_api_calls INTEGER NOT NULL DEFAULT 0,
 		context_window INTEGER NOT NULL DEFAULT 0,
@@ -223,6 +235,15 @@ func (d *DB) migrate() error {
 	if err := d.addColumnIfNotExists("agents", "context_window", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := d.addColumnIfNotExists("agents", "banner_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := d.addColumnIfNotExists("agents", "platform", "TEXT NOT NULL DEFAULT 'telegram'"); err != nil {
+		return err
+	}
+	if err := d.addColumnIfNotExists("agents", "active", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -243,9 +264,9 @@ func (d *DB) addColumnIfNotExists(table, column, def string) error {
 
 func (d *DB) CreateAgent(a *Agent) (int64, error) {
 	res, err := d.db.Exec(`
-		INSERT INTO agents (name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, a.Name, a.Role, a.Personality, a.Provider, a.Model, a.Context, a.TelegramID, a.TelegramToken, a.ProfilePic, a.BannerURL, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active)
+		INSERT INTO agents (name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, platform, active)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, a.Name, a.Role, a.Personality, a.Provider, a.Model, a.Context, a.TelegramID, a.TelegramToken, a.ProfilePic, a.BannerURL, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Platform, a.Active)
 	if err != nil {
 		return 0, err
 	}
@@ -256,9 +277,9 @@ func (d *DB) CreateAgent(a *Agent) (int64, error) {
 func (d *DB) GetAgent(id int64) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, llm_api_calls, context_window, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, platform, active, llm_api_calls, context_window, created_at, updated_at
 		FROM agents WHERE id = ?
-	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.LLMAPICalls, &a.ContextWindow, &a.CreatedAt, &a.UpdatedAt)
+	`, id).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Platform, &a.Active, &a.LLMAPICalls, &a.ContextWindow, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -268,9 +289,9 @@ func (d *DB) GetAgent(id int64) (*Agent, error) {
 func (d *DB) GetAgentByName(name string) (*Agent, error) {
 	a := &Agent{}
 	err := d.db.QueryRow(`
-		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, llm_api_calls, context_window, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, platform, active, llm_api_calls, context_window, created_at, updated_at
 		FROM agents WHERE name = ?
-	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.LLMAPICalls, &a.ContextWindow, &a.CreatedAt, &a.UpdatedAt)
+	`, name).Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Platform, &a.Active, &a.LLMAPICalls, &a.ContextWindow, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +300,7 @@ func (d *DB) GetAgentByName(name string) (*Agent, error) {
 
 func (d *DB) ListAgents() ([]*Agent, error) {
 	rows, err := d.db.Query(`
-		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, active, created_at, updated_at
+		SELECT id, name, role, personality, provider, model, system_prompt, telegram_id, telegram_token, profile_pic, banner_url, tunnel_id, tunnel_url, allowed_users, container_id, status, platform, active, created_at, updated_at
 		FROM agents ORDER BY id DESC
 	`)
 	if err != nil {
@@ -290,7 +311,7 @@ func (d *DB) ListAgents() ([]*Agent, error) {
 	var agents []*Agent
 	for rows.Next() {
 		a := &Agent{}
-		if err := rows.Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Active, &a.CreatedAt, &a.UpdatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Role, &a.Personality, &a.Provider, &a.Model, &a.Context, &a.TelegramID, &a.TelegramToken, &a.ProfilePic, &a.BannerURL, &a.TunnelID, &a.TunnelURL, &a.AllowedUsers, &a.ContainerID, &a.Status, &a.Platform, &a.Active, &a.CreatedAt, &a.UpdatedAt); err != nil {
 			return nil, err
 		}
 		agents = append(agents, a)
@@ -300,9 +321,9 @@ func (d *DB) ListAgents() ([]*Agent, error) {
 
 func (d *DB) UpdateAgent(a *Agent) error {
 	_, err := d.db.Exec(`
-		UPDATE agents SET name=?, role=?, personality=?, provider=?, model=?, system_prompt=?, telegram_id=?, telegram_token=?, profile_pic=?, banner_url=?, tunnel_id=?, tunnel_url=?, allowed_users=?, container_id=?, status=?, active=?, updated_at=datetime('now')
+		UPDATE agents SET name=?, role=?, personality=?, provider=?, model=?, system_prompt=?, telegram_id=?, telegram_token=?, profile_pic=?, banner_url=?, tunnel_id=?, tunnel_url=?, allowed_users=?, container_id=?, status=?, platform=?, active=?, updated_at=datetime('now')
 		WHERE id=?
-	`, a.Name, a.Role, a.Personality, a.Provider, a.Model, a.Context, a.TelegramID, a.TelegramToken, a.ProfilePic, a.BannerURL, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Active, a.ID)
+	`, a.Name, a.Role, a.Personality, a.Provider, a.Model, a.Context, a.TelegramID, a.TelegramToken, a.ProfilePic, a.BannerURL, a.TunnelID, a.TunnelURL, a.AllowedUsers, a.ContainerID, a.Status, a.Platform, a.Active, a.ID)
 	return err
 }
 

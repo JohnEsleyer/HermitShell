@@ -9,7 +9,6 @@ interface SettingsTabProps {
 }
 
 export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
-  const [mode, setMode] = useState<'tunnel' | 'domain'>('tunnel');
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState({
     tunnelEnabled: true,
@@ -21,6 +20,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
     currentTime: '',
     currentTime12: '',
     currentDate: '',
+    serverUtcTime: '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -42,10 +42,11 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
   // Docs: See docs/time-management.md for preview calculation logic.
   // How it works: Converts local browser time to UTC, then adds offset to preview the result.
   const getPreviewTime = () => {
-    const now = new Date();
+    // We use serverUtcTime (actual UTC) as the base for all calculations to avoid local clock drift
+    const base = settings.serverUtcTime ? new Date(settings.serverUtcTime) : new Date();
     const offset = parseInt(settings.timeOffset || '0');
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    const preview = new Date(utc + (3600000 * offset));
+    // serverUtcTime is already UTC, so we just add the offset hours
+    const preview = new Date(base.getTime() + (offset * 3600000));
     return preview.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
   };
   const [apiKeys, setApiKeys] = useState({
@@ -180,6 +181,7 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
         currentTime: timeData.time || '',
         currentTime12: timeData.time12 || '',
         currentDate: timeData.date || '',
+        serverUtcTime: timeData.serverUtcTime || '',
       });
       setHasApiKeys({
         openrouterKey: !!data.openrouterKey,
@@ -399,35 +401,71 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
           </div>
         ) : (
           <div className="space-y-6">
-            {/* Preview Cards */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* Your Local Time (what you expect) */}
-              <div className="bg-emerald-500/10 rounded-2xl p-6 border border-emerald-500/30">
-                <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1">Your Local Time</div>
-                <div className="text-4xl font-mono font-bold text-emerald-400">
-                  {localTime}
+            {/* Time Display Cards */}
+            <div className="grid grid-cols-3 gap-4">
+              {/* Active System Time (from Server) */}
+              <div className="bg-emerald-500/10 rounded-2xl p-6 border border-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
+                <div className="text-xs text-emerald-400 uppercase tracking-wider mb-1 font-black">Global System Time</div>
+                <div className="text-3xl font-mono font-bold text-emerald-400">
+                  {settings.currentTime12 || '--:--:--'}
                 </div>
-                <div className="text-sm text-emerald-400/70 mt-1">
-                  Your computer
+                <div className="text-[10px] text-emerald-400/70 mt-1 flex items-center gap-1.5 font-bold">
+                  <Globe className="w-3 h-3" />
+                  ACTIVE OFFSET: UTC{parseInt(settings.timeOffset || '0') >= 0 ? '+' : ''}{settings.timeOffset || 0}h
                 </div>
               </div>
 
-              {/* System Time (preview based on selected offset) */}
+              {/* Your Browser Time */}
+              <div className="bg-zinc-900/50 rounded-2xl p-6 border border-zinc-800">
+                <div className="text-xs text-zinc-500 uppercase tracking-wider mb-1">Your Browser Time</div>
+                <div className="text-3xl font-mono font-bold text-zinc-400">
+                  {localTime}
+                </div>
+                <div className="text-[10px] text-zinc-500/70 mt-1 font-bold">
+                  FROM COMPUTER
+                </div>
+              </div>
+
+              {/* System Time Preview (based on selection) */}
               <div className="bg-blue-500/10 rounded-2xl p-6 border border-blue-500/30">
-                <div className="text-xs text-blue-400 uppercase tracking-wider mb-1">Preview (after offset)</div>
-                <div className="text-4xl font-mono font-bold text-blue-400">
+                <div className="text-xs text-blue-400 uppercase tracking-wider mb-1">System Time Preview</div>
+                <div className="text-3xl font-mono font-bold text-blue-400">
                   {getPreviewTime()}
                 </div>
-                <div className="text-sm text-blue-400/70 mt-1">
-                  UTC{parseInt(settings.timeOffset || '0') >= 0 ? '+' : ''}{settings.timeOffset || 0}h offset
+                <div className="text-[10px] text-blue-400/70 mt-1 font-bold">
+                  SELECTED: UTC{parseInt(settings.timeOffset || '0') >= 0 ? '+' : ''}{settings.timeOffset || 0}h
                 </div>
               </div>
             </div>
 
-            {/* Offset Selection */}
+            {/* Custom Offset Slider */}
+            <div className="bg-zinc-900/30 border border-zinc-800 rounded-2xl p-6 space-y-4">
+              <div className="flex justify-between items-center">
+                <label className="block text-xs text-zinc-500 uppercase tracking-wider font-bold">Custom Slider</label>
+                <div className="px-3 py-1 bg-blue-500 text-white rounded-lg font-black text-sm shadow-lg shadow-blue-500/20">
+                  {settings.timeOffset}h
+                </div>
+              </div>
+              <input
+                type="range"
+                min="-12"
+                max="14"
+                step="1"
+                value={settings.timeOffset}
+                onChange={e => setSettings({ ...settings, timeOffset: e.target.value })}
+                className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 transition-all border border-zinc-700"
+              />
+              <div className="flex justify-between text-[10px] text-zinc-500 font-medium px-1">
+                <span>-12h</span>
+                <span>UTC</span>
+                <span>+14h</span>
+              </div>
+            </div>
+
+            {/* Offset Presets */}
             <div>
               <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-3">
-                Select your timezone offset from UTC
+                Presets
               </label>
               <div className="grid grid-cols-4 gap-3">
                 {[
@@ -478,7 +516,14 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
                       triggerToast('Time settings saved');
                       const timeRes = await fetch(`${API_BASE}/api/time`);
                       const timeData = await timeRes.json();
-                      setSettings(s => ({ ...s, currentTime: timeData.time, currentTime12: timeData.time12, currentDate: timeData.date }));
+                      setSettings(s => ({
+                        ...s,
+                        currentTime: timeData.time,
+                        currentTime12: timeData.time12,
+                        currentDate: timeData.date,
+                        serverUtcTime: timeData.serverUtcTime,
+                        timeOffset: timeData.offset || timeData.timeOffset || s.timeOffset
+                      }));
                     } else {
                       triggerToast('Failed to save', 'error');
                     }
@@ -621,6 +666,6 @@ export function SettingsTab({ triggerToast, onLogout }: SettingsTabProps) {
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 }

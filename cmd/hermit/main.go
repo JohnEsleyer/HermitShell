@@ -243,16 +243,8 @@ func calendarScheduler(database *db.DB) {
 			log.Printf("Calendar scheduler: found %d pending events", len(events))
 		}
 
-		// Get timezone offset from settings
-		timeOffset, _ := database.GetSetting("time_offset")
-		offsetHours := 0
-		if timeOffset != "" {
-			fmt.Sscanf(timeOffset, "%d", &offsetHours)
-		}
-
-		// Apply timezone offset to get local time
-		now := time.Now().Add(time.Duration(offsetHours) * time.Hour)
-		log.Printf("Calendar scheduler: current local time %s (offset +%d)", now.Format("2006-01-02 15:04:05"), offsetHours)
+		currentTime := database.GetSystemTime()
+		log.Printf("Calendar scheduler: current system time %s", currentTime.Format("2006-01-02 15:04:05"))
 
 		for _, event := range events {
 			// Parse event datetime (stored in local time)
@@ -262,10 +254,10 @@ func calendarScheduler(database *db.DB) {
 				continue
 			}
 
-			log.Printf("Calendar scheduler: checking event %d at %s vs now %s", event.ID, eventTime.Format("15:04"), now.Format("15:04"))
+			log.Printf("Calendar scheduler: checking event %d at %s vs system time %s", event.ID, eventTime.Format("15:04"), currentTime.Format("15:04"))
 
-			// Check if event time has passed (compare local times)
-			if now.After(eventTime) || now.Equal(eventTime) {
+			// Check if event time has passed (compare system time with event time)
+			if currentTime.After(eventTime) || currentTime.Equal(eventTime) {
 				log.Printf("Calendar scheduler: triggering event %d", event.ID)
 
 				// Get agent

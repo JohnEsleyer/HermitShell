@@ -20,6 +20,7 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
     bannerUrl: '',
     model: '',
     allowedUsers: '',
+    platform: 'telegram',
   });
   const [allowlist, setAllowlist] = useState<{ friendlyName: string, telegramUserId: string }[]>([]);
 
@@ -62,6 +63,10 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
     }
 
     if (step === 2) {
+      if (formData.platform === 'hermitchat') {
+        await handleCreate();
+        return;
+      }
       await handleSendCode();
       return;
     }
@@ -138,10 +143,11 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
           provider: formData.provider,
           profilePic: formData.profilePic,
           bannerUrl: formData.bannerUrl,
-          telegramToken: telegramData.botToken,
-          telegramId: telegramData.allowedUserId,
+          telegramToken: formData.platform === 'telegram' ? telegramData.botToken : '',
+          telegramId: formData.platform === 'telegram' ? telegramData.allowedUserId : '',
           model: formData.model,
           allowedUsers: formData.allowedUsers,
+          platform: formData.platform,
           status: 'running',
         }),
       });
@@ -210,41 +216,70 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
                   onClick={() => setFormData({ ...formData, provider })}
                   className={`w-full text-left px-8 py-5 rounded-full border transition-all ${formData.provider === provider ? 'bg-white text-black border-white font-bold' : 'bg-black border-zinc-800 text-white hover:border-zinc-600'}`}
                 >
-                  {provider.charAt(0).toUpperCase() + provider.slice(1)} {provider === 'openrouter' && '(Free Models Only)'}
                 </button>
               ))}
+
+              <div className="mt-6 pt-6 border-t border-zinc-800">
+                <label className="block text-sm text-zinc-400 mb-4 ml-4">Deployment Platform</label>
+                <div className="grid grid-cols-2 gap-4">
+                  <button
+                    onClick={() => setFormData({ ...formData, platform: 'telegram' })}
+                    className={`px-6 py-4 rounded-full border transition-all ${formData.platform === 'telegram' ? 'bg-white text-black border-white font-bold' : 'bg-black border-zinc-800 text-white'}`}
+                  >
+                    Telegram
+                  </button>
+                  <button
+                    onClick={() => setFormData({ ...formData, platform: 'hermitchat' })}
+                    className={`px-6 py-4 rounded-full border transition-all ${formData.platform === 'hermitchat' ? 'bg-white text-black border-white font-bold' : 'bg-black border-zinc-800 text-white'}`}
+                  >
+                    HermitChat
+                  </button>
+                </div>
+              </div>
+
               <div className="mt-6 pt-6 border-t border-zinc-800">
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm text-zinc-400 mb-2 ml-4">Model (e.g. gemini-3-flash-preview)</label>
                     <input type="text" value={formData.model} onChange={e => setFormData({ ...formData, model: e.target.value })} placeholder="Enter specific model name" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
                   </div>
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-2 ml-4">Telegram Bot Token</label>
-                    <input type="text" value={telegramData.botToken} onChange={e => setTelegramData({ ...telegramData, botToken: e.target.value })} placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-zinc-400 mb-2 ml-4">Primary User (from Allowlist)</label>
-                    <select
-                      value={telegramData.allowedUserId}
-                      onChange={e => {
-                        const selected = allowlist.find(a => a.telegramUserId === e.target.value);
-                        setTelegramData({ ...telegramData, allowedUserId: e.target.value });
-                        if (selected) {
-                          setFormData({ ...formData, allowedUsers: e.target.value });
-                        } else {
-                          setFormData({ ...formData, allowedUsers: '' });
-                        }
-                      }}
-                      className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors appearance-none"
-                    >
-                      <option value="">Select a user</option>
-                      {allowlist.map(item => (
-                        <option key={item.telegramUserId} value={item.telegramUserId}>{item.friendlyName} ({item.telegramUserId})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <p className="text-xs text-zinc-500 ml-4">A 6-digit code will be sent to verify the bot and associate it with the selected primary user.</p>
+
+                  {formData.platform === 'telegram' && (
+                    <>
+                      <div>
+                        <label className="block text-sm text-zinc-400 mb-2 ml-4">Telegram Bot Token</label>
+                        <input type="text" value={telegramData.botToken} onChange={e => setTelegramData({ ...telegramData, botToken: e.target.value })} placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors" />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-zinc-400 mb-2 ml-4">Primary User (from Allowlist)</label>
+                        <select
+                          value={telegramData.allowedUserId}
+                          onChange={e => {
+                            const selected = allowlist.find(a => a.telegramUserId === e.target.value);
+                            setTelegramData({ ...telegramData, allowedUserId: e.target.value });
+                            if (selected) {
+                              setFormData({ ...formData, allowedUsers: e.target.value });
+                            } else {
+                              setFormData({ ...formData, allowedUsers: '' });
+                            }
+                          }}
+                          className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 transition-colors appearance-none"
+                        >
+                          <option value="">Select a user</option>
+                          {allowlist.map(item => (
+                            <option key={item.telegramUserId} value={item.telegramUserId}>{item.friendlyName} ({item.telegramUserId})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-xs text-zinc-500 ml-4">A 6-digit code will be sent to verify the bot and associate it with the selected primary user.</p>
+                    </>
+                  )}
+
+                  {formData.platform === 'hermitchat' && (
+                    <p className="text-xs text-zinc-500 ml-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
+                      HermitChat deployment doesn't require verification. The agent will be immediately available in your mobile app.
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -265,7 +300,11 @@ export function CreateAgentModal({ onClose, triggerToast, fetchAgents }: CreateA
           ) : <div></div>}
 
           {step < 3 ? (
-            <button onClick={handleNext} disabled={sending} className="bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-zinc-200 transition-colors disabled:opacity-60">{step === 2 ? (sending ? 'sending code...' : 'send code') : 'next stage'}</button>
+            <button onClick={handleNext} disabled={sending} className="bg-white text-black px-10 py-4 rounded-full font-bold hover:bg-zinc-200 transition-colors disabled:opacity-60">
+              {step === 2
+                ? (formData.platform === 'hermitchat' ? 'deploy agent' : (sending ? 'sending code...' : 'send code'))
+                : 'next stage'}
+            </button>
           ) : (
             <button onClick={handleVerify} disabled={sending} className="bg-emerald-500 text-black px-10 py-4 rounded-full font-bold hover:bg-emerald-400 transition-colors disabled:opacity-50">
               {sending ? 'Verifying...' : 'verify & deploy'}
