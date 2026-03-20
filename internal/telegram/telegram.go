@@ -237,6 +237,47 @@ func (b *Bot) SendPhoto(chatID, filePath, caption string) error {
 	return nil
 }
 
+func (b *Bot) SendVideo(chatID, filePath, caption string) error {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	writer.WriteField("chat_id", chatID)
+	if caption != "" {
+		writer.WriteField("caption", caption)
+	}
+
+	part, err := writer.CreateFormFile("video", filepath.Base(filePath))
+	if err != nil {
+		return fmt.Errorf("failed to create form file: %w", err)
+	}
+
+	if _, err := io.Copy(part, file); err != nil {
+		return fmt.Errorf("failed to copy file: %w", err)
+	}
+
+	writer.Close()
+
+	url := fmt.Sprintf("%s/bot%s/sendVideo", b.apiURL, b.token)
+	resp, err := b.http.Post(url, writer.FormDataContentType(), &buf)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 func (b *Bot) SendDocument(chatID, filePath, caption string) error {
 	file, err := os.Open(filePath)
 	if err != nil {

@@ -167,6 +167,20 @@ func calculateTokenCost(tokenCount int, provider, model string) float64 {
 	return 0
 }
 
+func firstNonEmpty(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func ternary[T any](condition bool, whenTrue, whenFalse T) T {
+	if condition {
+		return whenTrue
+	}
+	return whenFalse
+}
+
 type AgentStats struct {
 	WordCount     int     `json:"wordCount"`
 	TokenEstimate int     `json:"tokenEstimate"`
@@ -462,8 +476,13 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	client := s.getLLMClientForAgent(agent)
 	if client == nil {
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", "Error: LLM client not configured")
-		return c.Status(500).JSON(fiber.Map{"error": "LLM client not configured"})
+		config := s.getLLMConfigStatus(agent)
+		message := "LLM client not configured"
+		if !config.Configured {
+			message = "LLM client not configured: missing " + config.missingSummary()
+		}
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "Error: "+message)
+		return c.Status(500).JSON(fiber.Map{"error": message})
 	}
 
 	s.db.LogAction(agent.ID, "network", "llm_request", fmt.Sprintf("Provider: %s, Model: %s, Messages: %d", agent.Provider, agent.Model, len(messages)))
@@ -1545,9 +1564,16 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, command strin
 
 	switch cmd {
 	case "/status":
+		config := s.getLLMConfigStatus(agent)
 		response = fmt.Sprintf("🤖 *Agent Status: %s*\n\n", agent.Name)
-		response += fmt.Sprintf("• Model: `%s`\n", agent.Model)
-		response += fmt.Sprintf("• Provider: `%s`\n", agent.Provider)
+		response += fmt.Sprintf("• Provider: `%s`\n", config.ProviderUI)
+		response += fmt.Sprintf("• Model: `%s`\n", firstNonEmpty(config.Model, "Not set"))
+		response += fmt.Sprintf("• Model Type: `%s`\n", config.ModelType)
+		response += fmt.Sprintf("• API Key: `%s`\n", ternary(config.APIKeySet, "Configured", "Missing"))
+		response += fmt.Sprintf("• LLM Ready: `%s`\n", ternary(config.Configured, "Yes", "No"))
+		if !config.Configured {
+			response += fmt.Sprintf("• Missing: `%s`\n", config.missingSummary())
+		}
 		response += fmt.Sprintf("• Context Window: `%d` tokens\n", agent.ContextWindow)
 		response += fmt.Sprintf("• LLM API Calls: `%d`\n", agent.LLMAPICalls)
 
@@ -1600,6 +1626,7 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, command strin
 
 	case "/clear":
 		s.db.ClearHistory(agent.ID)
+		s.broadcastConversationCleared(agent.ID)
 		response = "✅ Chat history cleared"
 
 	default:
@@ -2060,13 +2087,13 @@ func (s *Server) HandleGetTunnelURL(c *fiber.Ctx) error {
 
 func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	var req struct {
-		TunnelEnabled *bool  `json:"tunnelEnabled"`
-		OpenrouterKey string `json:"openrouterKey"`
-		OpenaiKey     string `json:"openaiKey"`
-		AnthropicKey  string `json:"anthropicKey"`
-		GeminiKey     string `json:"geminiKey"`
-		Timezone      string `json:"timezone"`
-		TimeOffset    string `json:"timeOffset"`
+		TunnelEnabled *bool   `json:"tunnelEnabled"`
+		OpenrouterKey *string `json:"openrouterKey"`
+		OpenaiKey     *string `json:"openaiKey"`
+		AnthropicKey  *string `json:"anthropicKey"`
+		GeminiKey     *string `json:"geminiKey"`
+		Timezone      *string `json:"timezone"`
+		TimeOffset    *string `json:"timeOffset"`
 	}
 	c.BodyParser(&req)
 
@@ -2081,11 +2108,25 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 		}
 	}
 
-	if req.Timezone != "" {
-		s.db.SetSetting("timezone", req.Timezone)
+	// Persist API keys exactly as submitted so /status and chat validation use the real saved state.
+	// Reference: docs/frontend-backend-communication.md.
+	if req.OpenrouterKey != nil {
+		s.db.SetSetting("openrouter_api_key", strings.TrimSpace(*req.OpenrouterKey))
 	}
-	if req.TimeOffset != "" {
-		s.db.SetSetting("time_offset", req.TimeOffset)
+	if req.OpenaiKey != nil {
+		s.db.SetSetting("openai_api_key", strings.TrimSpace(*req.OpenaiKey))
+	}
+	if req.AnthropicKey != nil {
+		s.db.SetSetting("anthropic_api_key", strings.TrimSpace(*req.AnthropicKey))
+	}
+	if req.GeminiKey != nil {
+		s.db.SetSetting("gemini_api_key", strings.TrimSpace(*req.GeminiKey))
+	}
+	if req.Timezone != nil {
+		s.db.SetSetting("timezone", strings.TrimSpace(*req.Timezone))
+	}
+	if req.TimeOffset != nil {
+		s.db.SetSetting("time_offset", strings.TrimSpace(*req.TimeOffset))
 	}
 
 	return c.JSON(fiber.Map{"success": true})
@@ -2153,9 +2194,10 @@ func (s *Server) HandleTelegramVerify(c *fiber.Ctx) error {
 
 func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	var req struct {
-		Payload string `json:"payload"`
-		UserID  string `json:"userId"`
-		AgentID int64  `json:"agentId"`
+		Payload  string `json:"payload"`
+		UserID   string `json:"userId"`
+		AgentID  int64  `json:"agentId"`
+		Platform string `json:"platform"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid JSON"})
@@ -2164,21 +2206,46 @@ func (s *Server) HandleTestContract(c *fiber.Ctx) error {
 	log.Printf("[TEST CONTRACT] Received payload: %s", req.Payload)
 
 	agent, _ := s.db.GetAgent(req.AgentID)
-	var agentBot *telegram.Bot
-
-	// Create bot if agent exists - userId can be a real Telegram chat ID for testing
-	if agent != nil {
-		agentBot = telegram.NewBot(agent.TelegramToken)
+	if agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+	if err := s.ensureConsoleTestAssets(agent); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to seed test assets: " + err.Error()})
 	}
 
-	feedback := s.ExecuteXMLPayload(req.AgentID, req.UserID, req.Payload, agentBot)
+	platform := strings.TrimSpace(strings.ToLower(req.Platform))
+	if platform == "" {
+		platform = "telegram"
+	}
+
+	var feedback []map[string]interface{}
+	switch platform {
+	case "telegram":
+		var agentBot *telegram.Bot
+		if agent.TelegramToken != "" {
+			agentBot = telegram.NewBot(agent.TelegramToken)
+		}
+		feedback = s.ExecuteXMLPayload(req.AgentID, req.UserID, req.Payload, agentBot)
+		if req.UserID != "" && req.UserID != "test" && req.UserID != "test-user" {
+			s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", req.Payload)
+		}
+	case "hermitchat":
+		feedback = s.ExecuteXMLPayload(req.AgentID, "mobile-chat", req.Payload, nil)
+		parsed := parser.ParseLLMOutput(req.Payload)
+		files := []string{}
+		for _, action := range parsed.Actions {
+			if action.Type == "GIVE" {
+				files = append(files, action.Value)
+			}
+		}
+		if parsed.Message != "" || len(files) > 0 {
+			s.addHistoryAndBroadcastWithFiles(agent.ID, "test-console", "assistant", parsed.Message, files)
+		}
+	default:
+		return c.Status(400).JSON(fiber.Map{"error": "Unsupported platform"})
+	}
 
 	log.Printf("[TEST CONTRACT] Feedback: %v", feedback)
-
-	// Only add to history if userId is not a test placeholder
-	if req.UserID != "test" && req.UserID != "test-user" && agent != nil {
-		s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", req.Payload)
-	}
 
 	return c.JSON(fiber.Map{
 		"actionEffects": feedback,
@@ -2850,7 +2917,8 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 		})
 	}
 
-	// 4. Handle <give> tag - Send file to user
+	// 4. Handle <give> tag - Send file to user.
+	// Reference: docs/xml-tags.md. Media type decides whether Telegram gets a document, photo, or video.
 	for _, action := range parsed.Actions {
 		if action.Type == "GIVE" {
 			if agentID > 0 && bot != nil {
@@ -2867,7 +2935,7 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 				os.WriteFile(tmpPath, []byte(content), 0644)
 				defer os.Remove(tmpPath)
 
-				err = bot.SendDocument(chatID, tmpPath, "Requested file: "+action.Value)
+				err = s.sendTransportFile(bot, chatID, tmpPath, action.Value)
 				status := "SUCCESS"
 				if err != nil {
 					status = "FAILED"
@@ -3477,17 +3545,5 @@ func (s *Server) BroadcastMessage(msg string) {
 }
 
 func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content string) {
-	s.db.AddHistory(agentID, userID, role, content)
-
-	// Broadcast to WebSockets
-	payload := map[string]interface{}{
-		"type":     "new_message",
-		"agent_id": agentID,
-		"user_id":  userID,
-		"role":     role,
-		"content":  content,
-	}
-	if jsonMsg, err := json.Marshal(payload); err == nil {
-		s.BroadcastMessage(string(jsonMsg))
-	}
+	s.addHistoryAndBroadcastWithFiles(agentID, userID, role, content, nil)
 }

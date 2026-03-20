@@ -15,6 +15,7 @@ export interface Agent {
   telegramToken?: string;
   llmApiCalls?: number;
   contextWindow?: number;
+  platform?: string;
 }
 
 export interface AgentStats {
