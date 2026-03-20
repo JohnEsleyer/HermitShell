@@ -445,29 +445,46 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	currentTime := s.db.GetSystemTime()
 	userTextWithTime := fmt.Sprintf("[Current System Time: %s] %s", currentTime.Format("2006-01-02 15:04:05"), userText)
 
-	// Handle commands locally without LLM
+	// Handle slash commands locally without LLM
+	// Slash commands are deterministic and processed by the system directly.
 	if strings.HasPrefix(userText, "/") {
 		return s.handleLocalCommand(c, agent, userID, userText)
 	}
 
-	parsedInput := parser.ParseLLMOutput(userText)
-	if hasSystemExecutionInput(parsedInput) {
-		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-		processedLog := describeParsedTags(parsedInput)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
-		s.db.LogAction(agent.ID, "system", "mobile_system_input", processedLog)
+	// Check if takeover mode is enabled for this chat
+	// In takeover mode, user is in the driver's seat and system processes XML tags from user input
+	takeoverMode := s.takeoverMode[chatID]
 
-		feedback := s.ExecuteXMLPayload(agent.ID, chatID, userText, nil)
-		files := extractExecutionFiles(parsedInput)
-		if parsedInput.Message != "" || len(files) > 0 {
-			s.addHistoryAndBroadcastWithFiles(agent.ID, chatID, "assistant", parsedInput.Message, files)
+	// In takeover mode: User is in control, process XML tags from user input
+	if takeoverMode {
+		parsedInput := parser.ParseLLMOutput(userText)
+		if hasSystemExecutionInput(parsedInput) {
+			s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+			processedLog := describeParsedTags(parsedInput)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+			s.db.LogAction(agent.ID, "system", "takeover_input", processedLog)
+
+			feedback := s.ExecuteXMLPayload(agent.ID, chatID, userText, nil)
+			files := extractExecutionFiles(parsedInput)
+
+			// In takeover mode, system responds directly with files
+			if parsedInput.Message != "" || len(files) > 0 {
+				s.addHistoryAndBroadcastWithFiles(agent.ID, chatID, "assistant", parsedInput.Message, files)
+			}
+
+			response := formatSystemExecutionResponse(parsedInput, feedback)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
+			return c.JSON(fiber.Map{"message": response, "files": files, "role": "system"})
+		} else {
+			// No XML tags detected in takeover mode
+			s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", "System: No XML commands detected. In takeover mode, use XML tags like <terminal>, <give>, <calendar>, etc.")
+			return c.JSON(fiber.Map{"message": "System: No XML commands detected", "role": "system"})
 		}
-
-		response := formatSystemExecutionResponse(parsedInput, feedback)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
-		return c.JSON(fiber.Map{"message": response, "files": files, "role": "system"})
 	}
 
+	// Non-takeover mode: LLM is in the driver's seat
+	// System processes XML tags from LLM response only
 	s.db.LogAction(agent.ID, "agent", "ai_processing", fmt.Sprintf("Processing HTTP chat message from user %s", userID))
 
 	history, _ := s.db.GetHistory(agent.ID, 10)
@@ -523,10 +540,11 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
 	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
 
-	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil) // pass nil instead of tempBot to block Telegram spam
+	// Process XML tags from LLM response
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 	if len(feedback) > 0 {
 		feedbackJSON, _ := json.Marshal(feedback)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
 
 	parsed := parser.ParseLLMOutput(response)
@@ -1647,9 +1665,22 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 		}
 
 	case "/clear":
+		// Clear chat history
 		s.db.ClearHistory(agent.ID)
 		s.broadcastConversationCleared(agent.ID)
-		response = "✅ Chat history cleared"
+
+		// Reset context to default (agent's personality as initial context)
+		contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", agent.ID)
+		if err := os.WriteFile(contextPath, []byte(agent.Personality), 0644); err != nil {
+			response = "✅ Chat history cleared, but failed to reset context"
+			s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
+			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context reset failed)")
+			return c.JSON(fiber.Map{"message": response, "role": "system"})
+		}
+
+		response = "✅ Chat history cleared and context window reset to default"
 		s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)

@@ -70,12 +70,13 @@ type AuditLog struct {
 }
 
 type HistoryEntry struct {
-	ID        int64  `json:"id"`
-	AgentID   int64  `json:"agent_id"`
-	UserID    string `json:"user_id"`
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	CreatedAt string `json:"created_at"`
+	ID          int64  `json:"id"`
+	AgentID     int64  `json:"agent_id"`
+	UserID      string `json:"user_id"`
+	Role        string `json:"role"`
+	Content     string `json:"content"`
+	IsProcessed bool   `json:"is_processed"`
+	CreatedAt   string `json:"created_at"`
 }
 
 func NewDB(path string) (*DB, error) {
@@ -149,7 +150,7 @@ func (d *DB) migrate() error {
 		agent_id INTEGER NOT NULL,
 		user_id TEXT NOT NULL,
 		action TEXT NOT NULL,
-		details TEXT,
+		details TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
@@ -160,6 +161,7 @@ func (d *DB) migrate() error {
 		user_id TEXT NOT NULL,
 		role TEXT NOT NULL,
 		content TEXT NOT NULL,
+		is_processed INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
@@ -202,32 +204,35 @@ func (d *DB) migrate() error {
 		created_at TEXT NOT NULL DEFAULT (datetime('now'))
 	);
 
-	CREATE TABLE IF NOT EXISTS calendar (
+	CREATE TABLE IF NOT EXISTS calendar_events (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		agent_id INTEGER NOT NULL,
 		date TEXT NOT NULL,
-		time TEXT NOT NULL,
+		time TEXT NOT NULL DEFAULT '',
 		prompt TEXT NOT NULL,
 		executed INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
 
-	CREATE TABLE IF NOT EXISTS tunnels (
+	CREATE TABLE IF NOT EXISTS apps (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		agent_id INTEGER NOT NULL,
-		tunnel_uuid TEXT NOT NULL,
-		tunnel_name TEXT NOT NULL,
-		public_hostname TEXT NOT NULL DEFAULT '',
-		status TEXT NOT NULL DEFAULT 'inactive',
+		name TEXT NOT NULL,
+		container_id TEXT NOT NULL DEFAULT '',
+		url TEXT NOT NULL DEFAULT '',
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
-		last_seen TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
 	);
 	`
-
-	if _, err := d.db.Exec(schema); err != nil {
+	_, err := d.db.Exec(schema)
+	if err != nil {
 		return err
+	}
+
+	// Migration: Add is_processed column to history table if it doesn't exist
+	if err := d.addColumnIfNotExists("history", "is_processed", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add is_processed column: %w", err)
 	}
 
 	// Add new columns to existing databases if they don't exist
