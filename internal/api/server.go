@@ -1113,6 +1113,7 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 		TunnelURL     string `json:"tunnelUrl"`
 		ProfilePic    string `json:"profilePic"`
 		BannerURL     string `json:"bannerUrl"`
+		Background    string `json:"background"`
 		ContainerID   string `json:"containerId"`
 		AllowedUsers  string `json:"allowedUsers"`
 		Model         string `json:"model"`
@@ -1137,6 +1138,7 @@ func (s *Server) HandleListAgents(c *fiber.Ctx) error {
 			TunnelURL:     tunnelURL,
 			ProfilePic:    a.ProfilePic,
 			BannerURL:     a.BannerURL,
+			Background:    a.Background,
 			ContainerID:   a.ContainerID,
 			AllowedUsers:  a.AllowedUsers,
 			Model:         a.Model,
@@ -1156,6 +1158,7 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		Provider      string `json:"provider"`
 		ProfilePic    string `json:"profilePic"`
 		BannerURL     string `json:"bannerUrl"`
+		Background    string `json:"background"`
 		TelegramToken string `json:"telegramToken"`
 		TelegramID    string `json:"telegramId"`
 		Status        string `json:"status"`
@@ -1174,6 +1177,7 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 		Provider:      req.Provider,
 		ProfilePic:    req.ProfilePic,
 		BannerURL:     req.BannerURL,
+		Background:    req.Background,
 		TelegramToken: req.TelegramToken,
 		TelegramID:    req.TelegramID,
 		Status:        "standby",
@@ -1188,6 +1192,9 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	}
 	if a.Provider == "" {
 		a.Provider = "openrouter"
+	}
+	if a.Background == "" {
+		a.Background = "doodle"
 	}
 	a.Model = req.Model
 	a.AllowedUsers = req.AllowedUsers
@@ -1271,6 +1278,7 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 		Provider      string `json:"provider"`
 		ProfilePic    string `json:"profilePic"`
 		BannerURL     string `json:"bannerUrl"`
+		Background    string `json:"background"`
 		Model         string `json:"model"`
 		AllowedUsers  string `json:"allowedUsers"`
 		TelegramID    string `json:"telegramId"`
@@ -1293,6 +1301,9 @@ func (s *Server) HandleUpdateAgent(c *fiber.Ctx) error {
 	}
 	existing.ProfilePic = req.ProfilePic
 	existing.BannerURL = req.BannerURL
+	if req.Background != "" {
+		existing.Background = req.Background
+	}
 	existing.Model = req.Model
 	existing.AllowedUsers = req.AllowedUsers
 	if req.TelegramID != "" {
