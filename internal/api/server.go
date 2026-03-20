@@ -455,10 +455,23 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	// In takeover mode, user is in the driver's seat and system processes XML tags from user input
 	takeoverMode := s.takeoverMode[chatID]
 
+	// Parse user input for XML tags
+	parsedInput := parser.ParseLLMOutput(userText)
+	hasXMLTags := hasSystemExecutionInput(parsedInput)
+
+	// If user sends XML commands and takeover is off, reject them
+	if hasXMLTags && !takeoverMode {
+		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.")
+		return c.JSON(fiber.Map{
+			"message": "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.",
+			"role":    "system",
+		})
+	}
+
 	// In takeover mode: User is in control, process XML tags from user input
 	if takeoverMode {
-		parsedInput := parser.ParseLLMOutput(userText)
-		if hasSystemExecutionInput(parsedInput) {
+		if hasXMLTags {
 			s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
 			processedLog := describeParsedTags(parsedInput)
 			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
@@ -547,6 +560,7 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
 
+	// Parse the LLM response to extract message content and files
 	parsed := parser.ParseLLMOutput(response)
 	var files []string
 	for _, action := range parsed.Actions {
@@ -555,19 +569,11 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	finalResponse := response
-	finalParsedMsg := parsed.Message
-	if encrypted, err := crypto.Encrypt(finalResponse, crypto.DeriveKey("hermit123")); err == nil {
-		finalResponse = "enc:" + encrypted
-	}
-	if encrypted, err := crypto.Encrypt(finalParsedMsg, crypto.DeriveKey("hermit123")); err == nil {
-		finalParsedMsg = "enc:" + encrypted
-	}
-
+	// Return the message content (without XML tags) and files
+	// System messages are NOT encrypted
 	return c.JSON(fiber.Map{
-		"response": finalResponse,
-		"message":  finalParsedMsg,
-		"files":    files,
+		"message": parsed.Message,
+		"files":   files,
 	})
 }
 

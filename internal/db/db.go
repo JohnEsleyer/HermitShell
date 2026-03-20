@@ -76,6 +76,7 @@ type HistoryEntry struct {
 	Role        string `json:"role"`
 	Content     string `json:"content"`
 	IsProcessed bool   `json:"is_processed"`
+	IsSeen      bool   `json:"is_seen"`
 	CreatedAt   string `json:"created_at"`
 }
 
@@ -233,6 +234,11 @@ func (d *DB) migrate() error {
 	// Migration: Add is_processed column to history table if it doesn't exist
 	if err := d.addColumnIfNotExists("history", "is_processed", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return fmt.Errorf("failed to add is_processed column: %w", err)
+	}
+
+	// Migration: Add is_seen column for unread tracking
+	if err := d.addColumnIfNotExists("history", "is_seen", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return fmt.Errorf("failed to add is_seen column: %w", err)
 	}
 
 	// Add new columns to existing databases if they don't exist
@@ -515,8 +521,13 @@ func (d *DB) GetAllAuditLogs(category string, limit int) ([]*AuditLog, error) {
 	}
 	return logs, nil
 }
+
+// AddHistory stores a message in history.
+// System messages are NOT encrypted - only user and assistant messages are encrypted.
+// Ref: docs/message-processing.md
 func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
-	if d.cryptoKey != nil {
+	// Only encrypt user and assistant messages, NOT system messages
+	if d.cryptoKey != nil && role != "system" {
 		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
 		if err == nil {
 			content = "enc:" + encrypted
@@ -531,7 +542,7 @@ func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 
 func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 	rows, err := d.db.Query(`
-		SELECT id, agent_id, user_id, role, content, created_at
+		SELECT id, agent_id, user_id, role, content, is_processed, is_seen, created_at
 		FROM history WHERE agent_id = ? ORDER BY id DESC LIMIT ?
 	`, agentID, limit)
 	if err != nil {
@@ -542,9 +553,12 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 	var entries []*HistoryEntry
 	for rows.Next() {
 		e := &HistoryEntry{}
-		if err := rows.Scan(&e.ID, &e.AgentID, &e.UserID, &e.Role, &e.Content, &e.CreatedAt); err != nil {
+		var isProcessed, isSeen int
+		if err := rows.Scan(&e.ID, &e.AgentID, &e.UserID, &e.Role, &e.Content, &isProcessed, &isSeen, &e.CreatedAt); err != nil {
 			return nil, err
 		}
+		e.IsProcessed = isProcessed == 1
+		e.IsSeen = isSeen == 1
 		if d.cryptoKey != nil && len(e.Content) > 4 && e.Content[:4] == "enc:" {
 			decrypted, err := crypto.Decrypt(e.Content[4:], d.cryptoKey)
 			if err == nil {
@@ -559,6 +573,17 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 func (d *DB) ClearHistory(agentID int64) error {
 	_, err := d.db.Exec("DELETE FROM history WHERE agent_id = ?", agentID)
 	return err
+}
+
+func (d *DB) MarkHistorySeen(agentID int64) error {
+	_, err := d.db.Exec("UPDATE history SET is_seen = 1 WHERE agent_id = ?", agentID)
+	return err
+}
+
+func (d *DB) GetUnseenCount(agentID int64) (int, error) {
+	var count int
+	err := d.db.QueryRow("SELECT COUNT(*) FROM history WHERE agent_id = ? AND is_seen = 0", agentID).Scan(&count)
+	return count, err
 }
 
 type AllowListEntry struct {
