@@ -17,7 +17,8 @@
 </p>
 
 <p align="center">
-  <b>A lightweight AI agent orchestrator built with Go, designed for efficient VPS environments.</b>
+  <b>The Virtual Office of Autonomous AI Agents.</b><br>
+  <i>A private, self-contained Operating System for orchestrating and collaborating with your digital workforce.</i>
 </p>
 
 ---
@@ -31,9 +32,16 @@
 
 ## Overview
 
-HermitShell provides a complete agentic OS with Docker-based agent containers, Telegram integration, and a web dashboard. Each AI agent runs in its own isolated Docker container with a dedicated workspace.
+HermitShell is more than an orchestrator; it is a **Virtual Office** where your AI agents live, work, and collaborate. Built as a self-contained Operating System, it provides isolated Docker environments for every agent, ensuring absolute privacy and structural integrity. 
 
-### Key Features
+Whether they are writing code, managing your calendar, or publishing web applications, your agents operate within a secure "Shell" that you own and control. 
+
+### Core Concepts
+
+- **💼 Digital Workforce**: Treat your AI models as specialized employees with their own persistent workspaces.
+- **🛡️ Total Sovereignty**: Your keys, your data, your containers. Everything stays within your private infrastructure.
+- **🛠️ Integrated Tools**: Agents have native access to terminal execution, file versioning, and web deployment.
+- **📟 Central Command**: A high-end dashboard to monitor pulses, resource usage, and agent health in real-time.
 
 - **🤖 AI Agents**: Autonomous agents with LLM capabilities (OpenAI, Anthropic, Google Gemini, OpenRouter)
 - **📦 Containers**: Isolated Docker workspaces for each agent
@@ -133,14 +141,14 @@ HermitShell/
 
 ## Dashboard Panels
 
-| Panel | Description |
-|-------|-------------|
-| **Agents** | Create, configure, and manage AI agents |
-| **Containers** | Monitor Docker containers with CPU/Memory stats |
-| **System Health** | Host metrics (CPU, Memory, Disk) |
-| **Published Apps** | Web apps created by agents |
-| **Settings** | API keys, timezone, tunnel/domain mode |
-| **Docs** | Documentation and guides |
+| Panel              | Description                                     |
+| ------------------ | ----------------------------------------------- |
+| **Agents**         | Create, configure, and manage AI agents         |
+| **Containers**     | Monitor Docker containers with CPU/Memory stats |
+| **System Health**  | Host metrics (CPU, Memory, Disk)                |
+| **Published Apps** | Web apps created by agents                      |
+| **Settings**       | API keys, timezone, tunnel/domain mode          |
+| **Docs**           | Documentation and guides                        |
 
 ---
 
@@ -259,33 +267,33 @@ These metrics are displayed in the agent card on the dashboard and in the `/stat
 
 ## Makefile Commands
 
-| Command | Description |
-|---------|-------------|
-| `make setup` | First-time setup (builds Docker image) |
-| `make build` | Build everything (UI + Server + Docker) |
-| `make build-ui` | Build React dashboard |
-| `make build-server` | Build Go binary |
-| `make build-docker` | Build hermit-agent Docker image |
-| `make dev` | Run in development mode |
-| `make run` | Build and run production server |
-| `make clean` | Remove build artifacts |
+| Command             | Description                             |
+| ------------------- | --------------------------------------- |
+| `make setup`        | First-time setup (builds Docker image)  |
+| `make build`        | Build everything (UI + Server + Docker) |
+| `make build-ui`     | Build React dashboard                   |
+| `make build-server` | Build Go binary                         |
+| `make build-docker` | Build hermit-agent Docker image         |
+| `make dev`          | Run in development mode                 |
+| `make run`          | Build and run production server         |
+| `make clean`        | Remove build artifacts                  |
 
 ---
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/agents` | GET, POST | List/Create agents |
-| `/api/agents/:id` | GET, PUT, DELETE | Agent CRUD |
-| `/api/agents/:id/action` | POST | Start/Stop/Reset container |
-| `/api/agents/:id/stats` | GET | Agent statistics |
-| `/api/containers` | GET | List containers with stats |
-| `/api/metrics` | GET | Host + container metrics |
-| `/api/settings` | GET, POST | Get/Set settings |
-| `/api/agents/:id/apps` | GET | List agent web apps |
-| `/apps/:id/:name` | GET | Serve agent web apps (Public) |
-| `/` | GET | Serve dashboard |
+| Endpoint                 | Method           | Description                   |
+| ------------------------ | ---------------- | ----------------------------- |
+| `/api/agents`            | GET, POST        | List/Create agents            |
+| `/api/agents/:id`        | GET, PUT, DELETE | Agent CRUD                    |
+| `/api/agents/:id/action` | POST             | Start/Stop/Reset container    |
+| `/api/agents/:id/stats`  | GET              | Agent statistics              |
+| `/api/containers`        | GET              | List containers with stats    |
+| `/api/metrics`           | GET              | Host + container metrics      |
+| `/api/settings`          | GET, POST        | Get/Set settings              |
+| `/api/agents/:id/apps`   | GET              | List agent web apps           |
+| `/apps/:id/:name`        | GET              | Serve agent web apps (Public) |
+| `/`                      | GET              | Serve dashboard               |
 
 ---
 

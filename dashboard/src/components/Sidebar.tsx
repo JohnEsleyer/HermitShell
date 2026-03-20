@@ -1,4 +1,4 @@
-import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield, FileText, ChevronRight, BookOpen } from 'lucide-react';
+import { Users, Activity, LayoutGrid, Settings, Box, Calendar, Shield, FileText, ChevronRight, BookOpen, LogOut } from 'lucide-react';
 
 interface SidebarProps {
   currentTab: string;
@@ -21,9 +21,10 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
   return (
     <aside className="w-56 h-full flex flex-col z-20 bg-zinc-950/50 border-r border-zinc-800/50">
       {/* Logo */}
-      <div className="p-6 border-b border-zinc-800/50">
-        <div className="relative group cursor-pointer flex items-center gap-3">
-          <svg viewBox="0 0 100 100" className="w-10 h-10 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)] transition-transform duration-300 group-hover:scale-105">
+      <div className="py-4 px-6 border-b border-zinc-800/50">
+        <div className="relative group cursor-pointer flex justify-center">
+          <div className="absolute inset-0 bg-white/10 blur-xl rounded-full scale-125 animate-pulse" />
+          <svg viewBox="0 0 100 100" className="w-8 h-8 relative z-10 drop-shadow-[0_0_15px_rgba(255,255,255,0.4)] transition-transform duration-500 group-hover:scale-110">
             <line x1="25" y1="45" x2="5" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
             <line x1="23" y1="55" x2="5" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
             <line x1="28" y1="65" x2="10" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />
@@ -34,10 +35,6 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
             <circle cx="42" cy="45" r="5" fill="black" />
             <circle cx="60" cy="45" r="5" fill="black" />
           </svg>
-          <div>
-            <span className="text-white font-bold text-sm">HERMIT</span>
-            <span className="text-zinc-500 text-[10px] block">AI Agent OS</span>
-          </div>
         </div>
       </div>
 
@@ -48,9 +45,9 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
             const Icon = tab.icon;
             const isActive = currentTab === tab.id;
             return (
-              <button 
+              <button
                 key={tab.id}
-                onClick={() => setCurrentTab(tab.id)} 
+                onClick={() => setCurrentTab(tab.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${isActive ? 'bg-white text-black' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
               >
                 <Icon className="w-5 h-5 shrink-0" />
@@ -67,12 +64,19 @@ export function Sidebar({ currentTab, setCurrentTab, onLogout }: SidebarProps) {
 
       {/* Settings & Logout */}
       <div className="p-3 border-t border-zinc-800/50 space-y-1">
-        <button 
-          onClick={() => setCurrentTab('settings')} 
+        <button
+          onClick={() => setCurrentTab('settings')}
           className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${currentTab === 'settings' ? 'bg-white text-black' : 'text-zinc-400 hover:bg-zinc-900 hover:text-white'}`}
         >
           <Settings className="w-5 h-5" />
           <span className="text-sm font-bold">Settings</span>
+        </button>
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 text-red-500/70 hover:bg-red-500/10 hover:text-red-400 group"
+        >
+          <LogOut className="w-5 h-5 shrink-0" />
+          <div className="text-left font-bold text-sm">Logout</div>
         </button>
       </div>
     </aside>

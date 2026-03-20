@@ -160,7 +160,7 @@ export default function App() {
 
   if (showLogin) {
     return (
-      <LoginScreen 
+      <LoginScreen
         onLogin={handleLogin}
         error={loginError}
         isLoading={isLoggingIn}
@@ -171,37 +171,37 @@ export default function App() {
   return (
     <div className="h-screen w-full overflow-hidden flex bg-black text-white selection:bg-white selection:text-black font-sans">
       <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} onLogout={handleLogout} />
-      
+
       <main className="flex-1 h-full py-6 pr-6 pl-0">
         <div className="w-full h-full bg-zinc-950 rounded-[3rem] border border-zinc-800/50 p-12 overflow-y-auto relative flex flex-col shadow-2xl">
           <header className="flex justify-between items-end mb-12 shrink-0">
             <div>
               <h1 className="text-5xl font-black tracking-tighter lowercase">
-                {currentTab === 'agents' ? 'your agents' : 
-                 currentTab === 'health' ? 'system health' : 
-                 currentTab === 'apps' ? 'published apps' : 
-                 currentTab === 'containers' ? 'containers' : 
-                 currentTab === 'logs' ? 'system logs' : 
-                 currentTab === 'calendar' ? 'calendar' :
-                 currentTab === 'allowlist' ? 'allowed users' :
-                 currentTab === 'docs' ? 'documentation' :
-                 currentTab === 'settings' ? 'settings' : ''}
+                {currentTab === 'agents' ? 'your agents' :
+                  currentTab === 'health' ? 'system health' :
+                    currentTab === 'apps' ? 'published apps' :
+                      currentTab === 'containers' ? 'containers' :
+                        currentTab === 'logs' ? 'system logs' :
+                          currentTab === 'calendar' ? 'calendar' :
+                            currentTab === 'allowlist' ? 'allowed users' :
+                              currentTab === 'docs' ? 'documentation' :
+                                currentTab === 'settings' ? 'settings' : ''}
               </h1>
               <div className="flex items-center gap-3 mt-4 text-sm font-medium text-zinc-500">
                 <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></div>
                 <span>live system connection active</span>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <SystemClock />
-              
+
               {currentTab === 'agents' && (
-                <button 
+                <button
                   onClick={() => openModal('createAgent')}
                   className="bg-white text-black px-8 py-4 rounded-full font-bold text-sm hover:scale-105 transition-all flex items-center gap-2"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5v14" /></svg>
                   deploy new agent
                 </button>
               )}
@@ -226,7 +226,7 @@ export default function App() {
       {activeModal === 'logs' && selectedAgent && <LogsModal agent={selectedAgent} onClose={closeModal} />}
       {activeModal === 'configure' && selectedAgent && <ConfigureModal agent={selectedAgent} onClose={closeModal} triggerToast={triggerToast} />}
       {activeModal === 'workspace' && selectedContainer && <WorkspaceModal container={selectedContainer} onClose={closeModal} triggerToast={triggerToast} />}
-      
+
       <ToastContainer toasts={toasts} />
     </div>
   );
@@ -260,19 +260,21 @@ function LoginScreen({ onLogin, error = '', isLoading = false }: LoginScreenProp
     <div className="h-screen w-full flex items-center justify-center bg-black">
       <div className="bg-zinc-950 border border-zinc-800 rounded-[3rem] p-12 w-full max-w-md shadow-2xl">
         <div className="text-center mb-8">
-          <svg viewBox="0 0 100 100" className="w-16 h-16 mx-auto mb-4 drop-shadow-[0_0_20px_rgba(255,255,255,0.3)]">
-            <line x1="25" y1="45" x2="5" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
-            <line x1="23" y1="55" x2="5" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
-            <line x1="28" y1="65" x2="10" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />
-            <line x1="75" y1="45" x2="95" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
-            <line x1="77" y1="55" x2="95" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
-            <line x1="72" y1="65" x2="90" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />
-            <circle cx="50" cy="50" r="30" fill="white" />
-            <circle cx="42" cy="45" r="5" fill="black" />
-            <circle cx="60" cy="45" r="5" fill="black" />
-          </svg>
-          <h1 className="text-4xl font-black tracking-tighter">HERMITSHELL</h1>
-          <p className="text-zinc-500 mt-2">Agent Orchestration System</p>
+          <div className="relative group cursor-pointer flex justify-center mb-8">
+            <div className="absolute inset-0 bg-white/10 blur-3xl rounded-full scale-110 animate-pulse" />
+            <svg viewBox="0 0 100 100" className="w-24 h-24 relative z-10 drop-shadow-[0_0_30px_rgba(255,255,255,0.4)] transition-transform duration-500 hover:scale-110">
+              <line x1="25" y1="45" x2="5" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <line x1="23" y1="55" x2="5" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <line x1="28" y1="65" x2="10" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <line x1="75" y1="45" x2="95" y2="40" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <line x1="77" y1="55" x2="95" y2="55" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <line x1="72" y1="65" x2="90" y2="75" stroke="white" strokeWidth="4" strokeLinecap="round" />
+              <circle cx="50" cy="50" r="30" fill="white" />
+              <circle cx="42" cy="45" r="5" fill="black" />
+              <circle cx="60" cy="45" r="5" fill="black" />
+            </svg>
+          </div>
+          <p className="text-zinc-500 mt-2 font-medium tracking-[0.2em] uppercase text-[10px]">Virtual Office System</p>
         </div>
 
         {localError && (
@@ -284,8 +286,8 @@ function LoginScreen({ onLogin, error = '', isLoading = false }: LoginScreenProp
         <div className="space-y-4">
           <div>
             <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2 ml-4">Username</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               autoComplete="off"
               placeholder="admin"
               value={username}
@@ -296,8 +298,8 @@ function LoginScreen({ onLogin, error = '', isLoading = false }: LoginScreenProp
           </div>
           <div>
             <label className="block text-xs text-zinc-500 uppercase tracking-wider mb-2 ml-4">Password</label>
-            <input 
-              type="password" 
+            <input
+              type="password"
               autoComplete="off"
               placeholder="hermit123"
               value={password}
@@ -306,7 +308,7 @@ function LoginScreen({ onLogin, error = '', isLoading = false }: LoginScreenProp
               className="w-full bg-black border border-zinc-800 rounded-full px-8 py-4 text-white outline-none focus:border-zinc-500 placeholder:text-zinc-600"
             />
           </div>
-          <button 
+          <button
             onClick={handleLogin}
             disabled={isLoading}
             className="w-full bg-white text-black py-4 rounded-full font-bold mt-4 hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"

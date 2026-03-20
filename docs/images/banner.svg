@@ -1,90 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 160" width="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" width="100%">
   <defs>
-    <!-- Sharp black background -->
-    <rect id="bg-rect" width="800" height="160" fill="#000000"/>
-    
-    <!-- Red Glow -->
-    <filter id="redGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="blur" />
-      <feFlood flood-color="#ef4444" flood-opacity="0.5" result="color"/>
+    <!-- Background Shape -->
+    <rect id="bgRect" width="800" height="320" rx="40" ry="40"/>
+
+    <!-- Technical Grid Pattern -->
+    <pattern id="gridPattern" width="25" height="25" patternUnits="userSpaceOnUse">
+      <path d="M 25 0 L 0 0 0 25" fill="none" stroke="white" stroke-width="0.5" stroke-opacity="0.08"/>
+    </pattern>
+
+    <!-- Glow for the main mascot -->
+    <filter id="mainGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feFlood flood-color="#ffffff" flood-opacity="0.5" result="color"/>
       <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feComposite in="SourceGraphic" in2="glow" operator="over" />
+      <feComposite in="SourceGraphic" in2="glow" operator="over"/>
     </filter>
 
-    <!-- White Glow -->
-    <filter id="whiteGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="5" result="blur" />
-      <feFlood flood-color="#ffffff" flood-opacity="0.4" result="color"/>
+    <!-- Dimmer glow for the background mascots -->
+    <filter id="shadowGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feFlood flood-color="#ffffff" flood-opacity="0.2" result="color"/>
       <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feComposite in="SourceGraphic" in2="glow" operator="over" />
+      <feComposite in="SourceGraphic" in2="glow" operator="over"/>
     </filter>
 
-    <!-- Green Glow -->
-    <filter id="greenGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="4" result="blur" />
-      <feFlood flood-color="#22c55e" flood-opacity="0.5" result="color"/>
-      <feComposite in="color" in2="blur" operator="in" result="glow"/>
-      <feComposite in="SourceGraphic" in2="glow" operator="over" />
-    </filter>
+    <!-- Mascot Component -->
+    <g id="singleMascot">
+      <g transform="translate(-50, -55)">
+        <g stroke="white" stroke-width="4" stroke-linecap="round">
+          <line x1="25" y1="45" x2="5" y2="40" />
+          <line x1="23" y1="55" x2="5" y2="55" />
+          <line x1="28" y1="65" x2="10" y2="75" />
+          <line x1="75" y1="45" x2="95" y2="40" />
+          <line x1="77" y1="55" x2="95" y2="55" />
+          <line x1="72" y1="65" x2="90" y2="75" />
+        </g>
+        <circle cx="50" cy="55" r="30" fill="white"/>
+        <circle cx="42" cy="50" r="5" fill="black"/>
+        <circle cx="58" cy="50" r="5" fill="black"/>
+      </g>
+    </g>
   </defs>
 
-  <!-- Background -->
-  <use href="#bg-rect" />
+  <!-- Solid Background -->
+  <use href="#bgRect" fill="#0a0a0a"/>
+  <!-- Grid Overlay -->
+  <use href="#bgRect" fill="url(#gridPattern)"/>
 
-  <!-- SQUAD CONTAINER -->
-  <g transform="translate(400, 55)">
+  <!-- Centered Content Group -->
+  <g transform="translate(400, 150)">
     
-    <!-- Left Mascot (Red - Rotated) -->
-    <g transform="translate(-45, 5) scale(0.45) rotate(-15, 50, 50)" filter="url(#redGlow)">
-      <g stroke="#ef4444" stroke-width="4" stroke-linecap="round">
-        <line x1="25" y1="45" x2="5" y2="40" />
-        <line x1="23" y1="55" x2="5" y2="55" />
-        <line x1="28" y1="65" x2="10" y2="75" />
-        <line x1="75" y1="45" x2="95" y2="40" />
-        <line x1="77" y1="55" x2="95" y2="55" />
-        <line x1="72" y1="65" x2="90" y2="75" />
+    <!-- Mascot Trio Group -->
+    <g transform="translate(0, -45)">
+      <!-- Back Left Shadow -->
+      <g transform="translate(-40, -10) scale(0.85)" opacity="0.3" filter="url(#shadowGlow)">
+        <use href="#singleMascot"/>
       </g>
-      <circle cx="50" cy="55" r="30" fill="#ef4444" />
-      <circle cx="42" cy="50" r="5" fill="black" />
-      <circle cx="58" cy="50" r="5" fill="black" />
+      <!-- Back Right Shadow -->
+      <g transform="translate(40, -10) scale(0.85)" opacity="0.3" filter="url(#shadowGlow)">
+        <use href="#singleMascot"/>
+      </g>
+      <!-- Front Main Mascot -->
+      <g transform="translate(0, 0)" filter="url(#mainGlow)">
+        <use href="#singleMascot"/>
+      </g>
     </g>
 
-    <!-- Right Mascot (Green - Rotated) -->
-    <g transform="translate(45, 5) scale(0.45) rotate(15, 50, 50)" filter="url(#greenGlow)">
-      <g stroke="#22c55e" stroke-width="4" stroke-linecap="round">
-        <line x1="25" y1="45" x2="5" y2="40" />
-        <line x1="23" y1="55" x2="5" y2="55" />
-        <line x1="28" y1="65" x2="10" y2="75" />
-        <line x1="75" y1="45" x2="95" y2="40" />
-        <line x1="77" y1="55" x2="95" y2="55" />
-        <line x1="72" y1="65" x2="90" y2="75" />
-      </g>
-      <circle cx="50" cy="55" r="30" fill="#22c55e" />
-      <circle cx="42" cy="50" r="5" fill="black" />
-      <circle cx="58" cy="50" r="5" fill="black" />
-    </g>
-
-    <!-- Center Forward Mascot (White) -->
-    <g transform="translate(-25, -15) scale(0.55)" filter="url(#whiteGlow)">
-      <g stroke="white" stroke-width="4" stroke-linecap="round">
-        <line x1="25" y1="45" x2="5" y2="40" />
-        <line x1="23" y1="55" x2="5" y2="55" />
-        <line x1="28" y1="65" x2="10" y2="75" />
-        <line x1="75" y1="45" x2="95" y2="40" />
-        <line x1="77" y1="55" x2="95" y2="55" />
-        <line x1="72" y1="65" x2="90" y2="75" />
-      </g>
-      <circle cx="50" cy="55" r="30" fill="white" />
-      <circle cx="42" cy="50" r="5" fill="black" />
-      <circle cx="58" cy="50" r="5" fill="black" />
-    </g>
-  </g>
-
-  <!-- Creative B&W Typography -->
-  <g transform="translate(400, 125)">
-    <text text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="32" font-weight="900" letter-spacing="4">
-      <tspan fill="none" stroke="white" stroke-width="1.5">HERMIT</tspan><tspan fill="white">SHELL</tspan>
+    <!-- Typography: CYBER-MODERN -->
+    <text y="45" 
+          text-anchor="middle" 
+          font-family="Inter, system-ui, -apple-system, sans-serif" 
+          font-size="42" 
+          font-weight="900" 
+          fill="#ffffff" 
+          letter-spacing="-1.5">
+      Hermit<tspan fill="#ffffff" opacity="0.4">Shell</tspan>
     </text>
-    <text y="22" text-anchor="middle" font-family="Courier New, monospace" font-size="10" font-weight="bold" fill="#666666" letter-spacing="10">AI_AGENT_OS</text>
+
+    <!-- One-liner Tagline -->
+    <text y="85" 
+          text-anchor="middle" 
+          font-family="Inter, system-ui, -apple-system, sans-serif" 
+          font-size="14" 
+          font-weight="500" 
+          fill="#666666" 
+          letter-spacing="4">
+      THE PRIVATE OS FOR PERSONAL AI AGENTS
+    </text>
+    
   </g>
 </svg>
