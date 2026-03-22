@@ -78,6 +78,12 @@ var (
 // ParseLLMOutput parses XML tags from LLM response.
 // Docs: See docs/xml-tags.md for all supported tags.
 // Supported tags: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
+//
+// Rules:
+// - <message> tags: Extracted for user transport (Telegram/HermitChat)
+// - <thought> tags: Internal only, NOT sent to user
+// - Plain text outside tags: Ignored (not sent to user)
+// - At least one <message> tag is REQUIRED, otherwise response is rejected
 func ParseLLMOutput(text string) ParsedResponse {
 	log.Printf("[PARSER] Input text: %s", text)
 
@@ -93,6 +99,8 @@ func ParseLLMOutput(text string) ParsedResponse {
 		resp.Thought = strings.TrimSpace(m[1])
 	}
 
+	// Extract <message> tag content
+	// Plain text outside tags is IGNORED - only <message> content goes to user
 	if m := messageRegex.FindStringSubmatch(text); len(m) > 1 {
 		resp.Message = strings.TrimSpace(m[1])
 	}

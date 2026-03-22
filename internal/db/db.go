@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JohnEsleyer/HermitShell/internal/crypto"
@@ -537,7 +538,7 @@ func (d *DB) AddHistory(agentID int64, userID, role, content string) error {
 	if d.cryptoKey != nil && role != "system" {
 		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
 		if err == nil {
-			content = "enc:" + encrypted
+			content = "cbc:" + encrypted // Use CBC prefix for new encryptions
 		}
 	}
 	_, err := d.db.Exec(`
@@ -551,7 +552,7 @@ func (d *DB) AddHistoryWithRejection(agentID int64, userID, role, content string
 	if d.cryptoKey != nil && role != "system" {
 		encrypted, err := crypto.Encrypt(content, d.cryptoKey)
 		if err == nil {
-			content = "enc:" + encrypted
+			content = "cbc:" + encrypted // Use CBC prefix for new encryptions
 		}
 	}
 	rejectedVal := 0
@@ -585,13 +586,26 @@ func (d *DB) GetHistory(agentID int64, limit int) ([]*HistoryEntry, error) {
 		e.IsProcessed = isProcessed == 1
 		e.IsSeen = isSeen == 1
 		e.IsRejected = isRejected == 1
-		if d.cryptoKey != nil && len(e.Content) > 4 && e.Content[:4] == "enc:" {
-			decrypted, err := crypto.Decrypt(e.Content[4:], d.cryptoKey)
-			if err != nil {
-				log.Printf("[ERROR] Failed to decrypt history entry %d: %v", e.ID, err)
-				e.Content = "[Decryption failed]"
-			} else {
-				e.Content = decrypted
+
+		// Decrypt message content - pass full content with prefix for crypto.Decrypt to handle
+		if d.cryptoKey != nil && len(e.Content) > 4 {
+			// Determine the prefix to use
+			var prefix string
+			if strings.HasPrefix(e.Content, "cbc:") {
+				prefix = "cbc:"
+			} else if strings.HasPrefix(e.Content, "enc:") {
+				prefix = "enc:"
+			}
+
+			if prefix != "" {
+				encrypted := e.Content[len(prefix):]
+				decrypted, err := crypto.Decrypt(prefix+encrypted, d.cryptoKey)
+				if err != nil {
+					log.Printf("[ERROR] Failed to decrypt history entry %d (%s): %v", e.ID, prefix, err)
+					e.Content = "[Decryption failed: " + err.Error() + "]"
+				} else {
+					e.Content = decrypted
+				}
 			}
 		}
 		entries = append(entries, e)

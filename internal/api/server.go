@@ -420,13 +420,30 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 
 	userText := strings.TrimSpace(req.Message)
-	if userText != "" && strings.HasPrefix(userText, "enc:") {
-		decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
-		if err != nil {
-			log.Printf("[ERROR] Failed to decrypt message: %v", err)
-			return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
+
+	// Decrypt message if encrypted (handle both enc: and cbc: prefixes)
+	if userText != "" {
+		if strings.HasPrefix(userText, "cbc:") {
+			log.Printf("[DEBUG] Message is encrypted (CBC), attempting decryption...")
+			decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
+			if err != nil {
+				log.Printf("[ERROR] Failed to decrypt CBC message: %v", err)
+				return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
+			}
+			userText = decrypted
+			log.Printf("[DEBUG] Successfully decrypted CBC message: '%s'", userText)
+		} else if strings.HasPrefix(userText, "enc:") {
+			log.Printf("[DEBUG] Message is encrypted (GCM), attempting decryption...")
+			decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
+			if err != nil {
+				log.Printf("[ERROR] Failed to decrypt GCM message: %v", err)
+				return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
+			}
+			userText = decrypted
+			log.Printf("[DEBUG] Successfully decrypted GCM message: '%s'", userText)
+		} else {
+			log.Printf("[DEBUG] Message is NOT encrypted: '%s'", userText)
 		}
-		userText = decrypted
 	}
 
 	if userText == "" {
@@ -450,7 +467,9 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	// Handle slash commands locally without LLM
 	// Slash commands are deterministic and processed by the system directly.
+	log.Printf("[DEBUG] Checking for slash command: userText='%s', starts with /: %v", userText, strings.HasPrefix(userText, "/"))
 	if strings.HasPrefix(userText, "/") {
+		log.Printf("[DEBUG] Detected slash command, calling handleLocalCommand")
 		return s.handleLocalCommand(c, agent, userID, userText)
 	}
 
@@ -507,14 +526,20 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	history, _ := s.db.GetHistory(agent.ID, 10)
 	var messages []llm.Message
 
+	// Build system prompt: ALWAYS use global context.md as base instructions
+	// This ensures all agents have the proper instructions regardless of agent-specific config
 	systemPrompt := agent.Personality
-	contextPath := "./context.md"
-	if content, err := os.ReadFile(contextPath); err == nil {
-		contextStr := string(content)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
-		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
+
+	// Load global context.md from HermitShell root directory
+	if content, err := os.ReadFile("./context.md"); err == nil {
+		contextStr := strings.TrimSpace(string(content))
+		if contextStr != "" {
+			// Replace placeholders with agent-specific values
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+			systemPrompt = contextStr
+		}
 	}
 
 	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
@@ -553,17 +578,6 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
 	}
 
-	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
-	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
-
-	// Process XML tags from LLM response
-	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
-	if len(feedback) > 0 {
-		feedbackJSON, _ := json.Marshal(feedback)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
-	}
-
 	// Parse the LLM response to extract message content and files
 	parsed := parser.ParseLLMOutput(response)
 	var files []string
@@ -571,6 +585,27 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		if action.Type == "GIVE" {
 			files = append(files, action.Value)
 		}
+	}
+
+	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
+	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+
+	// Reject if no <message> tag was found
+	// Plain text outside tags is ignored - <message> tag is required
+	if parsed.Message == "" {
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: Response missing required <message> tag")
+		return c.Status(400).JSON(fiber.Map{"error": "Response missing required <message> tag. All visible text must be wrapped in <message> tags."})
+	}
+
+	// Only broadcast the parsed message content, not raw response
+	// This ensures <thought> tags are kept internal and only <message> content goes to users
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", parsed.Message)
+
+	// Process XML tags from LLM response (terminal, give, calendar, etc.)
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
+	if len(feedback) > 0 {
+		feedbackJSON, _ := json.Marshal(feedback)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
 
 	// Return the message content (without XML tags) and files
@@ -1296,9 +1331,17 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	}
 
 	// Create agent-specific skills folder with context.md
+	// Initialize with global context.md as base, personality will be prepended in system prompt
 	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
 	os.MkdirAll(agentSkillsPath, 0755)
-	os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(a.Personality), 0644)
+
+	// Copy global context.md as base for agent-specific context
+	if globalContext, err := os.ReadFile("./context.md"); err == nil {
+		os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), globalContext, 0644)
+	} else {
+		// Fallback: empty context (will use global)
+		os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(""), 0644)
+	}
 
 	// Create and start Docker container for the agent
 	go func() {
@@ -1658,6 +1701,7 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 		}
 
 	case "/reset":
+		log.Printf("[SLASH] Processing /reset command for agent %s", agent.Name)
 		if agent.ContainerID != "" && s.docker != nil {
 			s.docker.Stop(agent.ContainerID)
 			s.docker.Remove(agent.ContainerID)
@@ -1668,35 +1712,30 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 			err := s.docker.Run(agent.ContainerID, image, true)
 			if err != nil {
 				response = fmt.Sprintf("❌ Failed to reset container: %v", err)
+				log.Printf("[SLASH] /reset failed: %v", err)
 			} else {
 				response = "✅ Container reset successfully"
 				s.db.LogAction(agent.ID, "docker", "container_reset", "Container reset from mobile client")
+				log.Printf("[SLASH] /reset completed successfully")
 			}
 		} else {
 			response = "❌ No container configured for this agent"
+			log.Printf("[SLASH] /reset: no container configured")
 		}
 
 	case "/clear":
-		// Clear chat history
+		log.Printf("[SLASH] Processing /clear command for agent %s", agent.Name)
+		// Clear chat history (NOT context.md - that contains important instructions)
 		s.db.ClearHistory(agent.ID)
 		s.broadcastConversationCleared(agent.ID)
+		log.Printf("[SLASH] /clear: history cleared, broadcast sent")
 
-		// Reset context to default (agent's personality as initial context)
-		contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", agent.ID)
-		if err := os.WriteFile(contextPath, []byte(agent.Personality), 0644); err != nil {
-			response = "✅ Chat history cleared, but failed to reset context"
-			s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
-			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context reset failed)")
-			return c.JSON(fiber.Map{"message": response, "role": "system"})
-		}
-
-		response = "✅ Chat history cleared and context window reset to default"
+		response = "✅ Chat history cleared. Context window preserved."
 		s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
 		s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
+		log.Printf("[SLASH] /clear: completed, returning: %s", response)
 		return c.JSON(fiber.Map{"message": response, "role": "system"})
 
 	default:
@@ -1708,6 +1747,7 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 	s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
 	s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
 
+	log.Printf("[SLASH] Returning response: message='%s', role='system'", response)
 	return c.JSON(fiber.Map{"message": response, "role": "system"})
 }
 
@@ -1822,23 +1862,31 @@ func (s *Server) HandleGetAgentContextWindow(c *fiber.Ctx) error {
 
 	history, _ := s.db.GetHistory(id, 500)
 
-	contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", id)
-	contextData, _ := os.ReadFile(contextPath)
+	// Build system prompt like the chat handler does - ALWAYS use global context.md
+	systemPrompt := agent.Personality
 
-	var historyList []map[string]string
+	// Load global context.md from HermitShell root directory
+	if content, err := os.ReadFile("./context.md"); err == nil {
+		contextStr := strings.TrimSpace(string(content))
+		if contextStr != "" {
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+			systemPrompt = contextStr
+		}
+	}
+
+	var historyList []map[string]interface{}
 	for _, h := range history {
-		historyList = append(historyList, map[string]string{
-			"role":    h.Role,
-			"content": h.Content,
+		historyList = append(historyList, map[string]interface{}{
+			"role":      h.Role,
+			"content":   h.Content,
+			"timestamp": h.CreatedAt,
 		})
 	}
 
-	globalContextPath := "./context.md"
-	globalContextData, _ := os.ReadFile(globalContextPath)
-
 	return c.JSON(fiber.Map{
-		"systemPrompt":     string(contextData),
-		"globalContext":    string(globalContextData),
+		"systemPrompt":     systemPrompt, // Full system prompt with variables substituted
 		"agentPersonality": agent.Personality,
 		"history":          historyList,
 	})
@@ -2616,9 +2664,16 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 
 	switch cmd {
 	case "/status":
+		config := s.getLLMConfigStatus(agent)
 		statusMsg := fmt.Sprintf("🤖 *Agent Status: %s*\n\n", agent.Name)
-		statusMsg += fmt.Sprintf("• Model: `%s`\n", agent.Model)
-		statusMsg += fmt.Sprintf("• Provider: `%s`\n", agent.Provider)
+		statusMsg += fmt.Sprintf("• Provider: `%s`\n", config.ProviderUI)
+		statusMsg += fmt.Sprintf("• Model: `%s`\n", firstNonEmpty(config.Model, "Not set"))
+		statusMsg += fmt.Sprintf("• Model Type: `%s`\n", config.ModelType)
+		statusMsg += fmt.Sprintf("• API Key: `%s`\n", ternary(config.APIKeySet, "Configured", "Missing"))
+		statusMsg += fmt.Sprintf("• LLM Ready: `%s`\n", ternary(config.Configured, "Yes", "No"))
+		if !config.Configured {
+			statusMsg += fmt.Sprintf("• Missing: `%s`\n", config.missingSummary())
+		}
 		statusMsg += fmt.Sprintf("• Context Window: `%d` tokens\n", agent.ContextWindow)
 		statusMsg += fmt.Sprintf("• LLM API Calls: `%d`\n", agent.LLMAPICalls)
 
@@ -2632,7 +2687,6 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 		}
 		statusMsg += fmt.Sprintf("• Container: `%s` (%s)\n", agent.ContainerID, containerStatus)
 
-		// Show polling status instead of webhook
 		statusMsg += "• Connection: Long Polling Active ✅\n"
 
 		statusMsg += fmt.Sprintf("\n🔐 *Authorization*\n")
@@ -2793,6 +2847,9 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		return
 	}
 
+	// Parse the LLM response to extract message content
+	parsed := parser.ParseLLMOutput(response)
+
 	// Log LLM response
 	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
 
@@ -2801,10 +2858,11 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		tempBot.DeleteMessage(chatID, thinkingMsgID)
 	}
 
-	// Log agent response (Full trace)
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
+	// Only broadcast the parsed message content, not raw response
+	// This ensures <thought> tags are kept internal and only <message> content goes to users
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", parsed.Message)
 
-	// Execute the XML actions from the response
+	// Execute the XML actions from the response (terminal, give, calendar, etc.)
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
 
 	// Commit with <end> and feedback
