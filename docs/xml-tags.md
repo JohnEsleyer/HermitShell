@@ -105,7 +105,45 @@ The system will read `data/skills/python-coding.md` and inject it into the conve
 
 ---
 
-### `<calendar>` - Schedule Event
+### `<schedule>` - Relative Time Scheduling (Recommended)
+
+Schedule a reminder using relative time. The server automatically calculates the absolute datetime from the current time + your specified duration. This is the **preferred method** for scheduling reminders.
+
+**Attributes:**
+- `minutes="N"` - Schedule N minutes from now (optional)
+- `hours="N"` - Schedule N hours from now (optional)
+- `days="N"` - Schedule N days from now (optional)
+- Use any combination: minutes only, hours only, days only, or mix them
+
+**Content:** The reminder text/prompt
+
+**Examples:**
+
+```xml
+<!-- In 3 minutes -->
+<schedule minutes="3">Time to take a break!</schedule>
+
+<!-- In 2 hours -->
+<schedule hours="2">Reminder: Meeting starts soon</schedule>
+
+<!-- In 1 day -->
+<schedule days="1">Don't forget your appointment tomorrow</schedule>
+
+<!-- 30 minutes AND 2 hours = 2.5 hours from now -->
+<schedule hours="2" minutes="30">Two and a half hour reminder</schedule>
+
+<!-- 1 day and 9 hours from now -->
+<schedule days="1" hours="9">Morning reminder for tomorrow</schedule>
+```
+
+**Why use `<schedule>` instead of `<calendar>`?**
+- No need to calculate absolute datetime yourself
+- Works correctly regardless of timezone confusion
+- Simpler and less error-prone for relative time requests
+
+---
+
+### `<calendar>` - Absolute Time Scheduling (Alternative)
 
 Schedule a calendar event. Supports multiple events in a single response.
 

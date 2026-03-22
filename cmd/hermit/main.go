@@ -1,14 +1,12 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/JohnEsleyer/HermitShell/internal/api"
@@ -168,12 +166,10 @@ func main() {
 	}
 
 	// 5. Start Background Tasks
-	// Reference: See docs/time-management.md
-	// Start calendar scheduler
-	go calendarScheduler(database)
+	// Note: Calendar scheduler is now started inside NewServer()
 
 	// 6. Start API Server
-	// Reference: See docs/api-endpoints.md
+	// Reference: See docs/api-endpoints.md for how to create new endpoints.
 	apiServer := api.NewServer(database, nil, bot, llmClient, dockerClient, tunnelManager)
 
 	// Start Telegram polling for all existing agents with tokens
@@ -228,62 +224,6 @@ func cleanupStaleCloudflaredProcesses() {
 	}
 }
 
-func calendarScheduler(database *db.DB) {
-	log.Println("Calendar scheduler started")
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		events, err := database.GetPendingCalendarEvents()
-		if err != nil {
-			continue
-		}
-
-		if len(events) > 0 {
-			log.Printf("Calendar scheduler: found %d pending events", len(events))
-		}
-
-		currentTime := database.GetSystemTime()
-		log.Printf("Calendar scheduler: current system time %s", currentTime.Format("2006-01-02 15:04:05"))
-
-		for _, event := range events {
-			// Parse event datetime (stored in local time)
-			eventTime, err := time.Parse("2006-01-02 15:04", event.Date+" "+event.Time)
-			if err != nil {
-				log.Printf("Calendar scheduler: failed to parse event time: %v", err)
-				continue
-			}
-
-			log.Printf("Calendar scheduler: checking event %d at %s vs system time %s", event.ID, eventTime.Format("15:04"), currentTime.Format("15:04"))
-
-			// Check if event time has passed (compare system time with event time)
-			if currentTime.After(eventTime) || currentTime.Equal(eventTime) {
-				log.Printf("Calendar scheduler: triggering event %d", event.ID)
-
-				// Get agent
-				agent, err := database.GetAgent(event.AgentID)
-				if err != nil {
-					log.Printf("Calendar scheduler: failed to get agent: %v", err)
-					continue
-				}
-
-				// Send reminder to user
-				if agent.TelegramToken != "" {
-					bot := telegram.NewBot(agent.TelegramToken)
-					// Get allowed users
-					allowedUsers := strings.Split(agent.AllowedUsers, ",")
-					if len(allowedUsers) > 0 && allowedUsers[0] != "" {
-						chatID := strings.TrimSpace(allowedUsers[0])
-						log.Printf("Calendar scheduler: sending reminder to chat %s", chatID)
-						bot.SendMessage(chatID, "🔔 *Reminder*\n\n"+event.Prompt)
-						database.MarkCalendarEventExecuted(event.ID)
-					}
-				}
-			}
-		}
-	}
-}
-
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
@@ -298,17 +238,32 @@ func ensureRuntimeData(dataDir string) error {
 	}
 
 	runtimeContextPath := filepath.Join(skillsDir, "context.md")
-	if _, err := os.Stat(runtimeContextPath); err == nil {
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
 
+	// Always copy from source to ensure we have the latest version
 	sourceFile, err := os.Open("./context.md")
 	if err != nil {
+		// If source doesn't exist in current dir, check if runtime version already exists
+		if _, runtimeErr := os.Stat(runtimeContextPath); runtimeErr == nil {
+			log.Printf("Note: ./context.md not found, using existing %s", runtimeContextPath)
+			return nil
+		}
 		return err
 	}
 	defer sourceFile.Close()
+
+	// Get source file info for comparison
+	sourceInfo, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+
+	// Check if runtime version exists and is up-to-date
+	if runtimeInfo, err := os.Stat(runtimeContextPath); err == nil {
+		// If source is older or same as runtime, skip update
+		if !sourceInfo.ModTime().After(runtimeInfo.ModTime()) {
+			return nil
+		}
+	}
 
 	destFile, err := os.Create(runtimeContextPath)
 	if err != nil {
@@ -317,6 +272,9 @@ func ensureRuntimeData(dataDir string) error {
 	defer destFile.Close()
 
 	_, err = io.Copy(destFile, sourceFile)
+	if err == nil {
+		log.Printf("Updated %s from ./context.md", runtimeContextPath)
+	}
 	return err
 }
 

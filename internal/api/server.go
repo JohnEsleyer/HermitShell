@@ -215,6 +215,9 @@ type Server struct {
 
 	wsClients map[*websocket.Conn]bool
 	wsMutex   sync.Mutex
+
+	schedulerRunning bool
+	schedulerMu      sync.Mutex
 }
 
 func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmClient *llm.Client, dockerClient *docker.Client, tunnels *cloudflare.TunnelManager) *Server {
@@ -257,6 +260,10 @@ func NewServer(database *db.DB, ws *workspace.Workspace, bot *telegram.Bot, llmC
 
 	// Start background metrics broadcast
 	go s.StartMetricsBroadcast()
+
+	// Start calendar scheduler (sends reminders to agents for processing)
+	// Run in goroutine so it doesn't block server startup
+	go s.StartCalendarScheduler()
 
 	return s
 }
@@ -346,6 +353,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
 	api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
 	api.Get("/agents/:id/unread", s.HandleGetUnreadCount)
+	api.Post("/agents/:id/mark-seen", s.HandleMarkMessagesSeen)
 
 	api.Get("/skills", s.HandleListSkills)
 	api.Post("/skills", s.HandleCreateSkill)
@@ -419,10 +427,29 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 
 	userText := strings.TrimSpace(req.Message)
-	if userText != "" && strings.HasPrefix(userText, "enc:") {
-		decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
-		if err == nil {
+
+	// Decrypt message if encrypted (handle both enc: and cbc: prefixes)
+	if userText != "" {
+		if strings.HasPrefix(userText, "cbc:") {
+			log.Printf("[DEBUG] Message is encrypted (CBC), attempting decryption...")
+			decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
+			if err != nil {
+				log.Printf("[ERROR] Failed to decrypt CBC message: %v", err)
+				return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
+			}
 			userText = decrypted
+			log.Printf("[DEBUG] Successfully decrypted CBC message: '%s'", userText)
+		} else if strings.HasPrefix(userText, "enc:") {
+			log.Printf("[DEBUG] Message is encrypted (GCM), attempting decryption...")
+			decrypted, err := crypto.Decrypt(userText[4:], crypto.DeriveKey("hermit123"))
+			if err != nil {
+				log.Printf("[ERROR] Failed to decrypt GCM message: %v", err)
+				return c.Status(400).JSON(fiber.Map{"error": "Failed to decrypt message"})
+			}
+			userText = decrypted
+			log.Printf("[DEBUG] Successfully decrypted GCM message: '%s'", userText)
+		} else {
+			log.Printf("[DEBUG] Message is NOT encrypted: '%s'", userText)
 		}
 	}
 
@@ -447,7 +474,9 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	// Handle slash commands locally without LLM
 	// Slash commands are deterministic and processed by the system directly.
+	log.Printf("[DEBUG] Checking for slash command: userText='%s', starts with /: %v", userText, strings.HasPrefix(userText, "/"))
 	if strings.HasPrefix(userText, "/") {
+		log.Printf("[DEBUG] Detected slash command, calling handleLocalCommand")
 		return s.handleLocalCommand(c, agent, userID, userText)
 	}
 
@@ -455,10 +484,24 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	// In takeover mode, user is in the driver's seat and system processes XML tags from user input
 	takeoverMode := s.takeoverMode[chatID]
 
+	// Parse user input for XML tags
+	parsedInput := parser.ParseLLMOutput(userText)
+	hasXMLTags := hasSystemExecutionInput(parsedInput)
+
+	// If user sends XML commands and takeover is off, reject them
+	if hasXMLTags && !takeoverMode {
+		s.addHistoryAndBroadcastWithRejection(agent.ID, userID, "user", userText, true)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.")
+		return c.JSON(fiber.Map{
+			"message":  "System: XML commands are not allowed when takeover mode is off. Enable takeover mode to issue commands directly.",
+			"role":     "system",
+			"rejected": true,
+		})
+	}
+
 	// In takeover mode: User is in control, process XML tags from user input
 	if takeoverMode {
-		parsedInput := parser.ParseLLMOutput(userText)
-		if hasSystemExecutionInput(parsedInput) {
+		if hasXMLTags {
 			s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
 			processedLog := describeParsedTags(parsedInput)
 			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
@@ -490,14 +533,20 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	history, _ := s.db.GetHistory(agent.ID, 10)
 	var messages []llm.Message
 
+	// Build system prompt: ALWAYS use global context.md as base instructions
+	// This ensures all agents have the proper instructions regardless of agent-specific config
 	systemPrompt := agent.Personality
-	contextPath := "./context.md"
-	if content, err := os.ReadFile(contextPath); err == nil {
-		contextStr := string(content)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
-		contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
-		systemPrompt = contextStr + "\n\n---\n\n" + agent.Personality
+
+	// Load global context.md from HermitShell root directory
+	if content, err := os.ReadFile("./context.md"); err == nil {
+		contextStr := strings.TrimSpace(string(content))
+		if contextStr != "" {
+			// Replace placeholders with agent-specific values
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+			systemPrompt = contextStr
+		}
 	}
 
 	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
@@ -525,29 +574,49 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 
 	s.db.LogAction(agent.ID, "network", "llm_request", fmt.Sprintf("Provider: %s, Model: %s, Messages: %d", agent.Provider, agent.Model, len(messages)))
 
-	response, err := client.Chat(agent.Model, messages)
+	// Retry helper for missing <message> tag
+	maxRetries := 1
+	var response string
+	var parsed parser.ParsedResponse
 
-	s.db.IncrementLLMAPICalls(agent.ID)
-	contextWindow := getModelContextWindow(agent.Model)
-	s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		response, err = client.Chat(agent.Model, messages)
 
-	if err != nil {
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
-		return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
+		s.db.IncrementLLMAPICalls(agent.ID)
+		contextWindow := getModelContextWindow(agent.Model)
+		s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
+
+		if err != nil {
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
+			return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
+		}
+
+		// Parse the LLM response to extract message content and files
+		parsed = parser.ParseLLMOutput(response)
+
+		s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response (attempt %d): %.200s...", attempt+1, response))
+		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+
+		// Success if <message> tag found
+		if parsed.Message != "" {
+			break
+		}
+
+		// If no <message> tag and we have retries left, add explicit reminder
+		if attempt < maxRetries {
+			log.Printf("[RETRY] No <message> tag found, retrying with reminder (attempt %d/%d)", attempt+1, maxRetries+1)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", fmt.Sprintf("Retry %d/%d: Your last response had no <message> tags. Remember: ALL visible text must be wrapped in <message> tags, or it will be ignored.", attempt+1, maxRetries+1))
+			messages = append(messages, llm.Message{Role: "system", Content: "Reminder: Your response must contain <message>...</message> tags around ALL visible text. Without these tags, your response will be completely ignored by the user."})
+		}
 	}
 
-	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
-	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
-
-	// Process XML tags from LLM response
-	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
-	if len(feedback) > 0 {
-		feedbackJSON, _ := json.Marshal(feedback)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
+	// Final check: if still no <message> tag after retries, reject
+	if parsed.Message == "" {
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: Response missing required <message> tag after retries")
+		return c.Status(400).JSON(fiber.Map{"error": "Response missing required <message> tag. All visible text must be wrapped in <message> tags."})
 	}
 
-	parsed := parser.ParseLLMOutput(response)
+	// Extract files from parsed response
 	var files []string
 	for _, action := range parsed.Actions {
 		if action.Type == "GIVE" {
@@ -555,19 +624,24 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	finalResponse := response
-	finalParsedMsg := parsed.Message
-	if encrypted, err := crypto.Encrypt(finalResponse, crypto.DeriveKey("hermit123")); err == nil {
-		finalResponse = "enc:" + encrypted
-	}
-	if encrypted, err := crypto.Encrypt(finalParsedMsg, crypto.DeriveKey("hermit123")); err == nil {
-		finalParsedMsg = "enc:" + encrypted
+	// Only broadcast the parsed message content, not raw response
+	// This ensures <thought> tags are kept internal and only <message> content goes to users
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", parsed.Message)
+
+	// Process XML tags from LLM response (terminal, give, calendar, etc.)
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
+	if len(feedback) > 0 {
+		feedbackJSON, _ := json.Marshal(feedback)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
 
+	// Return the message content (without XML tags) and files
+	// System messages are NOT encrypted
+	// Role indicates the source: "assistant" for LLM, "system" for system messages
 	return c.JSON(fiber.Map{
-		"response": finalResponse,
-		"message":  finalParsedMsg,
-		"files":    files,
+		"message": parsed.Message,
+		"files":   files,
+		"role":    "assistant",
 	})
 }
 
@@ -899,6 +973,181 @@ func (s *Server) StartMetricsBroadcast() {
 		}
 		s.wsMutex.Unlock()
 	}
+}
+
+// StartCalendarScheduler monitors calendar events and triggers agents when they fire.
+// Instead of sending reminders directly, it injects the prompt as a user message
+// to the agent's conversation, letting the agent process and respond naturally.
+func (s *Server) StartCalendarScheduler() {
+	s.schedulerMu.Lock()
+	if s.schedulerRunning {
+		s.schedulerMu.Unlock()
+		return
+	}
+	s.schedulerRunning = true
+	s.schedulerMu.Unlock()
+
+	log.Println("Calendar scheduler started (agent-aware mode)")
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.processScheduledEvents()
+	}
+}
+
+func (s *Server) processScheduledEvents() {
+	// Use mutex to prevent duplicate processing of the same event
+	s.schedulerMu.Lock()
+	defer s.schedulerMu.Unlock()
+
+	events, err := s.db.GetPendingCalendarEvents()
+	if err != nil {
+		return
+	}
+
+	if len(events) > 0 {
+		log.Printf("[SCHEDULER] Found %d pending events", len(events))
+	}
+
+	currentTime := s.db.GetSystemTime()
+
+	for _, event := range events {
+		// Parse event datetime (stored in local time)
+		eventTime, err := time.Parse("2006-01-02 15:04", event.Date+" "+event.Time)
+		if err != nil {
+			log.Printf("[SCHEDULER] Failed to parse event time: %v", err)
+			continue
+		}
+
+		// Check if event time has passed
+		if currentTime.After(eventTime) || currentTime.Equal(eventTime) {
+			log.Printf("[SCHEDULER] Triggering event %d: %s", event.ID, event.Prompt)
+
+			// Get agent
+			agent, err := s.db.GetAgent(event.AgentID)
+			if err != nil {
+				log.Printf("[SCHEDULER] Failed to get agent: %v", err)
+				continue
+			}
+
+			// Send reminder to agent as a new user message
+			// Use special source tag so agent knows not to re-schedule
+			// Format: [SCHEDULED_REMINDER] to distinguish from regular user messages
+			reminderMessage := fmt.Sprintf("[SCHEDULED_REMINDER] %s", event.Prompt)
+
+			// Add as user message to history
+			chatID := "scheduler"
+			if agent.TelegramToken != "" {
+				allowedUsers := strings.Split(agent.AllowedUsers, ",")
+				if len(allowedUsers) > 0 && allowedUsers[0] != "" {
+					chatID = strings.TrimSpace(allowedUsers[0])
+				}
+			}
+
+			s.db.AddHistory(agent.ID, chatID, "user", reminderMessage)
+			s.addHistoryAndBroadcast(agent.ID, chatID, "user", reminderMessage)
+
+			// Mark as executed BEFORE triggering agent to prevent race conditions
+			s.db.MarkCalendarEventExecuted(event.ID)
+
+			// Trigger agent to process this message
+			go s.triggerAgentForReminder(agent.ID, chatID, reminderMessage)
+		}
+	}
+}
+
+// triggerAgentForReminder sends the reminder to the agent for processing
+func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) {
+	log.Printf("[SCHEDULER] Triggering agent %d for reminder processing", agentID)
+
+	// Get LLM client for agent
+	agent, err := s.db.GetAgent(agentID)
+	if err != nil {
+		log.Printf("[SCHEDULER] Failed to get agent: %v", err)
+		return
+	}
+
+	client := s.getLLMClientForAgent(agent)
+	if client == nil {
+		log.Printf("[SCHEDULER] No LLM client configured for agent %d", agentID)
+		return
+	}
+
+	// Build messages with system prompt and reminder
+	messages := s.buildAgentMessages(agent, message)
+
+	// Get LLM response
+	response, err := client.Chat(agent.Model, messages)
+	if err != nil {
+		log.Printf("[SCHEDULER] LLM error: %v", err)
+		return
+	}
+
+	// Parse and process response
+	parsed := parser.ParseLLMOutput(response)
+	if parsed.Message != "" {
+		// Broadcast agent's response
+		s.addHistoryAndBroadcast(agent.ID, chatID, "assistant", parsed.Message)
+
+		// Send to Telegram if configured
+		if agent.TelegramToken != "" {
+			bot := telegram.NewBot(agent.TelegramToken)
+			bot.SendMessage(chatID, parsed.Message)
+		}
+
+		// Execute any XML actions (terminal, give, etc.)
+		feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
+		if len(feedback) > 0 {
+			feedbackJSON, _ := json.Marshal(feedback)
+			s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
+		}
+	} else {
+		log.Printf("[SCHEDULER] Agent response missing <message> tag, sending fallback")
+		fallback := "🔔 Reminder: " + message
+		s.addHistoryAndBroadcast(agent.ID, chatID, "assistant", fallback)
+		if agent.TelegramToken != "" {
+			bot := telegram.NewBot(agent.TelegramToken)
+			bot.SendMessage(chatID, fallback)
+		}
+	}
+}
+
+// buildAgentMessages constructs the message list for agent processing
+func (s *Server) buildAgentMessages(agent *db.Agent, userMessage string) []llm.Message {
+	var messages []llm.Message
+
+	// Load system prompt from context.md
+	systemPrompt := agent.Personality
+	if content, err := os.ReadFile("./context.md"); err == nil {
+		contextStr := strings.TrimSpace(string(content))
+		if contextStr != "" {
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+			systemPrompt = contextStr
+		}
+	}
+
+	messages = append(messages, llm.Message{Role: "system", Content: systemPrompt})
+
+	// Add current time info
+	currentTime := s.db.GetSystemTime()
+	userMessageWithTime := fmt.Sprintf("[System time: %s]\n\n%s", currentTime.Format("2006-01-02 15:04:05"), userMessage)
+	messages = append(messages, llm.Message{Role: "user", Content: userMessageWithTime})
+
+	// Add recent history for context
+	history, _ := s.db.GetHistory(agent.ID, 10)
+	for i := len(history) - 1; i >= 0; i-- {
+		h := history[i]
+		role := h.Role
+		if role == "system" {
+			role = "user"
+		}
+		messages = append(messages, llm.Message{Role: role, Content: h.Content})
+	}
+
+	return messages
 }
 
 type LogWithAgent struct {
@@ -1284,9 +1533,17 @@ func (s *Server) HandleCreateAgent(c *fiber.Ctx) error {
 	}
 
 	// Create agent-specific skills folder with context.md
+	// Initialize with global context.md as base, personality will be prepended in system prompt
 	agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", id)
 	os.MkdirAll(agentSkillsPath, 0755)
-	os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(a.Personality), 0644)
+
+	// Copy global context.md as base for agent-specific context
+	if globalContext, err := os.ReadFile("./context.md"); err == nil {
+		os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), globalContext, 0644)
+	} else {
+		// Fallback: empty context (will use global)
+		os.WriteFile(filepath.Join(agentSkillsPath, "context.md"), []byte(""), 0644)
+	}
 
 	// Create and start Docker container for the agent
 	go func() {
@@ -1646,6 +1903,7 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 		}
 
 	case "/reset":
+		log.Printf("[SLASH] Processing /reset command for agent %s", agent.Name)
 		if agent.ContainerID != "" && s.docker != nil {
 			s.docker.Stop(agent.ContainerID)
 			s.docker.Remove(agent.ContainerID)
@@ -1656,35 +1914,30 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 			err := s.docker.Run(agent.ContainerID, image, true)
 			if err != nil {
 				response = fmt.Sprintf("❌ Failed to reset container: %v", err)
+				log.Printf("[SLASH] /reset failed: %v", err)
 			} else {
 				response = "✅ Container reset successfully"
 				s.db.LogAction(agent.ID, "docker", "container_reset", "Container reset from mobile client")
+				log.Printf("[SLASH] /reset completed successfully")
 			}
 		} else {
 			response = "❌ No container configured for this agent"
+			log.Printf("[SLASH] /reset: no container configured")
 		}
 
 	case "/clear":
-		// Clear chat history
+		log.Printf("[SLASH] Processing /clear command for agent %s", agent.Name)
+		// Clear chat history (NOT context.md - that contains important instructions)
 		s.db.ClearHistory(agent.ID)
 		s.broadcastConversationCleared(agent.ID)
+		log.Printf("[SLASH] /clear: history cleared, broadcast sent")
 
-		// Reset context to default (agent's personality as initial context)
-		contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", agent.ID)
-		if err := os.WriteFile(contextPath, []byte(agent.Personality), 0644); err != nil {
-			response = "✅ Chat history cleared, but failed to reset context"
-			s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
-			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context reset failed)")
-			return c.JSON(fiber.Map{"message": response, "role": "system"})
-		}
-
-		response = "✅ Chat history cleared and context window reset to default"
+		response = "✅ Chat history cleared. Context window preserved."
 		s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
 		s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
+		log.Printf("[SLASH] /clear: completed, returning: %s", response)
 		return c.JSON(fiber.Map{"message": response, "role": "system"})
 
 	default:
@@ -1696,6 +1949,7 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 	s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
 	s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
 
+	log.Printf("[SLASH] Returning response: message='%s', role='system'", response)
 	return c.JSON(fiber.Map{"message": response, "role": "system"})
 }
 
@@ -1810,23 +2064,31 @@ func (s *Server) HandleGetAgentContextWindow(c *fiber.Ctx) error {
 
 	history, _ := s.db.GetHistory(id, 500)
 
-	contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", id)
-	contextData, _ := os.ReadFile(contextPath)
+	// Build system prompt like the chat handler does - ALWAYS use global context.md
+	systemPrompt := agent.Personality
 
-	var historyList []map[string]string
+	// Load global context.md from HermitShell root directory
+	if content, err := os.ReadFile("./context.md"); err == nil {
+		contextStr := strings.TrimSpace(string(content))
+		if contextStr != "" {
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_NAME}}", agent.Name)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_ROLE}}", agent.Role)
+			contextStr = strings.ReplaceAll(contextStr, "{{AGENT_PERSONALITY}}", agent.Personality)
+			systemPrompt = contextStr
+		}
+	}
+
+	var historyList []map[string]interface{}
 	for _, h := range history {
-		historyList = append(historyList, map[string]string{
-			"role":    h.Role,
-			"content": h.Content,
+		historyList = append(historyList, map[string]interface{}{
+			"role":      h.Role,
+			"content":   h.Content,
+			"timestamp": h.CreatedAt,
 		})
 	}
 
-	globalContextPath := "./context.md"
-	globalContextData, _ := os.ReadFile(globalContextPath)
-
 	return c.JSON(fiber.Map{
-		"systemPrompt":     string(contextData),
-		"globalContext":    string(globalContextData),
+		"systemPrompt":     systemPrompt, // Full system prompt with variables substituted
 		"agentPersonality": agent.Personality,
 		"history":          historyList,
 	})
@@ -1850,7 +2112,31 @@ func (s *Server) HandleGetLastMessage(c *fiber.Ctx) error {
 
 // HandleGetUnreadCount returns the unread message count for an agent.
 func (s *Server) HandleGetUnreadCount(c *fiber.Ctx) error {
-	return c.JSON(fiber.Map{"unread": 0})
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	count, err := s.db.GetUnseenCount(id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"unread": count})
+}
+
+// HandleMarkMessagesSeen marks all messages for an agent as seen.
+func (s *Server) HandleMarkMessagesSeen(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	if err := s.db.MarkHistorySeen(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"success": true})
 }
 
 func (s *Server) HandleListSkills(c *fiber.Ctx) error {
@@ -2150,15 +2436,16 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		}
 	}
 
+	// Return actual key values so client can populate the settings form
 	return c.JSON(fiber.Map{
 		"tunnelEnabled": tunnelEnabled == "true",
 		"tunnelURL":     tunnelURL,
 		"tunnelHealthy": isHealthy,
 		"status":        status,
-		"openrouterKey": openrouterKey != "",
-		"openaiKey":     openaiKey != "",
-		"anthropicKey":  anthropicKey != "",
-		"geminiKey":     geminiKey != "",
+		"openrouterKey": openrouterKey,
+		"openaiKey":     openaiKey,
+		"anthropicKey":  anthropicKey,
+		"geminiKey":     geminiKey,
 		"timezone":      timezone,
 		"timeOffset":    timeOffset,
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
@@ -2580,9 +2867,16 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 
 	switch cmd {
 	case "/status":
+		config := s.getLLMConfigStatus(agent)
 		statusMsg := fmt.Sprintf("🤖 *Agent Status: %s*\n\n", agent.Name)
-		statusMsg += fmt.Sprintf("• Model: `%s`\n", agent.Model)
-		statusMsg += fmt.Sprintf("• Provider: `%s`\n", agent.Provider)
+		statusMsg += fmt.Sprintf("• Provider: `%s`\n", config.ProviderUI)
+		statusMsg += fmt.Sprintf("• Model: `%s`\n", firstNonEmpty(config.Model, "Not set"))
+		statusMsg += fmt.Sprintf("• Model Type: `%s`\n", config.ModelType)
+		statusMsg += fmt.Sprintf("• API Key: `%s`\n", ternary(config.APIKeySet, "Configured", "Missing"))
+		statusMsg += fmt.Sprintf("• LLM Ready: `%s`\n", ternary(config.Configured, "Yes", "No"))
+		if !config.Configured {
+			statusMsg += fmt.Sprintf("• Missing: `%s`\n", config.missingSummary())
+		}
 		statusMsg += fmt.Sprintf("• Context Window: `%d` tokens\n", agent.ContextWindow)
 		statusMsg += fmt.Sprintf("• LLM API Calls: `%d`\n", agent.LLMAPICalls)
 
@@ -2596,7 +2890,6 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 		}
 		statusMsg += fmt.Sprintf("• Container: `%s` (%s)\n", agent.ContainerID, containerStatus)
 
-		// Show polling status instead of webhook
 		statusMsg += "• Connection: Long Polling Active ✅\n"
 
 		statusMsg += fmt.Sprintf("\n🔐 *Authorization*\n")
@@ -2757,6 +3050,9 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		return
 	}
 
+	// Parse the LLM response to extract message content
+	parsed := parser.ParseLLMOutput(response)
+
 	// Log LLM response
 	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
 
@@ -2765,10 +3061,11 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 		tempBot.DeleteMessage(chatID, thinkingMsgID)
 	}
 
-	// Log agent response (Full trace)
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
+	// Only broadcast the parsed message content, not raw response
+	// This ensures <thought> tags are kept internal and only <message> content goes to users
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", parsed.Message)
 
-	// Execute the XML actions from the response
+	// Execute the XML actions from the response (terminal, give, calendar, etc.)
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
 
 	// Commit with <end> and feedback
@@ -3272,21 +3569,37 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 			}
 
 		default: // create
-			// Parse DateTime into date and time components
-			dateTime := cal.DateTime
+			// Support both absolute datetime and relative time (schedule) fields
 			var dateStr, timeStr string
+			var targetTime time.Time
 
-			if dateTime != "" {
-				if len(dateTime) >= 10 {
-					dateStr = dateTime[:10]
-				}
-				if len(dateTime) >= 19 {
-					timeStr = dateTime[11:16]
-				} else if len(dateTime) >= 16 {
-					timeStr = dateTime[11:16]
+			// Handle relative time via <schedule minutes="N" hours="N" days="N">
+			if cal.ScheduleMinutes > 0 || cal.ScheduleHours > 0 || cal.ScheduleDays > 0 {
+				// Calculate future time from current system time
+				targetTime = s.db.GetSystemTime()
+				targetTime = targetTime.Add(time.Duration(cal.ScheduleMinutes) * time.Minute)
+				targetTime = targetTime.Add(time.Duration(cal.ScheduleHours) * time.Hour)
+				targetTime = targetTime.Add(time.Duration(cal.ScheduleDays) * 24 * time.Hour)
+				dateStr = targetTime.Format("2006-01-02")
+				timeStr = targetTime.Format("15:04")
+				log.Printf("[CALENDAR] Relative schedule: minutes=%d, hours=%d, days=%d -> scheduled for %s %s",
+					cal.ScheduleMinutes, cal.ScheduleHours, cal.ScheduleDays, dateStr, timeStr)
+			} else {
+				// Handle absolute datetime via <datetime>
+				dateTime := cal.DateTime
+				if dateTime != "" {
+					if len(dateTime) >= 10 {
+						dateStr = dateTime[:10]
+					}
+					if len(dateTime) >= 19 {
+						timeStr = dateTime[11:16]
+					} else if len(dateTime) >= 16 {
+						timeStr = dateTime[11:16]
+					}
 				}
 			}
 
+			// Create the calendar event if we have both date and time
 			if dateStr != "" && timeStr != "" {
 				_, err := s.db.CreateCalendarEvent(&db.CalendarEvent{
 					AgentID:  agentID,
@@ -3668,4 +3981,19 @@ func (s *Server) BroadcastMessage(msg string) {
 
 func (s *Server) addHistoryAndBroadcast(agentID int64, userID, role, content string) {
 	s.addHistoryAndBroadcastWithFiles(agentID, userID, role, content, nil)
+}
+
+func (s *Server) addHistoryAndBroadcastWithRejection(agentID int64, userID, role, content string, isRejected bool) {
+	s.db.AddHistoryWithRejection(agentID, userID, role, content, isRejected)
+
+	payload := map[string]interface{}{
+		"type":     "new_message",
+		"agent_id": agentID,
+		"user_id":  userID,
+		"role":     role,
+		"content":  content,
+	}
+	if jsonMsg, err := json.Marshal(payload); err == nil {
+		s.BroadcastMessage(string(jsonMsg))
+	}
 }

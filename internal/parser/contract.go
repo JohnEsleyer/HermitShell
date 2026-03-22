@@ -7,6 +7,7 @@ package parser
 import (
 	"log"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -32,6 +33,10 @@ type ParsedCalendar struct {
 	Prompt   string `json:"prompt,omitempty"`
 	ID       string `json:"id,omitempty"`
 	Action   string `json:"action,omitempty"` // "create", "list", "delete", "update"
+	// Relative time support via <schedule minutes="N" hours="N" days="N">
+	ScheduleMinutes int `json:"scheduleMinutes,omitempty"`
+	ScheduleHours   int `json:"scheduleHours,omitempty"`
+	ScheduleDays    int `json:"scheduleDays,omitempty"`
 }
 
 // ParsedApp represents a parsed <app> tag with HTML, CSS, and JS content.
@@ -73,11 +78,22 @@ var (
 	appCSSRegex  = regexp.MustCompile(`(?is)<style>(.*?)</style>`)
 	appJSRegex   = regexp.MustCompile(`(?is)<script>(.*?)</script>`)
 	deployRegex  = regexp.MustCompile(`(?is)<deploy>(.*?)</deploy>`)
+	// New unified <schedule> tag for relative time scheduling
+	// Usage: <schedule minutes="3" hours="1" days="2">reminder text</schedule>
+	scheduleMinutesRegex = regexp.MustCompile(`minutes=["']?(\d+)["']?`)
+	scheduleHoursRegex   = regexp.MustCompile(`hours=["']?(\d+)["']?`)
+	scheduleDaysRegex    = regexp.MustCompile(`days=["']?(\d+)["']?`)
 )
 
 // ParseLLMOutput parses XML tags from LLM response.
 // Docs: See docs/xml-tags.md for all supported tags.
 // Supported tags: <message>, <terminal>, <give>, <app>, <skill>, <calendar>, <thought>, <system>
+//
+// Rules:
+// - <message> tags: Extracted for user transport (Telegram/HermitChat)
+// - <thought> tags: Internal only, NOT sent to user
+// - Plain text outside tags: Ignored (not sent to user)
+// - At least one <message> tag is REQUIRED, otherwise response is rejected
 func ParseLLMOutput(text string) ParsedResponse {
 	log.Printf("[PARSER] Input text: %s", text)
 
@@ -93,6 +109,8 @@ func ParseLLMOutput(text string) ParsedResponse {
 		resp.Thought = strings.TrimSpace(m[1])
 	}
 
+	// Extract <message> tag content
+	// Plain text outside tags is IGNORED - only <message> content goes to user
 	if m := messageRegex.FindStringSubmatch(text); len(m) > 1 {
 		resp.Message = strings.TrimSpace(m[1])
 	}
@@ -236,6 +254,61 @@ func ParseLLMOutput(text string) ParsedResponse {
 	// Handle calendar list action
 	if calendarListRegex.FindStringIndex(text) != nil {
 		resp.Calendars = append(resp.Calendars, ParsedCalendar{Action: "list"})
+	}
+
+	// Handle unified <schedule> tag for relative time scheduling
+	// Usage: <schedule minutes="3">...</schedule>
+	//        <schedule hours="1" minutes="30">...</schedule>
+	//        <schedule days="2">...</schedule>
+	scheduleTagRegex := regexp.MustCompile(`(?is)<schedule\s+([^>]*)>(.*?)</schedule>`)
+	scheduleMatches := scheduleTagRegex.FindAllStringSubmatch(text, -1)
+	for _, m := range scheduleMatches {
+		if len(m) < 3 {
+			continue
+		}
+		attrs := m[1]
+		scheduleContent := m[2]
+
+		minutes := 0
+		hours := 0
+		days := 0
+
+		if minMatch := scheduleMinutesRegex.FindStringSubmatch(attrs); len(minMatch) > 1 {
+			if val, err := strconv.Atoi(minMatch[1]); err == nil {
+				minutes = val
+			}
+		}
+		if hrMatch := scheduleHoursRegex.FindStringSubmatch(attrs); len(hrMatch) > 1 {
+			if val, err := strconv.Atoi(hrMatch[1]); err == nil {
+				hours = val
+			}
+		}
+		if dayMatch := scheduleDaysRegex.FindStringSubmatch(attrs); len(dayMatch) > 1 {
+			if val, err := strconv.Atoi(dayMatch[1]); err == nil {
+				days = val
+			}
+		}
+
+		// Extract prompt from schedule content
+		schedulePrompt := ""
+		innerPromptRegex := regexp.MustCompile(`(?is)<prompt>(.*?)</prompt>`)
+		if pm := innerPromptRegex.FindStringSubmatch(scheduleContent); len(pm) > 1 {
+			schedulePrompt = strings.TrimSpace(pm[1])
+		} else {
+			// Use the content itself as the prompt if no <prompt> tag
+			schedulePrompt = strings.TrimSpace(scheduleContent)
+		}
+
+		if schedulePrompt != "" && (minutes > 0 || hours > 0 || days > 0) {
+			resp.Calendars = append(resp.Calendars, ParsedCalendar{
+				Action:          "create",
+				Prompt:          schedulePrompt,
+				ScheduleMinutes: minutes,
+				ScheduleHours:   hours,
+				ScheduleDays:    days,
+			})
+			log.Printf("[PARSER DEBUG] Added schedule event: minutes=%d, hours=%d, days=%d", minutes, hours, days)
+		}
 	}
 
 	// Handle calendar delete action
