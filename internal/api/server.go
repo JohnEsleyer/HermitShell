@@ -1052,15 +1052,13 @@ func (s *Server) processScheduledEvents() {
 		}
 	}
 
-	// Use system time with timezone offset applied (same as what settings show)
-	currentTime := s.db.GetSystemTime()
-	log.Printf("[SCHEDULER] Current time (system): %s", currentTime.Format("2006-01-02 15:04:05"))
+	// Use actual current time - no artificial offset
+	currentTime := time.Now()
+	log.Printf("[SCHEDULER] Current time: %s", currentTime.Format("2006-01-02 15:04:05"))
 
-	// Get timezone offset for consistent parsing
-	offsetStr, _ := s.db.GetSetting("time_offset")
-	offsetHours, _ := strconv.Atoi(offsetStr)
-	// Create fixed zone using offset (negative for west, positive for east)
-	zone := time.FixedZone("system", offsetHours*3600)
+	// Parse event datetime in server's local timezone
+	// All datetime inputs are interpreted as-is (user's intended local time)
+	location := currentTime.Location()
 
 	for _, event := range events {
 		// Double-check not already executed (race condition protection)
@@ -1068,8 +1066,8 @@ func (s *Server) processScheduledEvents() {
 			continue
 		}
 
-		// Parse event datetime using system timezone (same as when event was created)
-		eventTime, err := time.ParseInLocation("2006-01-02 15:04", event.Date+" "+event.Time, zone)
+		// Parse event datetime using server's local timezone
+		eventTime, err := time.ParseInLocation("2006-01-02 15:04", event.Date+" "+event.Time, location)
 		if err != nil {
 			log.Printf("[SCHEDULER] Failed to parse event time: %v", err)
 			continue
@@ -2541,8 +2539,6 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 	openaiKey, _ := s.db.GetSetting("openai_api_key")
 	anthropicKey, _ := s.db.GetSetting("anthropic_api_key")
 	geminiKey, _ := s.db.GetSetting("gemini_api_key")
-	timezone, _ := s.db.GetSetting("timezone")
-	timeOffset, _ := s.db.GetSetting("time_offset")
 
 	tunnelURL := s.tunnels.GetURL("dashboard")
 	isHealthy := s.tunnels.CheckTunnelHealth("dashboard", 2*time.Second)
@@ -2574,8 +2570,6 @@ func (s *Server) HandleGetSettings(c *fiber.Ctx) error {
 		"openaiKey":     openaiKey,
 		"anthropicKey":  anthropicKey,
 		"geminiKey":     geminiKey,
-		"timezone":      timezone,
-		"timeOffset":    timeOffset,
 		"hasLLMKey":     openrouterKey != "" || openaiKey != "" || anthropicKey != "" || geminiKey != "",
 	})
 }
@@ -2627,8 +2621,6 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 		OpenaiKey     *string `json:"openaiKey"`
 		AnthropicKey  *string `json:"anthropicKey"`
 		GeminiKey     *string `json:"geminiKey"`
-		Timezone      *string `json:"timezone"`
-		TimeOffset    *string `json:"timeOffset"`
 	}
 	c.BodyParser(&req)
 
@@ -2657,38 +2649,30 @@ func (s *Server) HandleSetSettings(c *fiber.Ctx) error {
 	if req.GeminiKey != nil {
 		s.db.SetSetting("gemini_api_key", strings.TrimSpace(*req.GeminiKey))
 	}
-	if req.Timezone != nil {
-		s.db.SetSetting("timezone", strings.TrimSpace(*req.Timezone))
-	}
-	if req.TimeOffset != nil {
-		s.db.SetSetting("time_offset", strings.TrimSpace(*req.TimeOffset))
-	}
+
+	// Timezone/time_offset settings removed - see docs/time-handling.md
+	// All times are now handled as-is, interpreted by client in local timezone
 
 	return c.JSON(fiber.Map{"success": true})
 }
 
-// HandleGetTime returns the current time with user's offset applied.
-// Docs: See docs/time-management.md for how offset is calculated and applied.
-// Purpose: Allows displaying time in user's desired timezone regardless of server location.
+// HandleGetTime returns the current server time.
+// Time is now handled as-is - no artificial offsets.
+// All datetime inputs are interpreted as the user's local time.
 func (s *Server) HandleGetTime(c *fiber.Ctx) error {
-	timezone, _ := s.db.GetSetting("timezone")
-	timeOffset, _ := s.db.GetSetting("time_offset")
-
-	// Get current system time (already has offset applied via db.GetSystemTime)
-	systemTime := s.db.GetSystemTime()
-	// Get raw UTC time so clients can calculate their own offsets/previews accurately
-	rawUtcTime := time.Now().UTC()
+	// Return actual server time - no offset manipulation
+	// Clients should use their device's local timezone
+	currentTime := time.Now()
+	utcTime := currentTime.UTC()
 
 	return c.JSON(fiber.Map{
-		"time":          systemTime.Format("03:04:05 PM"),
-		"time12":        systemTime.Format("3:04 PM"),
-		"date":          systemTime.Format("Mon, Jan 2"),
-		"fullDate":      systemTime.Format("2006-01-02"),
-		"datetime":      systemTime.Format(time.RFC3339),
-		"systemTime":    systemTime.Format(time.RFC3339),
-		"serverUtcTime": rawUtcTime.Format(time.RFC3339),
-		"timezone":      timezone,
-		"offset":        timeOffset,
+		"time":          currentTime.Format("03:04:05 PM"),
+		"time12":        currentTime.Format("3:04 PM"),
+		"date":          currentTime.Format("Mon, Jan 2"),
+		"fullDate":      currentTime.Format("2006-01-02"),
+		"datetime":      currentTime.Format(time.RFC3339),
+		"systemTime":    currentTime.Format(time.RFC3339),
+		"serverUtcTime": utcTime.Format(time.RFC3339),
 	})
 }
 
