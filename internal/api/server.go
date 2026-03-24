@@ -661,10 +661,10 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	// Store raw response in history (with tags visible for debugging/copy)
+	// Store raw response in history (for debugging/copy context)
 	s.addHistoryOnly(agent.ID, "assistant", "assistant", response)
 
-	// Broadcast message content if present
+	// Broadcast ONLY parsed message content to UI (no XML tags for user display)
 	if parsed.Message != "" {
 		s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
 	}
@@ -1144,7 +1144,7 @@ func (s *Server) processScheduledEvents() {
 				// ACTION mode: Trigger LLM to perform the scheduled task
 				// This is for tasks like "write code in 1 hour"
 				reminderMessage := fmt.Sprintf("[SCHEDULED_REMINDER] %s", event.Prompt)
-				// Add to DB history only (no broadcast to UI) - internal scheduler message
+				// Add to history (raw for debugging)
 				s.addHistoryOnly(agent.ID, "scheduler", "system", reminderMessage)
 				// Trigger agent to process this message
 				go s.triggerAgentForReminder(agent.ID, chatID, reminderMessage)
@@ -1205,7 +1205,7 @@ func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) 
 	// Parse and process response
 	parsed := parser.ParseLLMOutput(response)
 
-	// Store raw response in history for debugging
+	// Store raw response in history (for debugging/copy context)
 	s.addHistoryOnly(agent.ID, chatID, "assistant", response)
 
 	if parsed.Message != "" {
