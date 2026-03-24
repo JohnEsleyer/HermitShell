@@ -623,13 +623,16 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	// Check if we have either a message OR calendar/schedule tags in the parsed response
 	// (even if ExecuteXMLPayload didn't succeed, the tags might be in the response)
 	hasCalendarTags := len(parsed.Calendars) > 0
+	log.Printf("[DEBUG] parsed.Calendars count: %d, Calendars: %+v", len(parsed.Calendars), parsed.Calendars)
 
 	// Also check feedback for successful calendar actions
 	hasActionFeedback := false
 	for _, f := range feedback {
+		log.Printf("[DEBUG] feedback: %+v", f)
 		if action, ok := f["action"].(string); ok {
 			if action == "CALENDAR" {
 				status, _ := f["status"].(string)
+				log.Printf("[DEBUG] CALENDAR feedback status: %s", status)
 				if status == "SUCCESS" {
 					hasActionFeedback = true
 				}
