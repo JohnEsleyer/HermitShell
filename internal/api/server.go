@@ -599,7 +599,8 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		// Parse the LLM response to extract message content and files
 		parsed = parser.ParseLLMOutput(response)
 
-		s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response (attempt %d): %.200s...", attempt+1, response))
+		s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response (attempt %d): %s", attempt+1, response))
+		log.Printf("[LLM] Response (attempt %d): %s", attempt+1, response)
 		s.addHistoryOnly(agent.ID, userID, "user", userText)
 
 		// Success if <message> tag found
@@ -619,11 +620,15 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	// This ensures actions like reminders still work even if the LLM forgets the message tag
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 
-	// Check if we have either a message OR successful action tags (calendar, schedule, etc.)
+	// Check if we have either a message OR calendar/schedule tags in the parsed response
+	// (even if ExecuteXMLPayload didn't succeed, the tags might be in the response)
+	hasCalendarTags := len(parsed.Calendars) > 0
+
+	// Also check feedback for successful calendar actions
 	hasActionFeedback := false
 	for _, f := range feedback {
 		if action, ok := f["action"].(string); ok {
-			if action == "CALENDAR" || action == "SCHEDULE" {
+			if action == "CALENDAR" {
 				status, _ := f["status"].(string)
 				if status == "SUCCESS" {
 					hasActionFeedback = true
@@ -632,8 +637,8 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	// If no message AND no successful actions, report error
-	if parsed.Message == "" && !hasActionFeedback {
+	// If no message AND no calendar/schedule tags AND no successful actions, report error
+	if parsed.Message == "" && !hasCalendarTags && !hasActionFeedback {
 		s.addHistoryOnly(agent.ID, "system", "system", "Error: Response missing <message> tag. Calendar/schedule was not created.")
 		return c.Status(400).JSON(fiber.Map{"error": "Response missing required <message> tag. All visible text must be wrapped in <message> tags."})
 	}
