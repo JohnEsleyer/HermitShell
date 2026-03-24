@@ -592,7 +592,7 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
 
 		if err != nil {
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
+			s.addHistoryOnly(agent.ID, "system", "system", "LLM Error: "+err.Error())
 			return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
 		}
 
@@ -600,24 +600,41 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		parsed = parser.ParseLLMOutput(response)
 
 		s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response (attempt %d): %.200s...", attempt+1, response))
-		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+		s.addHistoryOnly(agent.ID, userID, "user", userText)
 
 		// Success if <message> tag found
 		if parsed.Message != "" {
 			break
 		}
 
-		// If no <message> tag and we have retries left, add explicit reminder
+		// If no <message> tag and we have retries left, add explicit reminder to LLM
 		if attempt < maxRetries {
 			log.Printf("[RETRY] No <message> tag found, retrying with reminder (attempt %d/%d)", attempt+1, maxRetries+1)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", fmt.Sprintf("Retry %d/%d: Your last response had no <message> tags. Remember: ALL visible text must be wrapped in <message> tags, or it will be ignored.", attempt+1, maxRetries+1))
+			// Only log internally, don't broadcast to user
 			messages = append(messages, llm.Message{Role: "system", Content: "Reminder: Your response must contain <message>...</message> tags around ALL visible text. Without these tags, your response will be completely ignored by the user."})
 		}
 	}
 
-	// Final check: if still no <message> tag after retries, reject
-	if parsed.Message == "" {
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: Response missing required <message> tag after retries")
+	// Even if no <message> tag, process other XML tags (calendar, schedule, terminal, etc.)
+	// This ensures actions like reminders still work even if the LLM forgets the message tag
+	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
+
+	// Check if we have either a message OR successful action tags (calendar, schedule, etc.)
+	hasActionFeedback := false
+	for _, f := range feedback {
+		if action, ok := f["action"].(string); ok {
+			if action == "CALENDAR" || action == "SCHEDULE" {
+				status, _ := f["status"].(string)
+				if status == "SUCCESS" {
+					hasActionFeedback = true
+				}
+			}
+		}
+	}
+
+	// If no message AND no successful actions, report error
+	if parsed.Message == "" && !hasActionFeedback {
+		s.addHistoryOnly(agent.ID, "system", "system", "Error: Response missing <message> tag. Calendar/schedule was not created.")
 		return c.Status(400).JSON(fiber.Map{"error": "Response missing required <message> tag. All visible text must be wrapped in <message> tags."})
 	}
 
@@ -630,23 +647,20 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 
 	// Store raw response in history (with tags visible for debugging/copy)
-	// This allows users to see exactly what the agent responded with when they copy history
 	s.addHistoryOnly(agent.ID, "assistant", "assistant", response)
 
-	// Broadcast ONLY the parsed <message> content to HermitChat UI (no tags)
-	// This ensures clean display without XML tags for end users
-	s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
+	// Broadcast message content if present
+	if parsed.Message != "" {
+		s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
+	}
 
-	// Process XML tags from LLM response (terminal, give, calendar, etc.)
-	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
+	// Broadcast action feedback as system message
 	if len(feedback) > 0 {
 		feedbackJSON, _ := json.Marshal(feedback)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
 
 	// Return the message content (without XML tags) and files
-	// System messages are NOT encrypted
-	// Role indicates the source: "assistant" for LLM, "system" for system messages
 	return c.JSON(fiber.Map{
 		"message": parsed.Message,
 		"files":   files,
