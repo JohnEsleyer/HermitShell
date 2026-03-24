@@ -3704,14 +3704,16 @@ func (s *Server) ExecuteXMLPayload(agentID int64, chatID, xmlInput string, bot *
 
 			// Handle relative time via <schedule minutes="N" hours="N" days="N">
 			if cal.ScheduleMinutes > 0 || cal.ScheduleHours > 0 || cal.ScheduleDays > 0 {
-				// Use system time with timezone offset (same as settings display)
-				targetTime = s.db.GetSystemTime()
+				// Use actual current time for relative schedules (not offset-adjusted system time)
+				// The offset is for display purposes only - relative schedules should be "3 minutes from now"
+				// as perceived by the user, not offset-adjusted time
+				targetTime = time.Now()
 				targetTime = targetTime.Add(time.Duration(cal.ScheduleMinutes) * time.Minute)
 				targetTime = targetTime.Add(time.Duration(cal.ScheduleHours) * time.Hour)
 				targetTime = targetTime.Add(time.Duration(cal.ScheduleDays) * 24 * time.Hour)
 				dateStr = targetTime.Format("2006-01-02")
 				timeStr = targetTime.Format("15:04")
-				log.Printf("[CALENDAR] Relative schedule (system time): scheduled for %s %s", dateStr, timeStr)
+				log.Printf("[CALENDAR] Relative schedule (actual time): scheduled for %s %s", dateStr, timeStr)
 			} else {
 				// Handle absolute datetime via <datetime>
 				dateTime := cal.DateTime
