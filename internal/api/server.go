@@ -2197,6 +2197,18 @@ func (s *Server) HandleGetAgentContextWindow(c *fiber.Ctx) error {
 		}
 	}
 
+	// Fetch skills for the agent
+	skills, _ := s.db.ListSkills()
+	var skillsList []map[string]interface{}
+	for _, sk := range skills {
+		if sk.AgentID == 0 || sk.AgentID == id {
+			skillsList = append(skillsList, map[string]interface{}{
+				"title":   sk.Title,
+				"content": sk.Content,
+			})
+		}
+	}
+
 	var historyList []map[string]interface{}
 	for _, h := range history {
 		historyList = append(historyList, map[string]interface{}{
@@ -2209,6 +2221,7 @@ func (s *Server) HandleGetAgentContextWindow(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"systemPrompt":     systemPrompt, // Full system prompt with variables substituted
 		"agentPersonality": agent.Personality,
+		"skills":           skillsList,
 		"history":          historyList,
 	})
 }
