@@ -285,17 +285,12 @@ func (s *Server) authMiddleware(c *fiber.Ctx) error {
 		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Unauthorized"})
 	}
 
-	id, err := strconv.ParseInt(session, 10, 64)
-	if err != nil {
-		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Invalid session"})
+	userID, _, err := s.db.ValidateSession(session)
+	if err != nil || userID == 0 {
+		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Invalid or expired session"})
 	}
 
-	username, _, err := s.db.GetUserByID(id)
-	if err != nil || username == "" {
-		return c.Status(401).JSON(fiber.Map{"success": false, "error": "Invalid session"})
-	}
-
-	c.Locals("userID", id)
+	c.Locals("userID", userID)
 	return c.Next()
 }
 
@@ -420,11 +415,14 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 
 	var req struct {
-		Message string `json:"message"`
+		Message  string `json:"message"`
+		Takeover bool   `json:"takeover"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
 	}
+
+	log.Printf("[DEBUG] Body parsed: Message='%s', Takeover=%v", req.Message, req.Takeover)
 
 	userText := strings.TrimSpace(req.Message)
 
@@ -467,6 +465,12 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	}
 	if session != "" {
 		userID = session
+	}
+
+	// Set takeover mode if specified in request
+	log.Printf("[DEBUG] req.Takeover=%v, setting takeoverMode for chatID=%s", req.Takeover, chatID)
+	if req.Takeover {
+		s.takeoverMode[chatID] = true
 	}
 
 	currentTime := s.db.GetSystemTime()
@@ -821,23 +825,36 @@ func (s *Server) HandleLogin(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"success": false, "error": "Invalid credentials"})
 	}
 
+	// Create secure session token (expires in 7 days)
+	token, err := s.db.CreateSession(id, 24*7)
+	if err != nil {
+		log.Printf("[AUTH] Failed to create session: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create session"})
+	}
+
 	// Set HTTP-only cookie for session - prevents JavaScript access (XSS protection)
 	// See docs/security-measures.md for security details
 	c.Cookie(&fiber.Cookie{
 		Name:     "session",
-		Value:    fmt.Sprintf("%d", id),
+		Value:    token,
 		Path:     "/",
 		HTTPOnly: true,
+		Secure:   false, // Set to true in production with HTTPS
+		SameSite: "Strict",
 	})
 
 	return c.JSON(fiber.Map{
 		"success":            true,
-		"token":              fmt.Sprintf("%d", id),
+		"token":              token,
 		"mustChangePassword": mustChange,
 	})
 }
 
 func (s *Server) HandleLogout(c *fiber.Ctx) error {
+	session := c.Cookies("session")
+	if session != "" {
+		s.db.DeleteSession(session)
+	}
 	c.Cookie(&fiber.Cookie{Name: "session", Value: "", Path: "/", MaxAge: -1})
 	return c.JSON(fiber.Map{"success": true})
 }
@@ -854,11 +871,12 @@ func (s *Server) HandleCheckAuth(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"authenticated": false})
 	}
 
-	id, _ := strconv.ParseInt(session, 10, 64)
-	username, mustChange, err := s.db.GetUserByID(id)
-	if err != nil || username == "" {
+	id, mustChange, err := s.db.ValidateSession(session)
+	if err != nil || id == 0 {
 		return c.JSON(fiber.Map{"authenticated": false})
 	}
+
+	username, _, _ := s.db.GetUserByID(id)
 	return c.JSON(fiber.Map{"authenticated": true, "username": username, "mustChangePassword": mustChange})
 }
 
@@ -867,9 +885,23 @@ func (s *Server) HandleChangeCredentials(c *fiber.Ctx) error {
 	c.BodyParser(&req)
 
 	session := c.Cookies("session")
-	id, _ := strconv.ParseInt(session, 10, 64)
-	username, _, _ := s.db.GetUserByID(id)
+	if session == "" {
+		authHeader := c.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			session = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
 
+	if session == "" {
+		return c.JSON(fiber.Map{"success": false, "error": "Not authenticated"})
+	}
+
+	userID, _, err := s.db.ValidateSession(session)
+	if err != nil || userID == 0 {
+		return c.JSON(fiber.Map{"success": false, "error": "Invalid session"})
+	}
+
+	username, _, _ := s.db.GetUserByID(userID)
 	if err := s.db.UpdateCredentials(username, req.NewUsername, req.NewPassword); err != nil {
 		return c.JSON(fiber.Map{"success": false, "error": err.Error()})
 	}
@@ -1023,14 +1055,20 @@ func (s *Server) processScheduledEvents() {
 	currentTime := s.db.GetSystemTime()
 	log.Printf("[SCHEDULER] Current time (system): %s", currentTime.Format("2006-01-02 15:04:05"))
 
+	// Get timezone offset for consistent parsing
+	offsetStr, _ := s.db.GetSetting("time_offset")
+	offsetHours, _ := strconv.Atoi(offsetStr)
+	// Create fixed zone using offset (negative for west, positive for east)
+	zone := time.FixedZone("system", offsetHours*3600)
+
 	for _, event := range events {
 		// Double-check not already executed (race condition protection)
 		if event.Executed {
 			continue
 		}
 
-		// Parse event datetime (stored in system time)
-		eventTime, err := time.ParseInLocation("2006-01-02 15:04", event.Date+" "+event.Time, time.Local)
+		// Parse event datetime using system timezone (same as when event was created)
+		eventTime, err := time.ParseInLocation("2006-01-02 15:04", event.Date+" "+event.Time, zone)
 		if err != nil {
 			log.Printf("[SCHEDULER] Failed to parse event time: %v", err)
 			continue

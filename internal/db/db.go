@@ -8,6 +8,7 @@
 package db
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -218,6 +219,15 @@ func (d *DB) migrate() error {
 		executed INTEGER NOT NULL DEFAULT 0,
 		created_at TEXT NOT NULL DEFAULT (datetime('now')),
 		FOREIGN KEY(agent_id) REFERENCES agents(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS sessions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		token TEXT NOT NULL UNIQUE,
+		user_id INTEGER NOT NULL,
+		expires_at TEXT NOT NULL,
+		created_at TEXT NOT NULL DEFAULT (datetime('now')),
+		FOREIGN KEY(user_id) REFERENCES users(id)
 	);
 
 	CREATE TABLE IF NOT EXISTS apps (
@@ -471,6 +481,88 @@ func (d *DB) GetUserByID(id int64) (string, bool, error) {
 		return "", false, err
 	}
 	return username, mustChange == 1, nil
+}
+
+// CreateSession creates a new secure session token for the user.
+// Returns the token string on success.
+func (d *DB) CreateSession(userID int64, expiryHours int) (string, error) {
+	// Generate 32-byte random token using crypto/rand
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return "", fmt.Errorf("failed to generate token: %w", err)
+	}
+	token := hex.EncodeToString(tokenBytes)
+
+	// Calculate expiry time
+	expiresAt := time.Now().Add(time.Duration(expiryHours) * time.Hour)
+
+	// Delete any existing sessions for this user (single session per user)
+	d.db.Exec("DELETE FROM sessions WHERE user_id = ?", userID)
+
+	// Insert new session
+	_, err := d.db.Exec(`
+		INSERT INTO sessions (token, user_id, expires_at)
+		VALUES (?, ?, ?)
+	`, token, userID, expiresAt.Format(time.RFC3339))
+
+	if err != nil {
+		return "", fmt.Errorf("failed to create session: %w", err)
+	}
+
+	log.Printf("[AUTH] Created session for user_id=%d, expires=%s", userID, expiresAt.Format(time.RFC3339))
+	return token, nil
+}
+
+// ValidateSession checks if a token is valid and returns the user ID.
+// Returns (userID, mustChangePassword, error)
+func (d *DB) ValidateSession(token string) (int64, bool, error) {
+	if token == "" {
+		return 0, false, fmt.Errorf("empty token")
+	}
+
+	var userID int64
+	var expiresAt string
+	err := d.db.QueryRow(`
+		SELECT user_id, expires_at FROM sessions WHERE token = ?
+	`, token).Scan(&userID, &expiresAt)
+
+	if err == sql.ErrNoRows {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+
+	// Check if session has expired
+	expiry, err := time.Parse(time.RFC3339, expiresAt)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid expiry format: %w", err)
+	}
+	if time.Now().After(expiry) {
+		// Delete expired session
+		d.db.Exec("DELETE FROM sessions WHERE token = ?", token)
+		return 0, false, nil
+	}
+
+	// Get user info
+	_, mustChange, err := d.GetUserByID(userID)
+	return userID, mustChange, err
+}
+
+// DeleteSession removes a session by token.
+func (d *DB) DeleteSession(token string) error {
+	_, err := d.db.Exec("DELETE FROM sessions WHERE token = ?", token)
+	return err
+}
+
+// CleanupExpiredSessions removes all expired sessions.
+func (d *DB) CleanupExpiredSessions() (int, error) {
+	result, err := d.db.Exec("DELETE FROM sessions WHERE expires_at < ?", time.Now().Format(time.RFC3339))
+	if err != nil {
+		return 0, err
+	}
+	rows, _ := result.RowsAffected()
+	return int(rows), nil
 }
 
 // LogAction inserts an audit log entry for tracking system events.
@@ -814,7 +906,7 @@ func (d *DB) GetPendingCalendarEvents() ([]*CalendarEvent, error) {
 }
 
 func (d *DB) MarkCalendarEventExecuted(id int64) error {
-	result, err := d.db.Exec("UPDATE calendar SET executed = 1 WHERE id = ? AND executed = 0", id)
+	result, err := d.db.Exec("UPDATE calendar_events SET executed = 1 WHERE id = ? AND executed = 0", id)
 	if err != nil {
 		return err
 	}
