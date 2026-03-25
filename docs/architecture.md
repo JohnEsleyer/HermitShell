@@ -1,5 +1,7 @@
 # HermitShell Technical Architecture
 
+*Last updated: March 2026*
+
 ## System Overview
 
 HermitShell is an AI Agent Orchestration System that enables autonomous agents to run in isolated Docker containers, interact via Telegram, and expose services through public URLs.
