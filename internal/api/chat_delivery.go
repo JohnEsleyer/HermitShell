@@ -116,6 +116,17 @@ func (s *Server) ensureConsoleTestAssets(agent *db.Agent) error {
 // This sends clean text without XML tags for end-user display
 // The raw response with tags is stored in history separately for debugging
 func (s *Server) broadcastAgentMessage(agentID int64, userID, message string) {
+	s.broadcastMessageWithRole(agentID, userID, message, "assistant")
+}
+
+// broadcastReminderMessage broadcasts a scheduled reminder to HermitChat UI
+// Uses "reminder" role so the client can style it differently (terminal-like)
+func (s *Server) broadcastReminderMessage(agentID int64, userID, message string) {
+	s.broadcastMessageWithRole(agentID, userID, message, "reminder")
+}
+
+// broadcastMessageWithRole broadcasts a message with a specific role
+func (s *Server) broadcastMessageWithRole(agentID int64, userID, message, role string) {
 	if message == "" {
 		return
 	}
@@ -124,7 +135,7 @@ func (s *Server) broadcastAgentMessage(agentID int64, userID, message string) {
 		"type":     "new_message",
 		"agent_id": agentID,
 		"user_id":  userID,
-		"role":     "assistant",
+		"role":     role,
 		"content":  message,
 	}
 

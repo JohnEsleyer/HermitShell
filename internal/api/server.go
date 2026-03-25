@@ -560,6 +560,10 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	for i := len(history) - 1; i >= 0; i-- {
 		h := history[i]
 		role := h.Role
+		// Skip terminal execution results - they pollute context
+		if strings.Contains(h.Content, `"status":"SUCCESS"`) && strings.Contains(h.Content, `"terminal"`) {
+			continue
+		}
 		if role == "system" {
 			role = "user"
 		}
@@ -661,18 +665,18 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 		}
 	}
 
-	// Store raw response in history (for debugging/copy context)
-	s.addHistoryOnly(agent.ID, "assistant", "assistant", response)
+	// Store parsed message in history (display content without XML tags)
+	s.addHistoryOnly(agent.ID, "assistant", "assistant", parsed.Message)
 
 	// Broadcast ONLY parsed message content to UI (no XML tags for user display)
 	if parsed.Message != "" {
 		s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
 	}
 
-	// Broadcast action feedback as system message
+	// Broadcast action feedback as system message (use formatted output, not raw JSON)
 	if len(feedback) > 0 {
-		feedbackJSON, _ := json.Marshal(feedback)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
+		feedbackMsg := formatSystemExecutionResponse(parsed, feedback)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", feedbackMsg)
 	}
 
 	// Return the message content (without XML tags) and files
@@ -1158,11 +1162,11 @@ func (s *Server) processScheduledEvents() {
 func (s *Server) deliverScheduledContent(agent *db.Agent, chatID, content string) {
 	log.Printf("[SCHEDULER] DELIVER: Broadcasting to agent %d, chatID=%s, content=%s", agent.ID, chatID, content)
 
-	// Store raw content in history for debugging
-	s.addHistoryOnly(agent.ID, chatID, "assistant", content)
+	// Store as reminder in history
+	s.addHistoryOnly(agent.ID, chatID, "reminder", content)
 
-	// Broadcast ONLY the clean message content to HermitChat UI (no tags)
-	s.broadcastAgentMessage(agent.ID, chatID, content)
+	// Broadcast with reminder role so Flutter can style it differently (terminal-like)
+	s.broadcastReminderMessage(agent.ID, chatID, content)
 
 	log.Printf("[SCHEDULER] DELIVER: Broadcast complete, WebSocket clients=%d", len(s.wsClients))
 
@@ -1205,10 +1209,10 @@ func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) 
 	// Parse and process response
 	parsed := parser.ParseLLMOutput(response)
 
-	// Store raw response in history (for debugging/copy context)
-	s.addHistoryOnly(agent.ID, chatID, "assistant", response)
-
+	// Store parsed message in history (display content without XML tags)
+	// and broadcast to clients
 	if parsed.Message != "" {
+		s.addHistoryOnly(agent.ID, chatID, "assistant", parsed.Message)
 		// Broadcast ONLY the parsed message content to HermitChat UI (no tags)
 		s.broadcastAgentMessage(agent.ID, chatID, parsed.Message)
 
@@ -1221,8 +1225,8 @@ func (s *Server) triggerAgentForReminder(agentID int64, chatID, message string) 
 		// Execute any XML actions (terminal, give, etc.)
 		feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 		if len(feedback) > 0 {
-			feedbackJSON, _ := json.Marshal(feedback)
-			s.addHistoryOnly(agent.ID, "system", "system", string(feedbackJSON))
+			feedbackMsg := formatSystemExecutionResponse(parser.ParseLLMOutput(response), feedback)
+			s.addHistoryOnly(agent.ID, "system", "system", feedbackMsg)
 		}
 	} else {
 		log.Printf("[SCHEDULED_REMINDER] Agent response missing <message> tag, sending fallback")
@@ -3233,10 +3237,10 @@ func (s *Server) processAgentAIRequest(agent *db.Agent, chatID, userID, userText
 	// Execute the XML actions from the response (terminal, give, calendar, etc.)
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, tempBot)
 
-	// Commit with <end> and feedback
+	// Commit with <end> and feedback (use formatted output, not raw JSON)
 	if len(feedback) > 0 {
-		feedbackJSON, _ := json.Marshal(feedback)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON)+"\n<end>")
+		feedbackMsg := formatSystemExecutionResponse(parsed, feedback)
+		s.addHistoryAndBroadcast(agent.ID, "system", "system", feedbackMsg+"\n<end>")
 	}
 }
 
