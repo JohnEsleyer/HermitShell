@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutGrid, ExternalLink, Globe, User, Clock } from 'lucide-react';
+import { LayoutGrid, ExternalLink, Globe, User, Clock, Trash2 } from 'lucide-react';
 import { Agent } from '../types';
 
 interface AppInfo {
@@ -38,6 +38,27 @@ export function AppsTab({ triggerToast, agents }: AppsTabProps) {
       console.error(`Failed to fetch apps for agent ${agentId}:`, err);
     } finally {
       setLoading(prev => ({ ...prev, [agentId]: false }));
+    }
+  };
+
+  const deleteApp = async (agentId: number, appName: string) => {
+    if (!confirm(`Delete app "${appName}"? This cannot be undone.`)) return;
+    try {
+      const resp = await fetch(`/api/agents/${agentId}/apps/${appName}`, {
+        method: 'DELETE',
+      });
+      if (resp.ok) {
+        setAgentApps(prev => ({
+          ...prev,
+          [agentId]: (prev[agentId] || []).filter(a => a.name !== appName)
+        }));
+        triggerToast(`Deleted ${appName}`, 'success');
+      } else {
+        triggerToast(`Failed to delete ${appName}`, 'error');
+      }
+    } catch (err) {
+      console.error(`Failed to delete app ${appName}:`, err);
+      triggerToast(`Failed to delete ${appName}`, 'error');
     }
   };
 
@@ -84,16 +105,25 @@ export function AppsTab({ triggerToast, agents }: AppsTabProps) {
               <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center border border-white/10 group-hover:scale-110 transition-transform">
                 <LayoutGrid className="w-6 h-6 text-zinc-400" />
               </div>
-              <button
-                onClick={() => {
-                  window.open(app.url, '_blank');
-                  triggerToast(`Opening ${app.name}...`, 'info');
-                }}
-                className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center hover:bg-white hover:text-black transition-colors"
-                title="Open App"
-              >
-                <ExternalLink className="w-4 h-4" />
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    window.open(app.url, '_blank');
+                    triggerToast(`Opening ${app.name}...`, 'info');
+                  }}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center hover:bg-white hover:text-black transition-colors"
+                  title="Open App"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => deleteApp(app.agentId, app.name)}
+                  className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"
+                  title="Delete App"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <h3 className="text-xl font-bold text-white mb-2 truncate" title={app.name}>{app.name}</h3>

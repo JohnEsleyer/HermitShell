@@ -536,3 +536,34 @@ func (c *Client) ListContainerFiles(containerName, dir string) ([]FileInfo, erro
 
 	return files, nil
 }
+
+func (c *Client) DeleteContainerPath(containerName, path string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := []string{"sh", "-c", fmt.Sprintf("rm -rf '%s'", path)}
+
+	execCfg := types.ExecConfig{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+
+	idResp, err := c.cli.ContainerExecCreate(ctx, containerName, execCfg)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.cli.ContainerExecAttach(ctx, idResp.ID, types.ExecStartCheck{})
+	if err != nil {
+		return err
+	}
+	defer resp.Close()
+
+	out, _ := io.ReadAll(resp.Reader)
+	if strings.Contains(string(out), "cannot remove") || strings.Contains(string(out), "No such file") {
+		return fmt.Errorf("path not found: %s", path)
+	}
+
+	return nil
+}

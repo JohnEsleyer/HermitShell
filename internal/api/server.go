@@ -342,6 +342,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	api.Post("/agents/:id/action", s.HandleAgentAction)
 	api.Post("/agents/:id/chat", s.HandleAgentChat)
 	api.Get("/agents/:id/logs", s.HandleGetAgentLogs)
+	api.Get("/agents/:id/history", s.HandleGetAgentHistory)
 	api.Get("/agents/:id/stats", s.HandleGetAgentStats)
 	api.Get("/agents/:id/context", s.HandleGetAgentContextWindow)
 	api.Get("/agents/:id/last-message", s.HandleGetLastMessage)
@@ -399,6 +400,7 @@ func (s *Server) setupRoutes(app *fiber.App) {
 	app.Get("/apps/:agentId/:appName/*", s.HandleServeApp)
 	app.Get("/apps/:agentId/:appName", s.HandleServeApp)
 	api.Get("/agents/:id/apps", s.HandleListApps)
+	api.Delete("/agents/:id/apps/:appName", s.HandleDeleteApp)
 
 	s.setupStaticRoutes(app)
 }
@@ -532,22 +534,27 @@ func (s *Server) HandleAgentChat(c *fiber.Ctx) error {
 	s.db.UpdateAgentContextWindow(agent.ID, contextWindow)
 
 	if err != nil {
+		s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", "LLM Error: "+err.Error())
 		return c.Status(500).JSON(fiber.Map{"error": "AI Error: " + err.Error()})
 	}
 
 	s.db.LogAction(agent.ID, "agent", "llm_response", fmt.Sprintf("Response: %.200s...", response))
-	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
-	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", response)
 
-	// Process XML tags from LLM response
+	parsed := parser.ParseLLMOutput(response)
+	messageToDisplay := parsed.Message
+	if messageToDisplay == "" {
+		messageToDisplay = response
+	}
+
+	s.addHistoryAndBroadcast(agent.ID, userID, "user", userText)
+	s.addHistoryAndBroadcast(agent.ID, "assistant", "assistant", messageToDisplay)
+
 	feedback := s.ExecuteXMLPayload(agent.ID, chatID, response, nil)
 	if len(feedback) > 0 {
 		feedbackJSON, _ := json.Marshal(feedback)
 		s.addHistoryAndBroadcast(agent.ID, "system", "system", string(feedbackJSON))
 	}
-
-	parsed := parser.ParseLLMOutput(response)
 	var files []string
 	for _, action := range parsed.Actions {
 		if action.Type == "GIVE" {
@@ -1594,6 +1601,29 @@ func (s *Server) HandleGetAgentLogs(c *fiber.Ctx) error {
 	return c.JSON(history)
 }
 
+func (s *Server) HandleGetAgentHistory(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "invalid agent id"})
+	}
+
+	limit, _ := strconv.Atoi(c.Query("limit", "100"))
+	history, err := s.db.GetHistory(id, limit)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+
+	var result []map[string]string
+	for _, h := range history {
+		result = append(result, map[string]string{
+			"role":       h.Role,
+			"content":    h.Content,
+			"created_at": h.CreatedAt,
+		})
+	}
+	return c.JSON(result)
+}
+
 // handleLocalCommand processes commands without requiring LLM
 func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, command string) error {
 	parts := strings.Fields(command)
@@ -1670,20 +1700,20 @@ func (s *Server) handleLocalCommand(c *fiber.Ctx, agent *db.Agent, userID, comma
 		s.broadcastConversationCleared(agent.ID)
 
 		// Reset context to default (agent's personality as initial context)
-		contextPath := fmt.Sprintf("data/agents/%d/skills/context.md", agent.ID)
+		agentSkillsPath := fmt.Sprintf("data/agents/%d/skills", agent.ID)
+		if err := os.MkdirAll(agentSkillsPath, 0755); err != nil {
+			response = "❌ Chat history cleared, but failed to reset context"
+			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (mkdir failed: "+err.Error()+")")
+			return c.JSON(fiber.Map{"message": response, "role": "system"})
+		}
+		contextPath := fmt.Sprintf("%s/context.md", agentSkillsPath)
 		if err := os.WriteFile(contextPath, []byte(agent.Personality), 0644); err != nil {
-			response = "✅ Chat history cleared, but failed to reset context"
-			s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
-			s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
-			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context reset failed)")
+			response = "❌ Chat history cleared, but failed to reset context"
+			s.db.LogAction(agent.ID, "system", "slash_command", processedLog+" (context reset failed: "+err.Error()+")")
 			return c.JSON(fiber.Map{"message": response, "role": "system"})
 		}
 
 		response = "✅ Chat history cleared and context window reset to default"
-		s.addHistoryAndBroadcast(agent.ID, userID, "user", command)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", processedLog)
-		s.addHistoryAndBroadcast(agent.ID, "system", "system", response)
 		s.db.LogAction(agent.ID, "system", "slash_command", processedLog)
 		return c.JSON(fiber.Map{"message": response, "role": "system"})
 
@@ -2625,7 +2655,8 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 		helpMsg += "• /reset - Restart container\n"
 		helpMsg += "• /takeover - Toggle manual control\n"
 		helpMsg += "• /give_system_prompt - Get persona\n"
-		helpMsg += "• /give_context - Get full history"
+		helpMsg += "• /give_context - Get full history\n"
+		helpMsg += "• /files - List out folder files\n"
 		bot.SendMessage(chatID, helpMsg)
 
 	case "/clear":
@@ -2671,6 +2702,30 @@ func (s *Server) handleAgentCommand(agent *db.Agent, chatID, text string) error 
 		os.WriteFile(fileName, []byte(sb.String()), 0644)
 		bot.SendDocument(chatID, fileName, "Full Conversation Context")
 		os.Remove(fileName)
+
+	case "/files":
+		containerName := agent.ContainerID
+		if containerName == "" {
+			containerName = "agent-" + strings.ToLower(agent.Name)
+		}
+		files, err := s.docker.ListContainerFiles(containerName, "/app/workspace/out")
+		if err != nil {
+			bot.SendMessage(chatID, "Error: Could not list files. Container may not be running.")
+		} else if len(files) == 0 {
+			bot.SendMessage(chatID, "No files in /app/workspace/out")
+		} else {
+			var fileList string
+			for _, f := range files {
+				sizeStr := fmt.Sprintf("%d", f.Size)
+				if f.Size > 1024*1024 {
+					sizeStr = fmt.Sprintf("%.1fMB", float64(f.Size)/(1024*1024))
+				} else if f.Size > 1024 {
+					sizeStr = fmt.Sprintf("%.1fKB", float64(f.Size)/1024)
+				}
+				fileList += fmt.Sprintf("• %s (%s)\n", f.Name, sizeStr)
+			}
+			bot.SendMessage(chatID, "📁 Files in /app/workspace/out:\n\n"+fileList)
+		}
 
 	default:
 		bot.SendMessage(chatID, "Unknown command. Use /help (if implemented) or check the manual.")
@@ -2930,6 +2985,29 @@ func (s *Server) HandleListApps(c *fiber.Ctx) error {
 		}
 	}
 	return c.JSON(apps)
+}
+
+func (s *Server) HandleDeleteApp(c *fiber.Ctx) error {
+	id, _ := strconv.ParseInt(c.Params("id"), 10, 64)
+	appName := c.Params("appName")
+
+	agent, err := s.db.GetAgent(id)
+	if err != nil || agent == nil {
+		return c.Status(404).JSON(fiber.Map{"error": "Agent not found"})
+	}
+
+	containerName := agent.ContainerID
+	if containerName == "" {
+		containerName = "agent-" + strings.ToLower(agent.Name)
+	}
+
+	appsDir := "/app/workspace/apps/" + appName
+	err = s.docker.DeleteContainerPath(containerName, appsDir)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to delete app: " + err.Error()})
+	}
+
+	return c.JSON(fiber.Map{"message": "App deleted successfully"})
 }
 
 func (s *Server) HandleGetAllApps(c *fiber.Ctx) error {
